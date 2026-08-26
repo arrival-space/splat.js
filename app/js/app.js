@@ -980,6 +980,10 @@ async function open(preset, autostart = false) {
   }
   S.gen++;
   if (S.session) { S.session.pause(); S.session.dispose(); }
+  if (S._recoveryModelUrl) URL.revokeObjectURL(S._recoveryModelUrl);
+  S._recoveryModelUrl = null;
+  S.viewOnlyRecovery = false;
+  S._finalizePromise = null;
   S.session = null;
   S.preset = preset;
   S.state = 'ready';
@@ -1486,9 +1490,53 @@ async function deviceLostRecovery() {
   if (S._recovering) return;
   const gen = S.gen;
   if (S.state === 'done') {
-    flash(S.plyBlob
-      ? 'The browser reclaimed the graphics device — the finished model is safe, export still works.'
-      : 'The browser reclaimed the graphics device.', 9000);
+    if (!S.plyBlob) {
+      flash('The browser reclaimed the graphics device before the finished model could be cached. Reload to train again.', 12000);
+      return;
+    }
+    S._recovering = true;
+    const old = S.session;
+    const camMeta = old?.trainer?.camMeta?.map((c) => ({ ...c })) || [];
+    const wasTouring = !!S.tour;
+    stopTour();
+    document.getElementById('cv-model')?.remove();
+    gpuCanvas = null;
+    flash('The browser reclaimed the graphics device — restoring the finished viewer …', 120000);
+    let modelUrl = null;
+    try {
+      modelUrl = URL.createObjectURL(S.plyBlob);
+      const { createSogView } = await import('./pcview.js');
+      const ses = await createSogView(modelUrl, {
+        radius: S.scene?.radius || old?.model?.radius || 10,
+        filename: 'recovered.ply',
+      });
+      ses.frames = old?.frames || [];
+      ses.recon = old?.recon || null;
+      ses.trainer.camMeta = camMeta;
+      if (S.gen !== gen || S.state !== 'done') {
+        ses.dispose();
+        URL.revokeObjectURL(modelUrl);
+        return;
+      }
+      if (S._recoveryModelUrl) URL.revokeObjectURL(S._recoveryModelUrl);
+      S._recoveryModelUrl = modelUrl;
+      S.session = ses;
+      S.viewOnlyRecovery = true;
+      mountModelCanvas();
+      await ses._boot;
+      if (ses._bootError) throw ses._bootError;
+      S._viewKey = '';
+      vp.dirty = true;
+      renderControls();
+      if (wasTouring) startTour();
+      flash('Viewer restored in the compatibility renderer — the finished model and exports are safe.', 9000);
+    } catch (err) {
+      if (modelUrl && modelUrl !== S._recoveryModelUrl) URL.revokeObjectURL(modelUrl);
+      console.error('finished viewer recovery failed', err);
+      flash('The graphics device was lost. The finished model is safe and can still be exported; reload to restore the viewer.', 15000);
+    } finally {
+      S._recovering = false;
+    }
     return;
   }
   if (S.state !== 'train') return;
@@ -1545,7 +1593,6 @@ async function finish() {
   }
   renderControls();
   dock('');
-  startTour();
   const hold = S.psnrHold != null ? ` · ${S.psnrHold.toFixed(1)} dB on the photograph it never saw` : '';
   flash(`Done${hold}`, 6000);
   if (EVAL.on) {
@@ -1557,11 +1604,25 @@ async function finish() {
     }).catch(() => {});
   }
   // cache the export now, while the device is certainly alive — iOS can
-  // reclaim it from a backgrounded tab, and the readback path dies with it
+  // reclaim it from a backgrounded tab, and the readback path dies with it.
+  // Do not start the tour or score every frame at the same time: those extra
+  // raster/eval passes used to push memory-heavy runs into device loss just
+  // after they completed.
   S.plyBlob = null; S.sogBlob = null;
-  S.session.exportPlyBlob().then((b) => { S.plyBlob = b; }).catch(() => {});
+  const gen = S.gen;
+  S._finalizePromise = S.session.exportPlyBlob().then((b) => {
+    if (S.gen !== gen || S.state !== 'done') return;
+    S.plyBlob = b;
+    startTour();
+  }).catch((err) => {
+    console.error('finished model cache failed', err);
+    if (S.gen === gen && S.state === 'done') {
+      flash('Finished, but the safety export could not be cached — export the model before leaving this page.', 10000);
+    }
+  }).finally(() => {
+    if (S.gen === gen) S._finalizePromise = null;
+  });
   if (PERF.on) perfCard();
-  scoreFrames();
 }
 
 // ── restore: present a saved run without re-training ────────────────────────
@@ -1884,18 +1945,6 @@ function perfCard() {
   card.querySelector('#perf-dl').addEventListener('click', downloadPerfLog);
 }
 
-/** after the run: an honest per-photograph score, filled in the background */
-async function scoreFrames() {
-  const gen = S.gen;
-  for (const c of S.scene.cams) {
-    if (c.ci < 0 || S.gen !== gen || S.state !== 'done') return;
-    try {
-      c.psnr = await S.session.evalFramePsnr(c.ci);
-      paintStrip();
-    } catch { return; }
-  }
-}
-
 // ── stage controls (train/done) ─────────────────────────────────────────────
 function seg(items, active, onPick) {
   const d = document.createElement('div');
@@ -1951,7 +2000,7 @@ function renderControls() {
     '<i>Details ›</i>';
   stats.addEventListener('click', openDetails);
   c.appendChild(stats);
-  if (!S.restored) {
+  if (!S.restored && !S.viewOnlyRecovery) {
     // a restored model has no training targets in this tab — viewing and
     // exporting work, continuing the run does not (yet)
     const more = document.createElement('button');
@@ -1994,7 +2043,7 @@ function renderControls() {
 
 /** Resume from done: raise the horizon, restore the curve, back to train. */
 function continueTraining() {
-  if (!S.session || S.state !== 'done') return;
+  if (!S.session || S.state !== 'done' || S.viewOnlyRecovery) return;
   stopTour();
   S.plyBlob = null; S.sogBlob = null;   // the cached export goes stale the moment training resumes
   S.maxIters = S.session.continueFor(MORE_ITERS);
