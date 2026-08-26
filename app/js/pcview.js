@@ -1,5 +1,5 @@
-// pcview.js — the SOG-native result viewer: the PlayCanvas engine renders
-// the compressed splat directly (sorted alpha compositing, WebGL2), so a
+// pcview.js — the PlayCanvas result viewer: the engine renders SOG or PLY
+// directly (sorted alpha compositing, WebGL2), so a
 // shared creation never gets decoded into hundreds of MB of floats and
 // phones without WebGPU can still view it. The object returned here wears
 // the same face the app's render loop expects from a training session:
@@ -9,7 +9,7 @@
 let pcPromise = null;
 const loadPc = () => (pcPromise ??= import('../vendor/playcanvas.min.mjs'));
 
-export async function createSogView(sogUrl, { radius = 10 } = {}) {
+export async function createSogView(sogUrl, { radius = 10, filename = 'shared.sog' } = {}) {
   const pc = await loadPc();
 
   const v = {
@@ -46,13 +46,13 @@ export async function createSogView(sogUrl, { radius = 10 } = {}) {
     v.camEnt = cam;
     if (v._lastCam) setCam(v._lastCam);
 
-    // the splat, straight from the SOG bundle — the frame loop starts only
+    // the splat, straight from the SOG bundle or PLY blob — the frame loop starts only
     // once it is in, so the stand-in hero image stays visible while the
     // model streams
-    const asset = new pc.Asset('shared.sog', 'gsplat', { url: sogUrl, filename: 'shared.sog' });
+    const asset = new pc.Asset(filename, 'gsplat', { url: sogUrl, filename });
     await new Promise((resolve, reject) => {
       asset.on('load', resolve);
-      asset.on('error', (err) => reject(new Error(`sog load failed: ${err}`)));
+      asset.on('error', (err) => reject(new Error(`splat load failed: ${err}`)));
       app.assets.add(asset);
       app.assets.load(asset);
     });
@@ -121,8 +121,13 @@ export async function createSogView(sogUrl, { radius = 10 } = {}) {
     },
   };
 
-  /** Standard 3DGS PLY, decoded from the SOG on demand (download action). */
+  /** Standard 3DGS PLY, passed through or decoded from SOG on demand. */
   v.exportPlyBlob = async () => {
+    if (/\.ply($|\?)/i.test(filename)) {
+      const r = await fetch(sogUrl);
+      if (!r.ok) throw new Error(`PLY fetch failed (${r.status})`);
+      return r.blob();
+    }
     const { sogToGaussians } = await import('./session_io.js');
     const { gaussiansToPly } = await import('../../src/index.js');
     const bytes = new Uint8Array(await (await fetch(sogUrl)).arrayBuffer());
@@ -134,6 +139,7 @@ export async function createSogView(sogUrl, { radius = 10 } = {}) {
     try { v.app && v.app.destroy(); } catch (e) { /* torn down with the page */ }
     v.app = null;
   };
+  v.pause = () => {}; // session-compatible no-op: this viewer never trains
 
   return v;
 }
