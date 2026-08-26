@@ -9,7 +9,10 @@
 // splat.js Session — plus the trainer's rendered canvas.
 
 import { createSession, gaussiansToPly } from '../../src/index.js';
-import { extractSharpFrames, isVideoFile } from '../../src/io/video.js';
+import {
+  extractSharpFrames, planVideoFrames, videoFrameDimensions,
+  videoPipelineResolution, isVideoFile,
+} from '../../src/io/video.js';
 import { recordCaptureVideo, cameraSupported } from './camera.js';
 import { saveLastCapture, loadLastCapture } from './store.js';
 import { zipStore } from './zip.js';
@@ -79,8 +82,8 @@ function deviceDefaults() {
   const phone = matchMedia('(any-pointer: coarse)').matches &&
     Math.min(screen.width, screen.height) <= 820;
   return phone
-    ? { v: 2, res: 480, buf: 1, sh: 0, iters: 0, splats: 0, lod: false, mcmc: false }
-    : { v: 2, res: 0, buf: 1, sh: 3, iters: 0, splats: 0, lod: false, mcmc: false };
+    ? { v: 3, res: 480, featRes: 960, siftFeats: 3900, buf: 1, sh: 0, iters: 0, splats: 0, lod: false, mcmc: false }
+    : { v: 3, res: 0, featRes: 960, siftFeats: 3900, buf: 1, sh: 3, iters: 0, splats: 0, lod: false, mcmc: false };
 }
 function loadSettings() {
   const d = deviceDefaults();
@@ -88,7 +91,8 @@ function loadSettings() {
     const saved = JSON.parse(localStorage.getItem('splatjs_settings') || 'null');
     // v gates out saves from older panel layouts (e.g. the phone-preset
     // button that wrote sh 0 onto desktops)
-    const m = saved && saved.v === 2 ? { ...d, ...saved } : d;
+    const compatible = saved && (saved.v === 2 || saved.v === 3);
+    const m = compatible ? { ...d, ...saved, v: 3 } : d;
     // saved sh 2 predates the degree-3 default: those sessions were silently
     // training degree 3 (the old `!== 2` guard), so 3 preserves real behavior
     if (m.sh === 2) m.sh = 3;
@@ -103,14 +107,14 @@ function saveSettings() {
 // quality macros: the one-knob row that drives the individual rows below it.
 // Standard = this device's defaults; anything that matches no macro shows as
 // Custom. Macros never touch the 2× working buffer (an experiment flag).
-const QKEYS = ['res', 'buf', 'sh', 'iters', 'splats'];
+const QKEYS = ['res', 'featRes', 'siftFeats', 'buf', 'sh', 'iters', 'splats'];
 function qualityMacros() {
   const d = deviceDefaults();
   return {
-    draft:    { res: 480,   buf: 1, sh: 0,    iters: 10000,  splats: 0 },
-    standard: { res: d.res, buf: 1, sh: d.sh, iters: 0,      splats: 0 },
-    high:     { res: 1280,  buf: 1, sh: 3,    iters: 40000,  splats: 0 },
-    showcase: { res: 1280,  buf: 1, sh: 3,    iters: 100000, splats: 0 },
+    draft:    { res: 480,   featRes: 640,  siftFeats: 2500, buf: 1, sh: 0,    iters: 10000,  splats: 0 },
+    standard: { res: d.res, featRes: 960,  siftFeats: 3900, buf: 1, sh: d.sh, iters: 0,      splats: 0 },
+    high:     { res: 1280,  featRes: 1280, siftFeats: 6000, buf: 1, sh: 3,    iters: 40000,  splats: 0 },
+    showcase: { res: 1280,  featRes: 1600, siftFeats: 8000, buf: 1, sh: 3,    iters: 100000, splats: 0 },
   };
 }
 function qualityOf(st) {
@@ -232,7 +236,47 @@ function boot() {
     showPicker();
   });
   $('card-x').addEventListener('click', closePicker);
-  $('file-input').addEventListener('change', (e) => useOwnPhotos(e.target.files));
+  $('file-input').addEventListener('change', (e) => {
+    ingestOwnFiles(e.target.files); e.target.value = '';
+  });
+  $('video-input').addEventListener('change', (e) => {
+    ingestOwnFiles(e.target.files); e.target.value = '';
+  });
+  for (const radio of document.querySelectorAll('input[name="video-mode"]')) {
+    radio.addEventListener('change', paintVideoPlan);
+  }
+  for (const id of ['video-fps', 'video-count', 'video-resolution']) {
+    $(id).addEventListener('input', paintVideoPlan);
+  }
+  $('video-close').addEventListener('click', closeVideoImportDialog);
+  $('video-cancel').addEventListener('click', closeVideoImportDialog);
+  $('video-dialog').addEventListener('close', cleanupVideoImportDialog);
+  $('video-dialog').addEventListener('cancel', (e) => {
+    if (videoDialogBusy) e.preventDefault();
+  });
+  $('video-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const file = videoDialogFile;
+    const plan = currentVideoPlan();
+    if (!file || !plan.valid || videoDialogBusy) return;
+    try {
+      localStorage.setItem('splatjs_video_import', JSON.stringify({
+        v: 1, mode: plan.mode, fps: plan.fps, count: plan.count,
+        maxFrameDim: plan.maxFrameDim,
+      }));
+    } catch { /* private mode */ }
+    setVideoDialogBusy(true);
+    paintVideoProgress({ stage: 'prepare', done: 0, total: 1 });
+    try {
+      await useOwnVideo(file, plan, paintVideoProgress);
+      paintVideoProgress({ stage: 'done', done: 1, total: 1 });
+      if ($('video-dialog').open) $('video-dialog').close('apply');
+    } catch (err) {
+      console.error(err);
+      setVideoDialogBusy(false);
+      paintVideoProgress({ stage: 'error', done: 0, total: 1, message: err.message });
+    }
+  });
   if (cameraSupported()) {
     const rb = $('btn-record');
     rb.hidden = false;
@@ -240,7 +284,7 @@ function boot() {
       try {
         const got = await recordCaptureVideo();
         if (!got) return;
-        if (got.kind === 'video') useOwnVideo(got.file);
+        if (got.kind === 'video') showVideoImportDialog(got.file);
         else useOwnPhotos(got.files);   // stills: straight in, no extraction
       } catch (e) {
         console.error(e);
@@ -262,7 +306,7 @@ function boot() {
       restoreSession({ bytes: new Uint8Array(await files[0].arrayBuffer()) });
       return;
     }
-    useOwnPhotos(files);
+    ingestOwnFiles(files);
   });
   $('d-close').addEventListener('click', () => { $('details').hidden = true; });
   $('d-prev').addEventListener('click', () => detailFlip(-1));
@@ -272,6 +316,8 @@ function boot() {
   const st = S.settings;
   const showSettings = () => {
     $('set-res').value = st.res ? String(st.res) : '';
+    $('set-feat-res').value = String(st.featRes || 960);
+    $('set-sift').value = String(st.siftFeats || 3900);
     $('set-buf').value = String(st.buf);
     $('set-sh').value = String(st.sh);
     $('set-iters').value = st.iters ? String(st.iters) : '';
@@ -312,6 +358,9 @@ function boot() {
   });
   const readSettings = () => {
     st.res = parseInt($('set-res').value, 10) || 0;
+    st.featRes = Math.max(640, Math.min(1600, parseInt($('set-feat-res').value, 10) || 960));
+    st.siftFeats = Math.max(1000, Math.min(8000,
+      Math.round((parseInt($('set-sift').value, 10) || 3900) / 100) * 100));
     st.buf = parseFloat($('set-buf').value) || 1;
     st.sh = parseInt($('set-sh').value, 10);
     st.iters = parseInt($('set-iters').value, 10) || 0;
@@ -321,7 +370,7 @@ function boot() {
     showSettings();
     saveSettings();
   };
-  for (const id of ['set-res', 'set-buf', 'set-sh', 'set-iters', 'set-splats', 'set-lod', 'set-mcmc']) {
+  for (const id of ['set-res', 'set-feat-res', 'set-sift', 'set-buf', 'set-sh', 'set-iters', 'set-splats', 'set-lod', 'set-mcmc']) {
     $(id).addEventListener('change', readSettings);
   }
   // count slider: live label while dragging, the (cheaper) photo-list rebuild
@@ -665,19 +714,28 @@ function closePicker() {
   $('btn-go').textContent = 'Start training';
 }
 
-async function useOwnPhotos(list) {
+function ingestOwnFiles(list) {
   const all = [...list];
-  // video intake is OFF for now — the sharp-frame extraction is not good
-  // enough yet. The whole path (useOwnVideo, extractSharpFrames, the camera's
-  // video mode) is kept working; re-enable by routing the file again here.
-  const video = all.find(isVideoFile);
+  const videos = all.filter(isVideoFile);
   const files = all.filter((f) => f.type.startsWith('image/'));
-  if (video && files.length < 2) {
-    flash('Video input is off for now — take photos instead.', 6000);
+  if (videos.length && files.length) {
+    flash('Choose either one video or a photo set, not both together.', 5500);
     return;
   }
+  if (videos.length > 1) {
+    flash('Choose one video at a time.', 4500);
+    return;
+  }
+  if (videos.length === 1) {
+    showVideoImportDialog(videos[0]);
+    return;
+  }
+  useOwnPhotos(files);
+}
+
+async function useOwnPhotos(files) {
   if (files.length < 2) {
-    flash('Pick at least a couple of overlapping photos of the same place.', 4500);
+    flash('Pick at least a couple of overlapping photos, or choose one video.', 4500);
     return;
   }
   if (S.ownUrls) S.ownUrls.forEach(URL.revokeObjectURL);
@@ -692,51 +750,220 @@ async function useOwnPhotos(list) {
   showDetail(set);   // Start training lives on the detail card
 }
 
-/** A video: pick its sharpest frames (the server pipeline's policy, run
- *  here) and continue exactly like a photo set. */
-async function useOwnVideo(file) {
-  const card = document.createElement('div');
-  card.className = 'upcard';
-  card.id = 'vidcard';
-  card.innerHTML = `
-    <b>Reading your video</b>
-    <div class="prep-sub" id="vid-sub">decoding …</div>
-    <div class="prep-meter"><i id="vid-bar" style="width:0%"></i></div>`;
-  $('stage').appendChild(card);
-  const LABEL = { scan: 'looking for the sharpest frames', capture: 'saving the winners' };
+let videoDialogFile = null;
+let videoDialogUrl = null;
+let videoDialogDuration = 0;
+let videoDialogWidth = 0;
+let videoDialogHeight = 0;
+let videoDialogBusy = false;
+
+function clockTime(seconds) {
+  const whole = Math.max(0, Math.round(seconds));
+  return `${Math.floor(whole / 60)}:${String(whole % 60).padStart(2, '0')}`;
+}
+
+function savedVideoPlan() {
   try {
-    const { frames, duration } = await extractSharpFrames(file, {
-      log: (m) => console.log('[video]', m),
-      onProgress: (e) => {
-        const bar = $('vid-bar');
-        if (!bar) return;
-        const half = e.stage === 'scan' ? 0 : 50;
-        bar.style.width = `${half + (e.done / e.total) * 50}%`;
-        $('vid-sub').textContent = `${LABEL[e.stage]} · ${e.done} / ${e.total}`;
-      },
-    });
-    if (frames.length < 12) {
-      flash('That video is too short — a slow 20+ second pass works best.', 6000);
-      return;
-    }
-    if (S.ownUrls) S.ownUrls.forEach(URL.revokeObjectURL);
-    S.ownUrls = frames.map((f) => URL.createObjectURL(f.source));
-    // persist the EXTRACTED frames (small JPEGs), not the raw video
-    saveLastCapture({
-      kind: 'video', created: Date.now(),
-      files: frames.map((f) => ({ name: f.name, blob: f.source })),
-    }).catch(() => {});
-    const set = ownSet(frames, S.ownUrls);
-    set.kind = 'Your video';
-    set.origin = `${frames.length} sharp frames picked from your ${Math.round(duration)}s video, ` +
-      'right here in this tab. Blurred moments lost to their sharper neighbours.';
-    open(set);
-  } catch (e) {
-    console.error(e);
-    flash(`Could not read that video: ${e.message}`, 8000);
-  } finally {
-    card.remove();
+    const saved = JSON.parse(localStorage.getItem('splatjs_video_import') || 'null');
+    return saved && saved.v === 1
+      ? saved
+      : { v: 1, mode: 'fps', fps: 3, count: 120, maxFrameDim: 1920 };
+  } catch { return { v: 1, mode: 'fps', fps: 3, count: 120, maxFrameDim: 1920 }; }
+}
+
+function currentVideoPlan() {
+  const mode = document.querySelector('input[name="video-mode"]:checked')?.value || 'fps';
+  const plan = planVideoFrames(videoDialogDuration, {
+    mode,
+    fps: parseFloat($('video-fps').value),
+    count: parseInt($('video-count').value, 10),
+  });
+  plan.maxFrameDim = Math.max(0, parseInt($('video-resolution').value, 10) || 0);
+  [plan.frameW, plan.frameH] = videoFrameDimensions(
+    videoDialogWidth, videoDialogHeight, plan.maxFrameDim,
+  );
+  return plan;
+}
+
+function paintVideoPlan() {
+  const plan = currentVideoPlan();
+  $('video-fps-row').hidden = plan.mode !== 'fps';
+  $('video-count-row').hidden = plan.mode !== 'count';
+  const estimate = $('video-estimate');
+  const modeText = plan.mode === 'fps' ? `${plan.fps.toFixed(1)} FPS` : `${plan.count} requested`;
+  const sizeText = videoDialogWidth ? ` · output ${plan.frameW} × ${plan.frameH}px` : '';
+  estimate.textContent = plan.valid
+    ? `Estimated ${plan.targetFrames} frames · ${modeText}${sizeText}${plan.capped ? ' · capped at 200' : ''}`
+    : 'This selection yields fewer than 12 frames. Increase FPS or use a longer video.';
+  estimate.dataset.invalid = plan.valid ? '0' : '1';
+  $('video-apply').disabled = videoDialogBusy || !plan.valid || !videoDialogFile;
+}
+
+function setVideoDialogBusy(busy) {
+  videoDialogBusy = busy;
+  const dialog = $('video-dialog');
+  dialog.dataset.busy = busy ? '1' : '0';
+  for (const el of dialog.querySelectorAll('input, select')) el.disabled = busy;
+  $('video-close').disabled = busy;
+  $('video-cancel').disabled = busy;
+  $('video-apply').textContent = busy ? 'Extracting …' : 'Extract frames';
+  $('video-preview').controls = !busy;
+  if (busy) $('video-work').hidden = false;
+  else paintVideoPlan();
+}
+
+function paintVideoProgress(event) {
+  const work = $('video-work');
+  work.hidden = false;
+  work.dataset.state = event.stage;
+  const ratio = event.total ? Math.max(0, Math.min(1, event.done / event.total)) : 0;
+  let pct = 0;
+  if (event.stage === 'scan') pct = ratio * 70;
+  else if (event.stage === 'capture') pct = 70 + ratio * 30;
+  else if (event.stage === 'done') pct = 100;
+  const labels = {
+    prepare: ['Preparing video', 'Starting the local decoder …'],
+    scan: ['Scanning and scoring frames', `Sharpness samples ${event.done} / ${event.total}`],
+    capture: ['Encoding selected frames', `JPEG frames ${event.done} / ${event.total}`],
+    done: ['Frames ready', 'Sending the selected frames into the reconstruction pipeline'],
+    error: ['Could not extract this video', event.message || 'Video decoding failed'],
+  };
+  const [title, detail] = labels[event.stage] || labels.prepare;
+  $('video-work-title').textContent = title;
+  $('video-work-detail').textContent = detail;
+  $('video-work-pct').textContent = event.stage === 'error' ? 'Error' : `${Math.round(pct)}%`;
+  $('video-work-bar').style.width = `${pct}%`;
+  $('video-spinner').hidden = event.stage === 'done';
+  $('video-stage-scan').dataset.active = event.stage === 'scan' ? '1' : '0';
+  $('video-stage-capture').dataset.active = event.stage === 'capture' ? '1' : '0';
+}
+
+function setResolutionSelect(id, value) {
+  const select = $(id);
+  select.querySelector('option[data-video-resolution]')?.remove();
+  if (![...select.options].some((option) => Number(option.value) === value)) {
+    const option = document.createElement('option');
+    option.value = String(value);
+    option.textContent = `${value} px (video)`;
+    option.dataset.videoResolution = '1';
+    select.appendChild(option);
   }
+  select.value = String(value);
+}
+
+/** A video already chose its prepared-image size. Carry that decision into
+ * both downstream resolution caps, bounded at 1600px for browser memory. */
+function syncSettingsToVideoFrames(frameW, frameH) {
+  const resolution = videoPipelineResolution(frameW, frameH);
+  S.settings.res = resolution;
+  S.settings.featRes = resolution;
+  setResolutionSelect('set-res', resolution);
+  setResolutionSelect('set-feat-res', resolution);
+  $('set-q').value = qualityOf(S.settings);
+  saveSettings();
+  return resolution;
+}
+
+function closeVideoImportDialog() {
+  if (videoDialogBusy) return;
+  const dialog = $('video-dialog');
+  if (dialog.open) dialog.close('cancel');
+}
+
+function cleanupVideoImportDialog() {
+  const preview = $('video-preview');
+  preview.pause();
+  preview.onloadedmetadata = null;
+  preview.onerror = null;
+  preview.removeAttribute('src');
+  preview.load();
+  if (videoDialogUrl) URL.revokeObjectURL(videoDialogUrl);
+  videoDialogUrl = null;
+  videoDialogFile = null;
+  videoDialogDuration = 0;
+  videoDialogWidth = 0;
+  videoDialogHeight = 0;
+  videoDialogBusy = false;
+}
+
+function showVideoImportDialog(file) {
+  const dialog = $('video-dialog');
+  if (dialog.open) dialog.close('replace');
+  videoDialogFile = file;
+  videoDialogDuration = 0;
+  videoDialogWidth = 0;
+  videoDialogHeight = 0;
+  const saved = savedVideoPlan();
+  const mode = saved.mode === 'count' ? 'count' : 'fps';
+  document.querySelector(`input[name="video-mode"][value="${mode}"]`).checked = true;
+  $('video-fps').value = String(saved.fps || 3);
+  $('video-count').value = String(saved.count || 120);
+  $('video-resolution').value = String(saved.maxFrameDim ?? 1920);
+  $('video-name').textContent = file.name || 'Captured video';
+  $('video-meta').textContent = 'Reading metadata …';
+  $('video-apply').disabled = true;
+  $('video-work').hidden = true;
+  $('video-work').dataset.state = 'prepare';
+  $('video-spinner').hidden = false;
+  setVideoDialogBusy(false);
+  const preview = $('video-preview');
+  preview.onloadedmetadata = async () => {
+    if (videoDialogFile !== file) return;
+    if (!isFinite(preview.duration)) {
+      try {
+        preview.currentTime = 1e9;
+        await new Promise((resolve) => preview.addEventListener('seeked', resolve, { once: true }));
+        if (videoDialogFile !== file) return;
+        preview.currentTime = 0;
+      } catch { /* extraction will surface a codec error if this cannot recover */ }
+    }
+    videoDialogDuration = Number(preview.duration) || 0;
+    videoDialogWidth = preview.videoWidth || 0;
+    videoDialogHeight = preview.videoHeight || 0;
+    $('video-meta').textContent = videoDialogDuration
+      ? `${preview.videoWidth} × ${preview.videoHeight} px · ${clockTime(videoDialogDuration)}`
+      : 'Could not read duration';
+    paintVideoPlan();
+  };
+  preview.onerror = () => {
+    $('video-meta').textContent = 'This browser cannot decode the video';
+    $('video-apply').disabled = true;
+  };
+  videoDialogUrl = URL.createObjectURL(file);
+  preview.src = videoDialogUrl;
+  preview.load();
+  dialog.showModal();
+  paintVideoPlan();
+}
+
+/** A video: cover its whole timeline, pick the sharpest frame in each time
+ *  window, and continue exactly like a photo set. */
+async function useOwnVideo(file, plan, onProgress = () => {}) {
+  const { frames, duration, frameW, frameH } = await extractSharpFrames(file, {
+    targetFrames: plan.targetFrames,
+    maxFrameDim: plan.maxFrameDim,
+    log: (m) => console.log('[video]', m),
+    onProgress,
+  });
+  if (frames.length < 12) throw new Error('The video produced fewer than 12 usable frames.');
+  if (S.ownUrls) S.ownUrls.forEach(URL.revokeObjectURL);
+  S.ownUrls = frames.map((f) => URL.createObjectURL(f.source));
+  // persist the EXTRACTED frames (small JPEGs), not the raw video
+  saveLastCapture({
+    kind: 'video', created: Date.now(),
+    files: frames.map((f) => ({ name: f.name, blob: f.source })),
+  }).catch(() => {});
+  const set = ownSet(frames, S.ownUrls);
+  set.name = 'Your video';
+  set.kind = 'Your video';
+  const pipelineResolution = syncSettingsToVideoFrames(frameW, frameH);
+  const selection = plan.mode === 'fps' ? `${plan.fps.toFixed(1)} FPS` : `${plan.count} target frames`;
+  set.origin = `${frames.length} sharp, evenly covered ${frameW} × ${frameH}px frames ` +
+      `(${selection}) picked from your ` +
+    `${Math.round(duration)}s video. Training and camera resolution synced to ` +
+    `${pipelineResolution}px. Nothing was uploaded.`;
+  open(set);
+  showDetail(set);
 }
 
 /** reset everything and show a set's start card (autostart commits a switch) */
@@ -837,12 +1064,13 @@ async function startPrep() {
     // settings -> session options: res caps the input scale, the working
     // buffer scales the supervision grid on top of whatever that yields
     const st = S.settings;
-    const frames = (st.res || st.buf !== 1 || EVAL.on) ? {
+    const frames = (st.res || st.featRes || st.buf !== 1 || EVAL.on) ? {
       // benchmark mode pins NATIVE resolution: the adaptive memory budget
       // otherwise downscales big sets silently (truck-251 lands at 645px)
       // and PSNR at reduced resolution reads ~1 dB better than the papers'
       trainMaxDim: st.res || (EVAL.on ? 1600 : undefined),
       trainScale: st.buf !== 1 ? st.buf : undefined,
+      featMaxDim: st.featRes || 960,
     } : undefined;
     // every photo trains by default — held-out scoring is the ?eval
     // benchmark protocol (every Nth photo scored, never learned from)
@@ -904,11 +1132,12 @@ async function startPrep() {
       // phones: iOS jetsams the tab long before the GPU is the limit —
       // decode-to-target (in the library), 720px features, a smaller SIFT
       // worker pool, and dropping gray/rgb once each stage has consumed them
-      ...(phoneClass ? {
-        lowMem: true,
-        sfm: { workers: 3 },
-      } : {}),
+      ...(phoneClass ? { lowMem: true } : {}),
       frames: phoneClass ? { ...(frames || {}), featMaxDim: 720 } : frames,
+      sfm: {
+        siftFeats: st.siftFeats || 3900,
+        ...(phoneClass ? { workers: 3 } : {}),
+      },
       trainer: Object.keys(trainerOpts).length ? trainerOpts : undefined,
     });
     S.session = session;

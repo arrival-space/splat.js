@@ -57,13 +57,13 @@
 
     <p class="eyebrow">In-browser 3D capture</p>
     <h1>Turn photos into a splat</h1>
-    <p class="origin">Drop in 20–200 overlapping photos of one place, or capture them
+    <p class="origin">Drop in 20–200 overlapping photos or one video of a place, or capture them
       right here. <b>Your photos never leave your device</b> — camera solving,
       splat training and export all run locally in this tab.
       <a class="linkish" id="read-more" href="#">Read more</a></p>
 
     <div class="upload" id="upload">
-      <div class="upload-btns"><label class="btn btn-accent">Choose photos<input type="file" id="file-input" multiple accept="image/*" hidden></label><button class="btn btn-outline" id="btn-record" hidden><svg viewBox="0 0 24 24" class="capicon" aria-hidden="true"><path d="M4.5 7.5h2.6l1.5-2h6.8l1.5 2h2.6a1.4 1.4 0 0 1 1.4 1.4v8.6a1.4 1.4 0 0 1-1.4 1.4h-15a1.4 1.4 0 0 1-1.4-1.4V8.9a1.4 1.4 0 0 1 1.4-1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12.7" r="3.3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Capture</button></div>
+      <div class="upload-btns"><label class="btn btn-accent">Choose photos<input type="file" id="file-input" multiple accept="image/*" hidden></label><label class="btn btn-outline">Choose video<input type="file" id="video-input" accept="video/*,.mp4,.mov,.m4v,.webm,.mkv" hidden></label><button class="btn btn-outline" id="btn-record" hidden><svg viewBox="0 0 24 24" class="capicon" aria-hidden="true"><path d="M4.5 7.5h2.6l1.5-2h6.8l1.5 2h2.6a1.4 1.4 0 0 1 1.4 1.4v8.6a1.4 1.4 0 0 1-1.4 1.4h-15a1.4 1.4 0 0 1-1.4-1.4V8.9a1.4 1.4 0 0 1 1.4-1.4z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><circle cx="12" cy="12.7" r="3.3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Capture</button></div>
     </div>
 
     <div id="gallery" hidden></div>
@@ -94,7 +94,17 @@
           <option value="640">640 px</option>
           <option value="960">960 px</option>
           <option value="1280">1280 px</option>
+          <option value="1600">1600 px</option>
         </select></div>
+      <div class="setrow" title="Largest image dimension used to find SIFT landmarks and solve camera poses. Higher values can recover fine or distant texture, but use more CPU memory."><label for="set-feat-res">Camera resolution</label>
+        <select id="set-feat-res">
+          <option value="640">640 px</option>
+          <option value="960">960 px</option>
+          <option value="1280">1280 px</option>
+          <option value="1600">1600 px</option>
+        </select></div>
+      <div class="setrow" title="Maximum SIFT keypoints considered per photograph before orientation expansion. Range 1,000–8,000; more is slower and is most useful for detailed or low-texture scenes."><label for="set-sift">SIFT landmarks</label>
+        <input id="set-sift" type="number" min="1000" max="8000" step="100" value="3900"></div>
       <div class="setrow" title="Render grid relative to the training resolution. 2× removes edge ringing at sharp viewing sizes (~1.7× slower); 0.5× quarters the raster work."><label for="set-buf">Working buffer</label>
         <select id="set-buf">
           <option value="0.5">0.5×</option>
@@ -144,6 +154,63 @@
     <div id="detail-body"></div>
   </div>
 </main>
+
+<dialog id="video-dialog" class="video-dialog">
+  <form method="dialog" id="video-form">
+    <div class="dlg-head">
+      <div><h2>Import video</h2><p>Choose how frames are extracted before anything starts.</p></div>
+      <button type="button" class="sheet-x" id="video-close" aria-label="Close">&times;</button>
+    </div>
+    <div class="video-dlg-body">
+      <video id="video-preview" controls muted playsinline preload="metadata"></video>
+      <div class="video-source"><b id="video-name">Video</b><span id="video-meta">Reading metadata …</span></div>
+
+      <fieldset class="video-modes">
+        <legend>Frame selection</legend>
+        <label><input type="radio" name="video-mode" value="fps" checked><span><b>Fixed FPS</b><small>Even cadence across the whole video</small></span></label>
+        <label><input type="radio" name="video-mode" value="count"><span><b>Frame count</b><small>Use an exact target number</small></span></label>
+      </fieldset>
+
+      <div class="video-setting" id="video-fps-row">
+        <label for="video-fps"><b>Target FPS</b><small>3 FPS is a good starting point for a steady camera walk.</small></label>
+        <input id="video-fps" type="number" min="0.5" max="10" step="0.5" value="3">
+      </div>
+      <div class="video-setting" id="video-count-row" hidden>
+        <label for="video-count"><b>Target frames</b><small>More frames improve coverage but make camera matching slower.</small></label>
+        <input id="video-count" type="number" min="12" max="200" step="1" value="120">
+      </div>
+      <div class="video-setting">
+        <label for="video-resolution"><b>Extracted frame size</b><small>Frames are resized before they enter the camera solver and training pipeline.</small></label>
+        <select id="video-resolution">
+          <option value="1280">720p</option>
+          <option value="1920" selected>1080p</option>
+          <option value="2560">1440p</option>
+          <option value="3840">4K</option>
+          <option value="0">Original</option>
+        </select>
+      </div>
+
+      <div class="video-estimate" id="video-estimate">Waiting for video metadata …</div>
+      <p class="video-note">The engine scans locally, covers the full timeline, and keeps the sharpest frame in each sampling window. Maximum 200 frames. 4K and Original use considerably more memory; training settings may downscale them again.</p>
+      <div class="video-work" id="video-work" hidden>
+        <div class="video-work-head">
+          <i class="video-spinner" id="video-spinner" aria-hidden="true"></i>
+          <div><b id="video-work-title">Preparing video</b><span id="video-work-detail">Starting the local decoder …</span></div>
+          <strong id="video-work-pct">0%</strong>
+        </div>
+        <div class="prep-meter"><i id="video-work-bar" style="width:0%"></i></div>
+        <div class="video-work-stages">
+          <span id="video-stage-scan">1&nbsp; Scan and score</span>
+          <span id="video-stage-capture">2&nbsp; Encode frames</span>
+        </div>
+      </div>
+    </div>
+    <div class="video-dlg-actions">
+      <button type="button" class="btn btn-quiet" id="video-cancel">Cancel</button>
+      <button type="submit" class="btn btn-accent" id="video-apply" disabled>Extract frames</button>
+    </div>
+  </form>
+</dialog>
 
 <div class="strip" id="strip"></div>
 
