@@ -26,10 +26,31 @@ import {
 import { bundleAdjust } from './ba.js';
 import { rotationAveraging, globalPositionsJoint } from './global.js';
 
-const MAXF = 8192; // feature-id stride per image (must exceed per-image feature count; SIFT emits up to 2 orientations/keypoint)
+const MIN_FEATURE_STRIDE = 8192;
+const MAX_FEATURES_PER_IMAGE = 32768;
 const FOCAL_SCALES = [1.0, 0.8, 0.65, 1.3]; // relative to the 1.2*maxDim guess
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
+
+/** Power-of-two feature-id stride large enough for every extracted descriptor.
+ * SIFT can emit multiple orientations for one requested keypoint, so a fixed
+ * 8192 stride is unsafe once the UI raises the keypoint budget above 3900. */
+export function featureStrideForCounts(counts) {
+  const need = Math.max(1, ...counts) + 1;
+  let stride = MIN_FEATURE_STRIDE;
+  while (stride < need) stride *= 2;
+  return stride;
+}
+
+/** Bound the CPU SIFT pool as image pyramids grow. Each worker owns several
+ * full-resolution float images; reducing concurrency prevents a high-detail
+ * solve from multiplying that memory by eight. */
+export function siftWorkerCount(images, hardwareConcurrency = 4, maxWorkers = 8) {
+  const maxDim = Math.max(0, ...images.map((im) => Math.max(im.fw, im.fh)));
+  const resolutionCap = maxDim > 1600 ? 2 : maxDim > 1280 ? 4 : maxDim > 960 ? 6 : 8;
+  return Math.max(1, Math.min(images.length, resolutionCap, Math.max(1, maxWorkers),
+    Math.max(2, (hardwareConcurrency || 4) - 2)));
+}
 
 class UnionFind {
   constructor(n) {
@@ -313,12 +334,18 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
   // 27.2, synthetic 43.0/40.8) with worker extraction + GPU matching keeping
   // it fast. features:'brief' restores the old binary pipeline.
   const useSift = opts.features !== 'brief';
-  log(`detecting features in ${n} images ...`);
+  const requestedSiftFeats = Number(opts.siftFeats);
+  const siftFeats = Number.isFinite(requestedSiftFeats) && requestedSiftFeats > 0
+    ? Math.max(1000, Math.min(MAX_FEATURES_PER_IMAGE / 2, Math.floor(requestedSiftFeats)))
+    : 3900;
+  const featureMaxDim = Math.max(...images.map((im) => Math.max(im.fw, im.fh)));
+  log(`detecting features in ${n} images ` +
+      `(${featureMaxDim}px, ${siftFeats} SIFT keypoints/image) ...`);
   const feats = [];
   if (useSift && typeof Worker !== 'undefined' && opts.workers !== false) {
     // SIFT extraction is ~1s/image of pure CPU — run it on a worker pool
     const t0f = performance.now();
-    const nW = Math.min(opts.workers || 8, Math.max(2, (navigator.hardwareConcurrency || 4) - 2));
+    const nW = siftWorkerCount(images, navigator.hardwareConcurrency || 4, opts.workers || 8);
     const workers = Array.from({ length: nW },
       () => new Worker(new URL('./featworker.js', import.meta.url), { type: 'module' }));
     const results = new Array(n);
@@ -345,7 +372,7 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
         // to 8.5% ATE; firstOctave 0 + 1800 feats = 0.04% on truck AND train
         wk.postMessage({
           id, gray: images[id].gray, w: images[id].fw, h: images[id].fh,
-          maxFeats: opts.siftFeats || 3900, firstOctave: opts.siftFirstOctave ?? 0,
+          maxFeats: siftFeats, firstOctave: opts.siftFirstOctave ?? 0,
           peakScale: opts.siftPeak ?? 1,
         });
       };
@@ -355,7 +382,7 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
     for (let i = 0; i < n; i++) {
       const f = results[i];
       f.sift = true;
-      if (f.n > MAXF) throw new Error('too many features per image');
+      if (f.n > MAX_FEATURES_PER_IMAGE) throw new Error('too many features per image');
       f.xn = new Float32Array(f.n);
       f.yn = new Float32Array(f.n);
       feats.push(f);
@@ -368,13 +395,13 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
       // features:'sift' = real scale-space SIFT (COLMAP-grade, validated at
       // 82.5% keypoint recall vs COLMAP's own extraction; slower).
       const f = useSift
-        ? detectSift(images[i].gray, images[i].fw, images[i].fh, opts.siftFeats || 3900,
+        ? detectSift(images[i].gray, images[i].fw, images[i].fh, siftFeats,
             opts.siftFirstOctave ?? 0, opts.siftPeak ?? 1)
         : opts.msFeatures
           ? detectAndDescribeMS(images[i].gray, images[i].fw, images[i].fh, 1500)
           : detectAndDescribe(images[i].gray, images[i].fw, images[i].fh, 1500);
       f.sift = useSift;
-      if (f.n > MAXF) throw new Error('too many features per image');
+      if (f.n > MAX_FEATURES_PER_IMAGE) throw new Error('too many features per image');
       f.xn = new Float32Array(f.n);
       f.yn = new Float32Array(f.n);
       feats.push(f);
@@ -408,13 +435,13 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
       const adopt = (data) => {
         const f = data;
         f.sift = true;
-        if (f.n > MAXF) throw new Error('too many features per image');
+        if (f.n > MAX_FEATURES_PER_IMAGE) throw new Error('too many features per image');
         f.xn = new Float32Array(f.n);
         f.yn = new Float32Array(f.n);
         feats[f.id] = f;
       };
       if (typeof Worker !== 'undefined' && opts.workers !== false) {
-        const nW = Math.min(opts.workers || 8, Math.max(2, (navigator.hardwareConcurrency || 4) - 2));
+        const nW = siftWorkerCount(images, navigator.hardwareConcurrency || 4, opts.workers || 8);
         const workers = Array.from({ length: nW },
           () => new Worker(new URL('./featworker.js', import.meta.url), { type: 'module' }));
         let doneR = 0;
@@ -434,7 +461,7 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
             wk.onerror = (err) => reject(new Error('feature worker: ' + (err.message || err)));
             wk.postMessage({
               id, gray: images[id].gray, w: images[id].fw, h: images[id].fh,
-              maxFeats: opts.siftFeats || 3900, firstOctave: -1,
+              maxFeats: siftFeats, firstOctave: -1,
               peakScale: opts.siftPeak ?? 1,
             });
           };
@@ -444,7 +471,7 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
       } else {
         for (const id of starved) {
           const f = detectSift(images[id].gray, images[id].fw, images[id].fh,
-            opts.siftFeats || 3900, -1, opts.siftPeak ?? 1);
+            siftFeats, -1, opts.siftPeak ?? 1);
           f.id = id;
           adopt(f);
           await tick(); checkAbort();
@@ -578,15 +605,20 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
   }
 
   // ---- feature tracks (union-find over raw matches) ----
-  const uf = new UnionFind(n * MAXF);
+  const featureStride = featureStrideForCounts(feats.map((f) => f.n));
+  if (featureStride > MIN_FEATURE_STRIDE) {
+    log(`  expanded feature-id stride: ${featureStride} ` +
+        `(max descriptors/image ${Math.max(...feats.map((f) => f.n))})`);
+  }
+  const uf = new UnionFind(n * featureStride);
   for (const p of pairInfo)
     for (const [fa, fb] of p.matches)
-      uf.union(p.i * MAXF + fa, p.j * MAXF + fb);
+      uf.union(p.i * featureStride + fa, p.j * featureStride + fb);
 
   const groups = new Map();
   for (const p of pairInfo) {
     for (const [fa, fb] of p.matches) {
-      for (const id of [p.i * MAXF + fa, p.j * MAXF + fb]) {
+      for (const id of [p.i * featureStride + fa, p.j * featureStride + fb]) {
         const root = uf.find(id);
         if (!groups.has(root)) groups.set(root, new Set());
         groups.get(root).add(id);
@@ -600,9 +632,9 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
     if (g.size < 2) continue;
     const perImg = new Map();
     for (const id of g) {
-      const img = (id / MAXF) | 0;
+      const img = (id / featureStride) | 0;
       if (!perImg.has(img)) perImg.set(img, []);
-      perImg.get(img).push(id % MAXF);
+      perImg.get(img).push(id % featureStride);
     }
     // a track with two features in one image is a bad union-find merge —
     // drop it entirely rather than salvaging (mixed tracks poison PnP)

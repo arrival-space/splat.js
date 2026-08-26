@@ -55,9 +55,14 @@ browser's install button (or *Add to Home Screen* on iOS) gives the capture
 tool its own icon and window — same pipeline, nothing extra. Drop 20–200 overlapping
 photos of one place into the app — or capture them straight from the device
 camera — or start from a test set (a clone bundles the synthetic set; the
-photo sets are served on the hosted demo). Video input exists in the library
-(`extractSharpFrames`) but is switched off in the app until the frame
-selection is up to the quality bar.
+photo sets are served on the hosted demo). A video can also be selected or
+dropped: an import dialog lets the user choose fixed FPS or an exact frame
+count plus the extracted-frame resolution before extraction. The browser then
+covers the full timeline, keeps the sharpest frame in each time window, and
+feeds those local JPEG frames into the same SfM engine. The dialog stays open
+through scanning and JPEG encoding, showing live stage counts and progress.
+Once ready, the training and camera-resolution settings follow the extracted
+frame size automatically, with a browser-safe 1600px ceiling.
 
 The gear next to **Start training** holds one-knob quality presets — *Draft*
 for a fast first look, *Showcase* for a long high-detail run — plus the
