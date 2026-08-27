@@ -165,20 +165,35 @@ export function parseState(bytes) {
   return { gaussians: { data: params, n: head.n, sh, shK: head.shK }, iter: head.iter };
 }
 
+
+
+function readPlyHeader(bytes) {
+  // PLY headers can exceed a few KiB when tools add comments or many
+  // properties. Scan a bounded prefix instead of assuming the terminator is in
+  // the first 4096 bytes, but still reject files with an unreasonably large or
+  // missing header before allocating typed-array views for the body.
+  const limit = Math.min(bytes.length, 1024 * 1024);
+  const headText = new TextDecoder().decode(bytes.subarray(0, limit));
+  const end = headText.indexOf('end_header\n');
+  if (end < 0) throw new Error('not a PLY file');
+  return {
+    header: headText.slice(0, end).replace(/\r\n?/g, '\n'),
+    bodyAt: end + 'end_header\n'.length,
+  };
+}
+
 /** Standard 3DGS PLY -> the trainer's raw layout (exact inverse of the
  *  exporter's activations; opacities stay as stored — baked is fine to view
  *  and passes through re-exports unchanged). */
 export function parsePlyGaussians(bytes) {
-  const headText = new TextDecoder().decode(bytes.subarray(0, 4096));
-  const end = headText.indexOf('end_header\n');
-  if (end < 0 || !headText.startsWith('ply')) throw new Error('not a PLY file');
-  if (!/^format binary_little_endian 1\.0$/m.test(headText.slice(0, end))) {
+  const { header, bodyAt } = readPlyHeader(bytes);
+  if (!header.startsWith('ply\n')) throw new Error('not a PLY file');
+  if (!/^format binary_little_endian 1\.0$/m.test(header)) {
     throw new Error('PLY must use binary_little_endian 1.0');
   }
-  const bodyAt = end + 'end_header\n'.length;
   let n = 0, vertex = false;
   const props = [];
-  for (const l of headText.slice(0, end).split('\n')) {
+  for (const l of header.split('\n')) {
     const me = l.match(/^element (\S+) (\d+)/);
     if (me) {
       vertex = me[1] === 'vertex';
