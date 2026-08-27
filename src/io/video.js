@@ -1,10 +1,9 @@
 // io/video.js — turn a video file into training photographs, in the browser.
 //
-// Users film places; they rarely have photo sets. This mirrors the sharp-frames
-// policy of the arrival.space server pipeline (sample ~10/s, score sharpness,
-// pick the best N with a minimum temporal buffer between picks — motion-blurred
-// frames lose to their sharp neighbours), then re-captures the winners at full
-// resolution as JPEG blobs the rest of the pipeline treats like photo files.
+// Users film places; they rarely have photo sets. Sample ~10/s, divide the
+// complete timeline into uniform windows, pick the sharpest sample in every
+// window, then re-capture those winners as JPEG blobs. Temporal coverage comes
+// first, so a long sharp pause cannot crowd moving parts of the camera path out.
 //
 // Two passes over a muted <video>:
 //   scan     playback at up to 3x with requestVideoFrameCallback, scoring a
@@ -21,10 +20,8 @@
  * @property {number} [samplesPerSec=10]   sharpness sampling rate (video time)
  * @property {number} [targetFrames]       frames to keep; default scales with
  *   duration: clamp(round(4/s), 24, 140)
- * @property {number} [minBufferSec]       minimum spacing between kept frames;
- *   default 2 samples (0.2s). The server pipeline uses 3, but it also keeps
- *   300 frames — our smaller sets need the density (measured: video-camping
- *   at 0.3s gaps behaves like the stride-2 sets that register worse)
+ * @property {number} [maxFrameDim]        longest output side in pixels;
+ *   0/undefined keeps the original size, and smaller sources never upscale
  * @property {number} [jpegQuality=0.93]
  * @property {(e: {stage: 'scan'|'capture', done: number, total: number}) => void} [onProgress]
  * @property {(msg: string) => void} [log]
@@ -54,11 +51,67 @@ function lapVar(gray, w, h) {
   return sq / n - mean * mean;
 }
 
+/** Pick one sharp winner from each consecutive slice of the sampled timeline.
+ *  Slices are based on ordered sample count because browsers may report video
+ *  timestamps with small codec-dependent gaps. This guarantees full-path
+ *  coverage and deterministic output while retaining local blur rejection. */
+export function selectSharpFrameSamples(samples, targetFrames) {
+  const ordered = samples
+    .filter((sample) => Number.isFinite(sample.t) && Number.isFinite(sample.s))
+    .sort((a, b) => a.t - b.t);
+  if (!ordered.length) return [];
+  const count = Math.max(1, Math.min(ordered.length, Math.round(targetFrames) || 1));
+  const picked = [];
+  for (let window = 0; window < count; window++) {
+    const begin = Math.floor(window * ordered.length / count);
+    const end = Math.max(begin + 1, Math.floor((window + 1) * ordered.length / count));
+    let best = ordered[begin];
+    for (let i = begin + 1; i < end; i++) {
+      if (ordered[i].s > best.s) best = ordered[i];
+    }
+    picked.push(best);
+  }
+  return picked;
+}
+
+/** Normalize the user-facing FPS/count choice into an extraction target. */
+export function planVideoFrames(duration, opts = {}) {
+  const seconds = Math.max(0, Number(duration) || 0);
+  const mode = opts.mode === 'count' ? 'count' : 'fps';
+  const fps = Math.max(0.5, Math.min(10, Number(opts.fps) || 3));
+  const count = Math.max(12, Math.min(200, Math.round(Number(opts.count) || 120)));
+  const uncapped = mode === 'count' ? count : Math.max(1, Math.ceil(seconds * fps));
+  const targetFrames = Math.min(200, uncapped);
+  return {
+    mode, fps, count, targetFrames,
+    capped: targetFrames < uncapped,
+    valid: seconds > 0 && targetFrames >= 12,
+  };
+}
+
+/** Output dimensions for extracted JPEGs, preserving aspect and orientation. */
+export function videoFrameDimensions(width, height, maxFrameDim = 0) {
+  const w = Math.max(1, Math.round(Number(width) || 1));
+  const h = Math.max(1, Math.round(Number(height) || 1));
+  const cap = Math.max(0, Math.round(Number(maxFrameDim) || 0));
+  if (!cap || Math.max(w, h) <= cap) return [w, h];
+  const scale = cap / Math.max(w, h);
+  return [Math.max(1, Math.round(w * scale)), Math.max(1, Math.round(h * scale))];
+}
+
+/** Keep the downstream training and camera caps aligned with extracted video
+ * frames without allowing very large 4K/original frames to explode memory. */
+export function videoPipelineResolution(width, height, maxDim = 1600) {
+  const longest = Math.max(2, Math.round(Math.max(Number(width) || 0, Number(height) || 0)));
+  return Math.min(Math.max(2, Math.round(Number(maxDim) || 1600)), longest);
+}
+
 /**
  * @param {File|Blob} file
  * @param {VideoExtractOptions} [opts]
  * @returns {Promise<{frames: Array<{source: Blob, name: string}>,
- *   duration: number, sampled: number, videoW: number, videoH: number}>}
+ *   duration: number, sampled: number, videoW: number, videoH: number,
+ *   frameW: number, frameH: number}>}
  */
 export async function extractSharpFrames(file, opts = {}) {
   const log = opts.log || (() => {});
@@ -133,33 +186,27 @@ export async function extractSharpFrames(file, opts = {}) {
     if (samples.length < 2) throw new Error('could not decode frames from this video');
     log(`scanned ${samples.length} samples`);
 
-    // ---- selection: best-n by sharpness with a minimum temporal buffer ----
+    // ---- selection: uniform timeline coverage, sharpest within each window ----
     const target = opts.targetFrames ??
       Math.max(24, Math.min(140, Math.round(duration * 4)));
-    const minGap = opts.minBufferSec ?? (2 / sps);
-    const bySharp = [...samples].sort((a, b) => b.s - a.s);
-    const picked = [];
-    for (const cand of bySharp) {
-      if (picked.length >= target) break;
-      if (picked.some((p) => Math.abs(p.t - cand.t) < minGap)) continue;
-      picked.push(cand);
-    }
-    picked.sort((a, b) => a.t - b.t);
-    log(`selected ${picked.length} sharp frames (target ${target}, min gap ${minGap.toFixed(2)}s)`);
+    const picked = selectSharpFrameSamples(samples, target);
+    log(`selected ${picked.length} coverage-aware sharp frames (target ${target})`);
 
-    // ---- pass 2: full-resolution capture at the selected times ----
-    const capCv = mkCanvas(vw, vh);
+    // ---- pass 2: capture at the requested pipeline-ready resolution ----
+    const [frameW, frameH] = videoFrameDimensions(vw, vh, opts.maxFrameDim);
+    log(`extracted frame resolution: ${frameW}x${frameH}`);
+    const capCv = mkCanvas(frameW, frameH);
     const capCtx = capCv.getContext('2d');
     const frames = [];
     for (let i = 0; i < picked.length; i++) {
       video.currentTime = picked[i].t;
       await until(video, 'seeked');
-      capCtx.drawImage(video, 0, 0, vw, vh);
+      capCtx.drawImage(video, 0, 0, frameW, frameH);
       const blob = await toBlob(capCv, opts.jpegQuality ?? 0.93);
       frames.push({ source: blob, name: `frame_${String(i + 1).padStart(5, '0')}.jpg` });
       onProgress({ stage: 'capture', done: i + 1, total: picked.length });
     }
-    return { frames, duration, sampled: samples.length, videoW: vw, videoH: vh };
+    return { frames, duration, sampled: samples.length, videoW: vw, videoH: vh, frameW, frameH };
   } finally {
     video.removeAttribute('src');
     video.load();

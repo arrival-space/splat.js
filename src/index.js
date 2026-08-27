@@ -24,7 +24,10 @@
 export { createSession, Session, undistortFrames, camPosition } from './session.js';
 export { createGpu } from './gpu/context.js';
 export { decodeFrames, processSource, adaptiveTrainCap, FEAT_MAX_DIM, TRAIN_MAX_DIM } from './io/frames.js';
-export { extractSharpFrames, isVideoFile } from './io/video.js';
+export {
+  extractSharpFrames, selectSharpFrameSamples, planVideoFrames,
+  videoFrameDimensions, videoPipelineResolution, isVideoFile,
+} from './io/video.js';
 export { gaussiansToPly, bakeOpacityCompensation } from './io/ply.js';
 export { runSfM } from './sfm/sfm.js';
 export { initGaussians } from './gs/init.js';
