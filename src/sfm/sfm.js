@@ -335,10 +335,12 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
   // it fast. features:'brief' restores the old binary pipeline.
   const useSift = opts.features !== 'brief';
   const requestedSiftFeats = Number(opts.siftFeats);
+  const featureMaxDim = Math.max(...images.map((im) => Math.max(im.fw, im.fh)));
+  const scaledSiftFeats = Math.round(3900 * Math.pow(Math.max(1, featureMaxDim) / 960, 2));
   const siftFeats = Number.isFinite(requestedSiftFeats) && requestedSiftFeats > 0
     ? Math.max(1000, Math.min(MAX_FEATURES_PER_IMAGE / 2, Math.floor(requestedSiftFeats)))
-    : 3900;
-  const featureMaxDim = Math.max(...images.map((im) => Math.max(im.fw, im.fh)));
+    : Math.max(3900, Math.min(MAX_FEATURES_PER_IMAGE / 2, scaledSiftFeats));
+  opts = { ...opts, siftFeats };
   log(`detecting features in ${n} images ` +
       `(${featureMaxDim}px, ${siftFeats} SIFT keypoints/image) ...`);
   const feats = [];

@@ -3,7 +3,7 @@
 import {
   STRIDE, TILE, ENTRIES_CAP, makeProjectSrc, makeRenderSrc, makeChainSrc,
   SCAN_SRC, SCATTER_SRC, SORT_SRC, ADAM_SRC, SH_ADAM_SRC, BLIT_SRC, shRestCoefs,
-  GATHER_SRC, REFINE_APPLY_SRC,
+  GATHER_SRC, REFINE_APPLY_SRC, SSIM_SRC,
 } from './shaders.js';
 import { rodrigues, m3mul } from '../sfm/geometry.js';
 import { createGpu } from '../gpu/context.js';
@@ -75,6 +75,30 @@ export class GSTrainer {
       label: 'render', layout: 'auto',
       compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg), 'render'), entryPoint: 'main' },
     });
+    // D-SSIM loss (opts.ssimWeight > 0): split renderer + image passes.
+    // The fused kernel stays untouched for the default path.
+    this.ssimW = this.opts.ssimWeight ?? 0;
+    if (this.ssimW > 0) {
+      this.pipeRenderFwd = d.createComputePipeline({
+        label: 'render-fwd', layout: 'auto',
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 1), 'render-fwd'), entryPoint: 'main' },
+      });
+      this.pipeRenderBwd = d.createComputePipeline({
+        label: 'render-bwd', layout: 'auto',
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 2, this.ssimW), 'render-bwd'), entryPoint: 'main' },
+      });
+      const ssimMod = mk(SSIM_SRC, 'ssim');
+      const sp = (entry, constants) => d.createComputePipeline({
+        label: `ssim-${entry}`, layout: 'auto',
+        compute: { module: ssimMod, entryPoint: entry, ...(constants ? { constants } : {}) },
+      });
+      this.pipeSsimPrep = sp('prep');
+      this.pipeSsimBH15 = sp('blurH', { NCH: 15 });
+      this.pipeSsimBV15 = sp('blurV', { NCH: 15 });
+      this.pipeSsimCoeff = sp('coeff');
+      this.pipeSsimBH9 = sp('blurH', { NCH: 9 });
+      this.pipeSsimFinal = sp('finalv');
+    }
     this.pipeChain = d.createComputePipeline({
       label: 'chain', layout: 'auto',
       // anisoReg default 0.005 (was 0.02): with SIFT-grade poses the needle
@@ -290,6 +314,58 @@ export class GSTrainer {
     this.bgScatterView = bgScatter(this.uniView);
     this.bgRenderTrain = bgRender(this.uniTrain);
     this.bgRenderView = bgRender(this.uniView);
+    if (this.ssimW > 0) {
+      // SSIM working buffers: A/B pixel-major 16 f32/px, gssim 4 f32/px,
+      // endBuf 1 u32/px (per-pixel walk end handed from fwd to bwd kernel)
+      this.bufEnd = buf(maxPix * 4, B.STORAGE, 'ssim-end');
+      this.bufSsimA = buf(maxPix * 64, B.STORAGE, 'ssim-A');
+      this.bufSsimB = buf(maxPix * 64, B.STORAGE, 'ssim-B');
+      this.bufGssim = buf(maxPix * 16, B.STORAGE, 'ssim-grad');
+      this.bgRenderFwd = d.createBindGroup({
+        layout: this.pipeRenderFwd.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.uniTrain } },
+          { binding: 1, resource: { buffer: this.bufProj } },
+          { binding: 2, resource: { buffer: this.bufTileStart } },
+          { binding: 3, resource: { buffer: this.bufEntries } },
+          { binding: 4, resource: { buffer: this.bufTarget } },
+          { binding: 5, resource: { buffer: this.bufOut } },
+          { binding: 7, resource: { buffer: this.bufStats } },
+          { binding: 8, resource: { buffer: this.bufCamGrad } },
+          { binding: 9, resource: { buffer: this.bufEnd } },
+        ],
+      });
+      this.bgRenderBwd = d.createBindGroup({
+        layout: this.pipeRenderBwd.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.uniTrain } },
+          { binding: 1, resource: { buffer: this.bufProj } },
+          { binding: 2, resource: { buffer: this.bufTileStart } },
+          { binding: 3, resource: { buffer: this.bufEntries } },
+          { binding: 4, resource: { buffer: this.bufTarget } },
+          { binding: 5, resource: { buffer: this.bufOut } },
+          { binding: 6, resource: { buffer: this.bufGradP } },
+          { binding: 9, resource: { buffer: this.bufEnd } },
+          { binding: 10, resource: { buffer: this.bufGssim } },
+        ],
+      });
+      const bgSsim = (pipe, entries) => d.createBindGroup({
+        layout: pipe.getBindGroupLayout(0),
+        entries: entries.map(([binding, buffer]) => ({ binding, resource: { buffer } })),
+      });
+      this.bgSsimPrep = bgSsim(this.pipeSsimPrep, [
+        [0, this.uniTrain], [2, this.bufSsimA], [3, this.bufOut], [4, this.bufTarget]]);
+      this.bgSsimBH15 = bgSsim(this.pipeSsimBH15, [
+        [0, this.uniTrain], [1, this.bufSsimA], [2, this.bufSsimB]]);
+      this.bgSsimBV15 = bgSsim(this.pipeSsimBV15, [
+        [0, this.uniTrain], [1, this.bufSsimB], [2, this.bufSsimA]]);
+      this.bgSsimCoeff = bgSsim(this.pipeSsimCoeff, [
+        [0, this.uniTrain], [1, this.bufSsimA], [2, this.bufSsimB]]);
+      this.bgSsimBH9 = bgSsim(this.pipeSsimBH9, [
+        [0, this.uniTrain], [1, this.bufSsimB], [2, this.bufSsimA]]);
+      this.bgSsimFinal = bgSsim(this.pipeSsimFinal, [
+        [0, this.uniTrain], [1, this.bufSsimA], [3, this.bufOut], [4, this.bufTarget], [5, this.bufGssim]]);
+    }
     this.bgBlitTrain = bgBlit(this.uniTrain);
     this.bgBlitView = bgBlit(this.uniView);
     this.bgSort = d.createBindGroup({
@@ -459,9 +535,24 @@ export class GSTrainer {
     p.setPipeline(this.pipeSort);
     p.setBindGroup(0, this.bgSort);
     p.dispatchWorkgroups(numTiles);
+    const gx = Math.ceil(meta.w / TILE), gy = Math.ceil(meta.h / TILE);
+    if (train && this.ssimW > 0) {
+      // split renderer with the D-SSIM image passes in between; dispatch
+      // ordering within one pass makes each stage's writes visible to the next
+      const run = (pipe, bg) => { p.setPipeline(pipe); p.setBindGroup(0, bg); p.dispatchWorkgroups(gx, gy); };
+      run(this.pipeRenderFwd, this.bgRenderFwd);
+      run(this.pipeSsimPrep, this.bgSsimPrep);
+      run(this.pipeSsimBH15, this.bgSsimBH15);
+      run(this.pipeSsimBV15, this.bgSsimBV15);
+      run(this.pipeSsimCoeff, this.bgSsimCoeff);
+      run(this.pipeSsimBH9, this.bgSsimBH9);
+      run(this.pipeSsimFinal, this.bgSsimFinal);
+      run(this.pipeRenderBwd, this.bgRenderBwd);
+      return;
+    }
     p.setPipeline(this.pipeRender);
     p.setBindGroup(0, train ? this.bgRenderTrain : this.bgRenderView);
-    p.dispatchWorkgroups(Math.ceil(meta.w / TILE), Math.ceil(meta.h / TILE));
+    p.dispatchWorkgroups(gx, gy);
   }
 
   /** Run one training iteration (own submit; queue-ordered).
@@ -478,8 +569,9 @@ export class GSTrainer {
     }
     const meta = this.camMeta[ci];
     this.lastCam = ci; // which camera this step trains on (UI pulse)
-    if (this.shK) {
+    if (this.shK && (this.opts.shRamp ?? true)) {
       // INRIA-style band ramp: one SH degree per 1000 iters
+      // (opts.shRamp = false trains full degree from step 0, Brush-style)
       this.camUniforms[ci][32] = Math.min(this.shDeg, Math.floor(this.iter / 1000));
     }
     d.queue.writeBuffer(this.uniTrain, 0, this.camUniforms[ci]);
@@ -491,7 +583,12 @@ export class GSTrainer {
     // floor-lr polish phase. A/B'd vs INRIA-style full-length decay on
     // camping @40k: full-length gains +0.18 train but LOSES 0.15dB holdout
     // (positions moving late = overfit); the polish phase wins.
-    const posLr = this.basePosLr * Math.pow(0.01, Math.min(1, this.iter / (0.75 * this.horizon)));
+    // opts.lrExp = <end fraction>: Brush-style smooth exponential over the
+    // FULL horizon (e.g. 0.05 = decay to 5%), replacing the 100x-by-75% +
+    // floor-polish default. Sweepable together with posLrScale.
+    const posLr = this.opts.lrExp
+      ? this.basePosLr * Math.pow(this.opts.lrExp, Math.min(1, this.iter / this.horizon))
+      : this.basePosLr * Math.pow(0.01, Math.min(1, this.iter / (0.75 * this.horizon)));
     this.adamData[0] = this.adamData[1] = this.adamData[2] = posLr;
     d.queue.writeBuffer(this.uniAdam, 0, this.adamData);
     if (this.shK) {
@@ -963,6 +1060,28 @@ export class GSTrainer {
     const shV = this.shK ? await readBuf(this.bufSHV, this.cap * shr * 4) : null;
     const sig = (x) => 1 / (1 + Math.exp(-x));
 
+    // opts.errDonors: read the per-splat error-mass window (gradP slot 11,
+    // accumulated since the last refine; the gather zeroes it) through the
+    // refineV2 gather pass. Donor choice ∝ error instead of ∝ size — new
+    // capacity goes where the image is wrong, not where splats are big.
+    let emass = null;
+    if (this.opts.errDonors) {
+      d.queue.writeBuffer(this.uniGather, 0, new Uint32Array([this.n, 0, 0, 0]));
+      const encG = d.createCommandEncoder();
+      const pg = encG.beginComputePass();
+      pg.setPipeline(this.pipeGather);
+      pg.setBindGroup(0, this.bgGather);
+      const groups = Math.ceil(this.n / 256);
+      if (groups <= 65535) pg.dispatchWorkgroups(groups);
+      else pg.dispatchWorkgroups(65535, Math.ceil(groups / 65535));
+      pg.end();
+      encG.copyBufferToBuffer(this.bufGather, 0, this.bufGatherRead, 0, this.n * 16);
+      d.queue.submit([encG.finish()]);
+      await this.bufGatherRead.mapAsync(GPUMapMode.READ, 0, this.n * 16);
+      emass = new Float32Array(this.bufGatherRead.getMappedRange(0, this.n * 16)).slice();
+      this.bufGatherRead.unmap();
+    }
+
     let dead = [];
     const donors = [];
     for (let i = 0; i < this.n; i++) {
@@ -991,10 +1110,35 @@ export class GSTrainer {
     const bigDonors = [...donors]
       .sort((a, b) => meanLogScale(b) - meanLogScale(a))
       .slice(0, Math.max(16, donors.length >> 2));
+    // error-weighted donor draw (only when the window carries any mass)
+    let drawErr = null;
+    if (emass) {
+      const cdf = new Float64Array(donors.length);
+      let acc = 0;
+      for (let k = 0; k < donors.length; k++) { acc += Math.max(0, emass[donors[k] * 4 + 2]); cdf[k] = acc; }
+      if (acc > 0) {
+        drawErr = () => {
+          const r = rng() * acc;
+          let lo = 0, hi = donors.length - 1;
+          while (lo < hi) { const mid = (lo + hi) >> 1; if (cdf[mid] < r) lo = mid + 1; else hi = mid; }
+          return donors[lo];
+        };
+      }
+    }
+    const splitV2 = this.opts.splitV2 === true;
+    const usedSplit = new Set();
     const spawnAt = (bi, allowSplit) => {
-      const doSplit = allowSplit && bigDonors.length > 16 && rng() < 0.7;
+      const doSplit = splitV2
+        ? true
+        : (allowSplit && rng() < 0.7 && (drawErr ? donors.length > 16 : bigDonors.length > 16));
       let don;
-      if (doSplit) {
+      if (drawErr) {
+        don = drawErr();
+        if (doSplit) { // prefer one split per donor per refine
+          for (let tries = 0; usedSplit.has(don) && tries < 8; tries++) don = drawErr();
+          usedSplit.add(don);
+        }
+      } else if (doSplit && !splitV2) {
         const di = (rng() * bigDonors.length) | 0;
         don = bigDonors[di];
         bigDonors[di] = bigDonors[bigDonors.length - 1];
@@ -1003,21 +1147,49 @@ export class GSTrainer {
         don = donors[(rng() * donors.length) | 0];
       }
       const bd = don * STRIDE;
-      const s = Math.exp(meanLogScale(don));
-      params[bi] = params[bd] + gauss() * s * 0.7;
-      params[bi + 1] = params[bd + 1] + gauss() * s * 0.7;
-      params[bi + 2] = params[bd + 2] + gauss() * s * 0.7;
-      for (let k = 3; k <= 12; k++) params[bi + k] = params[bd + k];
-      if (doSplit) {
-        const shrink = Math.log(1 / 1.6);
+      if (splitV2) {
+        // Brush/classic-3DGS split: offset drawn from the donor's OWN
+        // ellipsoid (rotated frame, sigma 0.5), applied +/- to the two
+        // halves; scales /sqrt(2) on both; opacity alpha-conserving
+        // o -> 1-sqrt(1-o) on both. Image-neutral at birth — the optimizer
+        // never spends iterations undoing the add. Donor keeps its moments.
+        let qw = params[bd + 6], qx = params[bd + 7], qy = params[bd + 8], qz = params[bd + 9];
+        const qn = Math.hypot(qw, qx, qy, qz) || 1;
+        qw /= qn; qx /= qn; qy /= qn; qz /= qn;
+        const ex = gauss() * 0.5 * Math.exp(params[bd + 3]);
+        const ey = gauss() * 0.5 * Math.exp(params[bd + 4]);
+        const ez = gauss() * 0.5 * Math.exp(params[bd + 5]);
+        const ox = (1 - 2 * (qy * qy + qz * qz)) * ex + 2 * (qx * qy - qw * qz) * ey + 2 * (qx * qz + qw * qy) * ez;
+        const oy = 2 * (qx * qy + qw * qz) * ex + (1 - 2 * (qx * qx + qz * qz)) * ey + 2 * (qy * qz - qw * qx) * ez;
+        const oz = 2 * (qx * qz - qw * qy) * ex + 2 * (qy * qz + qw * qx) * ey + (1 - 2 * (qx * qx + qy * qy)) * ez;
+        params[bi] = params[bd] + ox;
+        params[bi + 1] = params[bd + 1] + oy;
+        params[bi + 2] = params[bd + 2] + oz;
+        params[bd] -= ox; params[bd + 1] -= oy; params[bd + 2] -= oz;
+        for (let k = 3; k <= 12; k++) params[bi + k] = params[bd + k];
+        const shrink = Math.log(1 / Math.SQRT2);
         for (let k = 3; k <= 5; k++) { params[bi + k] += shrink; params[bd + k] += shrink; }
-        params[bi + 13] = params[bd + 13]; // split keeps the donor's opacity
-        for (let k = 0; k < STRIDE; k++) { m[bd + k] = 0; v[bd + k] = 0; } // donor changed shape: reset its moments
+        const o = sig(params[bd + 13]);
+        const oNew = Math.min(0.9999, Math.max(1e-4, 1 - Math.sqrt(1 - o)));
+        const lgt = Math.log(oNew / (1 - oNew));
+        params[bi + 13] = lgt; params[bd + 13] = lgt;
       } else {
-        params[bi + 3] += Math.log(0.85);
-        params[bi + 4] += Math.log(0.85);
-        params[bi + 5] += Math.log(0.85);
-        params[bi + 13] = Math.log(0.25 / 0.75);
+        const s = Math.exp(meanLogScale(don));
+        params[bi] = params[bd] + gauss() * s * 0.7;
+        params[bi + 1] = params[bd + 1] + gauss() * s * 0.7;
+        params[bi + 2] = params[bd + 2] + gauss() * s * 0.7;
+        for (let k = 3; k <= 12; k++) params[bi + k] = params[bd + k];
+        if (doSplit) {
+          const shrink = Math.log(1 / 1.6);
+          for (let k = 3; k <= 5; k++) { params[bi + k] += shrink; params[bd + k] += shrink; }
+          params[bi + 13] = params[bd + 13]; // split keeps the donor's opacity
+          for (let k = 0; k < STRIDE; k++) { m[bd + k] = 0; v[bd + k] = 0; } // donor changed shape: reset its moments
+        } else {
+          params[bi + 3] += Math.log(0.85);
+          params[bi + 4] += Math.log(0.85);
+          params[bi + 5] += Math.log(0.85);
+          params[bi + 13] = Math.log(0.25 / 0.75);
+        }
       }
       params[bi + 14] = 0; params[bi + 15] = 0;
       for (let k = 0; k < STRIDE; k++) { m[bi + k] = 0; v[bi + k] = 0; }
@@ -1027,7 +1199,7 @@ export class GSTrainer {
         for (let k = 0; k < shr; k++) {
           sh[so + k] = sh[sd + k];
           shM[so + k] = 0; shV[so + k] = 0;
-          if (doSplit) { shM[sd + k] = 0; shV[sd + k] = 0; }
+          if (doSplit && !splitV2) { shM[sd + k] = 0; shV[sd + k] = 0; }
         }
       }
     };
@@ -1072,6 +1244,32 @@ export class GSTrainer {
     // entry-budget drops (whole tiles skipped) are counted by the scan pass
     // into stats[3] and surfaced via readLoss -> this.entryOverflowTiles
     return { moved: dead.length, grown, n: this.n, maxTile, overflow: this.entryOverflowTiles || 0 };
+  }
+
+  /** Cheap health probe: sample the head of the params buffer. iOS Safari
+   *  can purge WebGPU buffer contents from a backgrounded tab WITHOUT firing
+   *  device-loss — the model keeps "training" on zeroed or garbage state.
+   *  Returns false when the sample is all-zero / non-finite / unreadable. */
+  async sanityProbe() {
+    try {
+      const d = this.device;
+      const bytes = Math.min(this.n, 64) * STRIDE * 4;
+      const rb = d.createBuffer({ size: bytes, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+      const enc = d.createCommandEncoder();
+      enc.copyBufferToBuffer(this.bufParams, 0, rb, 0, bytes);
+      d.queue.submit([enc.finish()]);
+      await rb.mapAsync(GPUMapMode.READ);
+      const v = new Float32Array(rb.getMappedRange());
+      let nonzero = false;
+      for (let i = 0; i < v.length; i++) {
+        if (!Number.isFinite(v[i])) { rb.unmap(); rb.destroy(); return false; }
+        if (v[i] !== 0) nonzero = true;
+      }
+      rb.unmap(); rb.destroy();
+      return nonzero;
+    } catch {
+      return false; // unreadable = the device is gone in all but name
+    }
   }
 
   /** Read back current Gaussian parameters (+ SH coeffs when enabled). */

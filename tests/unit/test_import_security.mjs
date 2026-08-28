@@ -21,8 +21,8 @@ const props = [
   'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3',
 ];
 
-function plyBytes(properties = props, bodyFloats = properties.length) {
-  const head = enc.encode('ply\nformat binary_little_endian 1.0\n' +
+function plyBytes(properties = props, bodyFloats = properties.length, comments = '') {
+  const head = enc.encode('ply\nformat binary_little_endian 1.0\n' + comments +
     'element vertex 1\n' + properties.map((p) => `property float ${p}`).join('\n') +
     '\nend_header\n');
   const out = new Uint8Array(head.length + bodyFloats * 4);
@@ -37,6 +37,10 @@ assert.throws(() => parseState(stateBytes({ n: Number.MAX_SAFE_INTEGER, payload:
 const model = parsePlyGaussians(plyBytes());
 assert.equal(model.n, 1);
 assert.ok([...model.data].every(Number.isFinite));
+
+const longHeaderModel = parsePlyGaussians(plyBytes(props, props.length, `comment ${'x'.repeat(5000)}\n`));
+assert.equal(longHeaderModel.n, 1);
+assert.ok([...longHeaderModel.data].every(Number.isFinite));
 assert.throws(() => parsePlyGaussians(plyBytes(props.filter((p) => p !== 'f_dc_1'))), /f_dc_1/);
 assert.throws(() => parsePlyGaussians(plyBytes(props, props.length - 1)), /truncated/);
 

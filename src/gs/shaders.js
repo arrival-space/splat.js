@@ -527,7 +527,10 @@ fn main(@builtin(workgroup_id) wg: vec3u,
 //                   (TBDR) GPUs pay dearly for contended global atomics —
 //                   this is the difference between ~12 it/s and usable on an
 //                   M1. Integer sums commute, so results are bit-identical.
-export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false) =>
+// mode: 0 = fused fwd+bwd (default); 1 = forward only (stores the per-pixel
+// walk end for a later backward — the D-SSIM image passes run in between);
+// 2 = backward only (restores C/T/end, mixes the SSIM gradient into gC).
+export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false, mode = 0, ssimW = 0.2) =>
   (subgroups ? 'enable subgroups;\n' : '') + CAM_STRUCT + cutConsts(E, A) + /* wgsl */ `
 @group(0) @binding(1) var<storage, read> proj: array<f32>;
 @group(0) @binding(2) var<storage, read> tileStart: array<u32>;
@@ -537,6 +540,10 @@ export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = f
 @group(0) @binding(6) var<storage, read_write> gradP: array<atomic<i32>>;
 @group(0) @binding(7) var<storage, read_write> stats: array<atomic<u32>>;
 @group(0) @binding(8) var<storage, read_write> gradCam: array<atomic<i32>>;
+${mode === 1 ? '@group(0) @binding(9) var<storage, read_write> endBuf: array<u32>;' : ''}
+${mode === 2 ? `@group(0) @binding(9) var<storage, read> endBuf: array<u32>;
+@group(0) @binding(10) var<storage, read> gssim: array<f32>;
+const SSIMW = ${ssimW};` : ''}
 
 fn camAdd(idx: u32, v: f32) {
   atomicAdd(&gradCam[idx], i32(round(clamp(v * FIXCAM, -1.0e9, 1.0e9))));
@@ -608,11 +615,24 @@ ${tileGrad ? '  let pxOk = g.x < W && g.y < H;' : '  if (g.x >= W || g.y >= H) {
   let segS = tileStart[tile];
   let segE = tileStart[tile + 1u];
 
+${mode === 2 ? /* wgsl */ `
+  // ---- backward-only: forward state restored from outImg / endBuf ----
+  let pi = g.y * W + g.x;
+  var T = 1.0;
+  var end = segS;
+  var C = vec3f(0.0);
+` + (tileGrad ? '  if (pxOk) {' : '  {') + /* wgsl */ `
+    C = vec3f(outImg[pi * 4u], outImg[pi * 4u + 1u], outImg[pi * 4u + 2u]);
+    T = 1.0 - outImg[pi * 4u + 3u];
+    end = endBuf[pi];
+  }
+  let bg = cam.misc.xyz;
+` : /* wgsl */ `
   // ---- forward: sorted front-to-back alpha compositing ----
   var T = 1.0;
   var Crgb = vec3f(0.0);
   var end = segS; // one past the last processed entry
-${tileGrad ? '  if (pxOk) {' : '  {'}
+` + (tileGrad ? '  if (pxOk) {' : '  {') + /* wgsl */ `
   for (var k = segS; k < segE; k++) {
     if (entries[2u * k] == 0xFFFFFFFFu) { break; } // segment padding
     end = k + 1u;
@@ -639,12 +659,13 @@ ${tileGrad ? '  if (pxOk) {' : '  {'}
   let bg = cam.misc.xyz;
   let C = Crgb + T * bg;
   let pi = g.y * W + g.x;
-${tileGrad ? '  if (pxOk) {' : '  {'}
+` + (tileGrad ? '  if (pxOk) {' : '  {') + /* wgsl */ `
   outImg[pi * 4u]      = C.r;
   outImg[pi * 4u + 1u] = C.g;
   outImg[pi * 4u + 2u] = C.b;
   outImg[pi * 4u + 3u] = 1.0 - T;
-  }
+${mode === 1 ? '  endBuf[pi] = end;' : ''}
+  }`}
 
   if (cam.misc2.x < 0.5) { return; } // uniform: view render, no gradients
 
@@ -659,27 +680,35 @@ ${tileGrad ? '  var lossOk = pxOk;' : '  var lossOk = true;'}
       lossOk = false; // invalid pixel (undistortion out-of-frame sentinel)
     } else {
       let tcol = unpack4x8unorm(packed).rgb;
-      atomicAdd(&stats[2], 1u); // valid-pixel count (PSNR denominator)
       // per-image exposure compensation (gain = cam.proj.w, bias = cam.misc2.w)
       let gain = cam.proj.w;
       let err = (gain * C + vec3f(cam.misc2.w)) - tcol;
-      // squared error for the PSNR metric, DITHERED before quantization: plain
-      // truncation zeroes sub-quantum pixels and inflates PSNR above ~40dB
-      let dith = fract(sin(f32(pi) * 12.9898) * 43758.5453);
-      atomicAdd(&stats[0], u32(dot(err, err) * 16.0 + dith));
       // Charbonnier (smooth L1); gC = dL/dC up to a constant
       const DELTA = 0.03;
       let root = sqrt(err * err + vec3f(DELTA * DELTA));
       let eg = err / root;         // dL / d(exposure-adjusted color)
-      gC = gain * eg;              // dL / d(rendered color)
+${mode === 2 ? /* wgsl */ `      // mix in the D-SSIM gradient (computed by the image passes into
+      // gssim, in exposure-adjusted color space): L = (1-w)*charb + w*(1-S)
+      let gs = vec3f(gssim[pi * 4u], gssim[pi * 4u + 1u], gssim[pi * 4u + 2u]);
+      gC = gain * ((1.0 - SSIMW) * eg - SSIMW * gs);` : /* wgsl */ `      gC = gain * eg;              // dL / d(rendered color)`}
       let lossv = (root.x + root.y + root.z) - 3.0 * DELTA;
       perr = lossv;
+${mode === 2 ? '' : /* wgsl */ `      atomicAdd(&stats[2], 1u); // valid-pixel count (PSNR denominator)
+      // squared error for the PSNR metric, DITHERED before quantization: plain
+      // truncation zeroes sub-quantum pixels and inflates PSNR above ~40dB
+      let dith = fract(sin(f32(pi) * 12.9898) * 43758.5453);
+      atomicAdd(&stats[0], u32(dot(err, err) * 16.0 + dith));
       atomicAdd(&stats[1], u32(lossv * 32768.0)); // training loss (grad-check)
       let ci8 = u32(cam.misc2.y) * 8u;
       camAdd(ci8 + 6u, dot(eg, C) * gain); // d/d(log gain)
-      camAdd(ci8 + 7u, eg.x + eg.y + eg.z); // d/d(bias)
+      camAdd(ci8 + 7u, eg.x + eg.y + eg.z); // d/d(bias)`}
     }
   }
+` + (mode === 1 ? /* wgsl */ `
+}
+` /* forward-only: backward OMITTED (dead code still counts toward the
+     per-stage storage-buffer limit); the SSIM passes + bwd kernel follow */
+: /* wgsl */ `
 ${tileGrad ? '' : '  if (!lossOk) { return; }'}
 
   // ---- backward: back-to-front transmittance recursion ----
@@ -810,7 +839,7 @@ ${tileGrad ? (subgroups ? /* wgsl */ `
 ` : ''}
   }
 }
-`;
+`);
 
 export const makeChainSrc = (AREG = 0.02, shDeg = 0) => CAM_STRUCT + /* wgsl */ `
 const AREG = ${AREG.toExponential()};
@@ -1319,6 +1348,143 @@ fn main(@builtin(global_invocation_id) gid: vec3u,
       let sd = op.dst * ru.shr;
       for (var j = 0u; j < ru.shr; j++) { shM[sd + j] = 0.0; shV[sd + j] = 0.0; }
     }
+  }
+}
+`;
+
+// ---------------- D-SSIM loss passes (opts.ssimWeight > 0) ----------------
+// Image-space pipeline between the forward and backward raster:
+//   prep     -> A: [x, y, x^2, y^2, xy] (3ch each; x = exposure-adjusted
+//               prediction, y = target; invalid target pixels -> 0)
+//   blurH/V  -> 11-tap Gaussian (sigma 1.5), separable; A -> B -> A
+//   coeff    -> B: closed-form SSIM partials per pixel/channel:
+//               c1 = dS/dmu_x, c2 = dS/dE[x^2], c3 = dS/dE[xy]
+//   blurH(9) -> B -> A
+//   finalv   -> vertical blur of the partials + chain rule:
+//               dS/dx(q) = [G*c1](q) + 2 x(q) [G*c2](q) + y(q) [G*c3](q)
+//               written to gssim; the backward raster mixes it into gC.
+// A/B are pixel-major, 16 f32 per pixel (15 used). All passes bind the
+// training cam uniform for W/H, target offset, and exposure gain/bias.
+export const SSIM_SRC = CAM_STRUCT + /* wgsl */ `
+@group(0) @binding(1) var<storage, read> srcb: array<f32>;
+@group(0) @binding(2) var<storage, read_write> dstb: array<f32>;
+@group(0) @binding(3) var<storage, read> outImg: array<f32>;
+@group(0) @binding(4) var<storage, read> tgtImg: array<u32>;
+@group(0) @binding(5) var<storage, read_write> gssim: array<f32>;
+
+override NCH: u32 = 15u;
+const SC1 = 1e-4;   // (0.01)^2
+const SC2 = 9e-4;   // (0.03)^2
+
+// normalized 11-tap Gaussian, sigma 1.5: w(k) = exp(-k^2/4.5)/3.75906
+fn kw(k: i32) -> f32 { return 0.2660255 * exp(-f32(k * k) / 4.5); }
+
+// exposure-adjusted prediction x and target y; w = 0 marks invalid pixels
+fn readXY(pi: u32) -> array<vec4f, 2> {
+  let packed = tgtImg[bitcast<u32>(cam.misc.w) + pi];
+  var o = array<vec4f, 2>(vec4f(0.0), vec4f(0.0));
+  if ((packed >> 24u) != 0u) {
+    let x = cam.proj.w * vec3f(outImg[pi * 4u], outImg[pi * 4u + 1u], outImg[pi * 4u + 2u]) + vec3f(cam.misc2.w);
+    o[0] = vec4f(x, 1.0);
+    o[1] = vec4f(unpack4x8unorm(packed).rgb, 1.0);
+  }
+  return o;
+}
+
+@compute @workgroup_size(16, 16)
+fn prep(@builtin(global_invocation_id) g: vec3u) {
+  let W = u32(cam.size.x); let H = u32(cam.size.y);
+  if (g.x >= W || g.y >= H) { return; }
+  let pi = g.y * W + g.x;
+  let v = readXY(pi);
+  let x = v[0].rgb; let y = v[1].rgb;
+  let b = pi * 16u;
+  dstb[b]      = x.r; dstb[b + 1u]  = x.g; dstb[b + 2u]  = x.b;
+  dstb[b + 3u] = y.r; dstb[b + 4u]  = y.g; dstb[b + 5u]  = y.b;
+  dstb[b + 6u] = x.r * x.r; dstb[b + 7u]  = x.g * x.g; dstb[b + 8u]  = x.b * x.b;
+  dstb[b + 9u] = y.r * y.r; dstb[b + 10u] = y.g * y.g; dstb[b + 11u] = y.b * y.b;
+  dstb[b + 12u] = x.r * y.r; dstb[b + 13u] = x.g * y.g; dstb[b + 14u] = x.b * y.b;
+}
+
+@compute @workgroup_size(16, 16)
+fn blurH(@builtin(global_invocation_id) g: vec3u) {
+  let W = u32(cam.size.x); let H = u32(cam.size.y);
+  if (g.x >= W || g.y >= H) { return; }
+  let rowB = g.y * W;
+  let db = (rowB + g.x) * 16u;
+  for (var ch = 0u; ch < NCH; ch++) {
+    var s = 0.0;
+    for (var k = -5; k <= 5; k++) {
+      let xx = u32(clamp(i32(g.x) + k, 0, i32(W) - 1));
+      s += kw(k) * srcb[(rowB + xx) * 16u + ch];
+    }
+    dstb[db + ch] = s;
+  }
+}
+
+@compute @workgroup_size(16, 16)
+fn blurV(@builtin(global_invocation_id) g: vec3u) {
+  let W = u32(cam.size.x); let H = u32(cam.size.y);
+  if (g.x >= W || g.y >= H) { return; }
+  let db = (g.y * W + g.x) * 16u;
+  for (var ch = 0u; ch < NCH; ch++) {
+    var s = 0.0;
+    for (var k = -5; k <= 5; k++) {
+      let yy = u32(clamp(i32(g.y) + k, 0, i32(H) - 1));
+      s += kw(k) * srcb[(yy * W + g.x) * 16u + ch];
+    }
+    dstb[db + ch] = s;
+  }
+}
+
+@compute @workgroup_size(16, 16)
+fn coeff(@builtin(global_invocation_id) g: vec3u) {
+  let W = u32(cam.size.x); let H = u32(cam.size.y);
+  if (g.x >= W || g.y >= H) { return; }
+  let b = (g.y * W + g.x) * 16u;
+  for (var ch = 0u; ch < 3u; ch++) {
+    let mx  = srcb[b + ch];        // G*x
+    let my  = srcb[b + 3u + ch];   // G*y
+    let ex2 = srcb[b + 6u + ch];   // G*x^2
+    let ey2 = srcb[b + 9u + ch];   // G*y^2
+    let exy = srcb[b + 12u + ch];  // G*xy
+    let sx2 = ex2 - mx * mx;
+    let sy2 = ey2 - my * my;
+    let sxy = exy - mx * my;
+    let a1 = 2.0 * mx * my + SC1;
+    let a2 = 2.0 * sxy + SC2;
+    let b1 = mx * mx + my * my + SC1;
+    let b2 = sx2 + sy2 + SC2;
+    let inv = 1.0 / (b1 * b2);
+    let s = a1 * a2 * inv;
+    dstb[b + ch]      = 2.0 * (my * (a2 - a1) - s * mx * (b2 - b1)) * inv; // dS/dmu_x
+    dstb[b + 3u + ch] = -s / b2;                                          // dS/dE[x^2]
+    dstb[b + 6u + ch] = 2.0 * a1 * inv;                                   // dS/dE[xy]
+  }
+}
+
+@compute @workgroup_size(16, 16)
+fn finalv(@builtin(global_invocation_id) g: vec3u) {
+  let W = u32(cam.size.x); let H = u32(cam.size.y);
+  if (g.x >= W || g.y >= H) { return; }
+  let pi = g.y * W + g.x;
+  let v = readXY(pi);
+  if (v[0].w == 0.0) { // invalid target pixel: no SSIM gradient
+    gssim[pi * 4u] = 0.0; gssim[pi * 4u + 1u] = 0.0; gssim[pi * 4u + 2u] = 0.0;
+    return;
+  }
+  let x = v[0].rgb; let y = v[1].rgb;
+  for (var ch = 0u; ch < 3u; ch++) {
+    var c1 = 0.0; var c2 = 0.0; var c3 = 0.0;
+    for (var k = -5; k <= 5; k++) {
+      let yy = u32(clamp(i32(g.y) + k, 0, i32(H) - 1));
+      let sb = (yy * W + g.x) * 16u;
+      let wgt = kw(k);
+      c1 += wgt * srcb[sb + ch];
+      c2 += wgt * srcb[sb + 3u + ch];
+      c3 += wgt * srcb[sb + 6u + ch];
+    }
+    gssim[pi * 4u + ch] = c1 + 2.0 * x[ch] * c2 + y[ch] * c3;
   }
 }
 `;

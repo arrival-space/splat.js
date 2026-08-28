@@ -1,0 +1,20 @@
+{"set":"synthetic","iters":20000,"psnrTest":24.734,"heldOut":2,"trainMin":0.8,"solveMin":0,"splats":112366,"cams":12,"of":12,"rms":0.459,"res":1600,"ts":"2026-08-26T14:13:17.386Z"}
+{"set":"synthetic","iters":40000,"psnrTest":25.846,"heldOut":2,"trainMin":2.5,"solveMin":0,"splats":265400,"cams":12,"of":12,"rms":0.459,"res":1600,"ts":"2026-08-26T14:16:24.900Z"}
+{"set":"camping","iters":20000,"psnrTest":24.861,"heldOut":15,"trainMin":2.7,"solveMin":1.6,"splats":210670,"cams":113,"of":113,"rms":0.608,"res":1600,"ts":"2026-08-26T14:21:02.359Z"}
+{"set":"camping","iters":40000,"psnrTest":25.323,"heldOut":15,"trainMin":7.5,"solveMin":1.6,"splats":473928,"cams":113,"of":113,"rms":0.608,"res":1600,"ts":"2026-08-26T14:30:16.888Z"}
+{"set":"truck","iters":20000,"psnrTest":24.449,"heldOut":32,"trainMin":2.3,"solveMin":3.9,"splats":268205,"cams":251,"of":251,"rms":0.67,"res":979,"ts":"2026-08-26T14:36:51.383Z"}
+{"set":"truck","iters":40000,"psnrTest":25.424,"heldOut":32,"trainMin":4.8,"solveMin":3.6,"splats":603384,"cams":251,"of":251,"rms":0.67,"res":979,"ts":"2026-08-26T15:02:07.779Z"}
+{"set":"garden","iters":20000,"psnrTest":25.12,"heldOut":24,"protocol":"eval8","trainMin":2.1,"solveMin":2.9,"splats":334479,"cams":185,"of":185,"rms":0.607,"res":1600,"ts":"2026-08-26T15:07:40.299Z"}
+{"set":"garden","iters":40000,"psnrTest":26.243,"heldOut":24,"protocol":"eval8","trainMin":5.8,"solveMin":3,"splats":752496,"cams":185,"of":185,"rms":0.607,"res":1600,"ts":"2026-08-26T15:16:49.186Z"}
+{"set":"bicycle","iters":20000,"psnrTest":22.745,"heldOut":25,"protocol":"eval8","trainMin":1.8,"solveMin":1.9,"splats":208044,"cams":192,"of":194,"rms":0.626,"res":1600,"ts":"2026-08-26T15:21:08.028Z"}
+{"set":"bicycle","iters":40000,"psnrTest":23.148,"heldOut":25,"protocol":"eval8","trainMin":4.5,"solveMin":1.9,"splats":445728,"cams":192,"of":194,"rms":0.626,"res":1600,"ts":"2026-08-26T15:27:55.736Z"}
+{"set":"playroom","iters":20000,"psnrTest":25.692,"heldOut":27,"protocol":"eval8","trainMin":1.8,"solveMin":3.6,"splats":302365,"cams":218,"of":225,"rms":0.675,"res":1600,"ts":"2026-08-26T15:33:46.580Z"}
+{"set":"playroom","iters":40000,"psnrTest":25.597,"heldOut":27,"protocol":"eval8","trainMin":5.2,"solveMin":3.5,"splats":680232,"cams":218,"of":225,"rms":0.675,"res":1600,"ts":"2026-08-26T15:43:03.149Z"}
+{"set":"train","iters":20000,"psnrTest":21.377,"heldOut":38,"protocol":"eval8","trainMin":2.1,"solveMin":6.5,"splats":414473,"cams":301,"of":301,"rms":0.633,"res":1600,"ts":"2026-08-26T15:52:11.583Z"}
+{"set":"train","iters":40000,"psnrTest":22.007,"heldOut":38,"protocol":"eval8","trainMin":6.7,"solveMin":6.5,"splats":888072,"cams":301,"of":301,"rms":0.633,"res":1600,"ts":"2026-08-26T16:05:56.429Z"}
+{"set":"bar360","iters":20000,"psnrTest":20.403,"heldOut":48,"protocol":"eval8","trainMin":2.5,"solveMin":6.9,"splats":615597,"cams":600,"of":612,"rms":0.763,"res":912,"ts":"2026-08-26T16:17:37.381Z"}
+{"set":"bar360","iters":40000,"psnrTest":20.641,"heldOut":48,"protocol":"eval8","trainMin":7.9,"solveMin":6.3,"splats":1319040,"cams":600,"of":612,"rms":0.763,"res":912,"ts":"2026-08-26T16:34:14.100Z"}
+{"set":"synthetic","iters":20000,"psnrTest":38.854,"heldOut":1,"protocol":"holdout1","trainMin":0.8,"solveMin":0,"splats":112366,"cams":12,"of":12,"rms":0.459,"res":1600,"ts":"2026-08-26T16:36:05.170Z"}
+{"set":"synthetic","iters":40000,"psnrTest":38.915,"heldOut":1,"protocol":"holdout1","trainMin":2.5,"solveMin":0,"splats":265400,"cams":12,"of":12,"rms":0.459,"res":1600,"ts":"2026-08-26T16:38:45.567Z"}
+{"set":"truck","iters":250000,"psnrTest":26.373,"heldOut":32,"protocol":"eval8","trainMin":60.7,"solveMin":4,"splats":2000000,"cams":251,"of":251,"rms":0.67,"res":979,"config":"classic-2M (README row)","ts":"2026-08-26T17:46:18Z"}
+{"set":"truck","iters":250000,"psnrTest":26.292,"heldOut":32,"protocol":"eval8","trainMin":98.6,"solveMin":4,"splats":4000000,"cams":251,"of":251,"rms":0.67,"res":979,"config":"classic-4M capacity probe","ts":"2026-08-26T19:48:45Z"}

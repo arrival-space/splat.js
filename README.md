@@ -29,10 +29,10 @@ Or open a finished result straight away — every trained run can be saved and
 shared, and `?model=<url>` (+ `&recon=<url>` for the solved camera path)
 loads it back into the viewer, capture-path tour included:
 
-**[The Truck — Tanks & Temples](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/truck_sh3_250k.sog&recon=https://ugc.arrival.space/splatjs/models/truck_sh3_250k_recon.json)**
+**[The Truck — Tanks & Temples](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/truck_sh3_250k_v2.sog&recon=https://ugc.arrival.space/splatjs/models/truck_sh3_250k_v2_recon.json)**
 — the benchmark model from the table below: 251 photographs at native
 979 px, 2,000,000 Gaussians, degree-3 spherical harmonics, 250 k cycles:
-**26.30 dB on the photographs it never saw** — above 3DGS-MCMC, ~60 min in
+**26.37 dB on the photographs it never saw** — above 3DGS-MCMC, ~65 min in
 one tab.
 
 **[The Bar — a real bar from 102 handheld 360° panoramas](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/bar360_v5test.sog&recon=https://ugc.arrival.space/splatjs/models/bar360_v5test_recon.json)**
@@ -85,9 +85,10 @@ its native 979 px, on a desktop NVIDIA GPU, in one tab:
 | **Splat.js — 40 k cycles (~10 min train)** | **25.49 dB** |
 | Mip-Splatting (CVPR 2024) | 25.74 dB |
 | Scaffold-GS (CVPR 2024) | 25.77 dB |
+| Brush v0.3 — measured (30 k cycles, ~30 min train) | 26.10 dB |
 | 3DGS-MCMC (NeurIPS 2024) | 26.11 dB |
 | LichtFeld Studio v0.5.3 — measured (~5½ min train) | 26.14 dB |
-| **Splat.js — 250 k cycles (~55 min train)** | **26.30 dB** |
+| **Splat.js — 250 k cycles (~60 min train)** | **26.37 dB** |
 | Student Splatting & Scooping (CVPR 2025) | 26.41 dB |
 
 Same images, same resolution, same held-out-every-8th protocol; all times
@@ -95,6 +96,9 @@ are training only — the Splat.js in-browser camera solve adds ~4 minutes.
 The [LichtFeld Studio](https://github.com/MrNeRF/LichtFeld-Studio) row is
 not a paper citation — it was measured on the same desktop (RTX 5080, MCMC
 strategy, 2 M Gaussians, 30 k iterations) from precomputed COLMAP poses.
+The [Brush](https://github.com/ArthurBrussee/brush) row was measured the
+same way: same machine, byte-identical images, the same every-8th holdout,
+SH degree 3, 2 M splat cap, from the COLMAP poses and sparse cloud.
 The published methods train 30 k iterations of 2–2.6 M Gaussians with
 degree-3 spherical harmonics on native CUDA. The 40 k Splat.js row is a
 ten-minute browser run at 1.4 M Gaussians; the 250 k row is the same

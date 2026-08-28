@@ -13,6 +13,36 @@ body {
   height: 100dvh;
   overflow: hidden;
 }
+/* iOS: fill the LARGE viewport so the page renders beneath the floating
+   Safari bar (viewport-fit=cover is set); interactive bottom content keeps
+   itself reachable via safe-area padding instead of stopping short */
+.strip { padding-bottom: env(safe-area-inset-bottom, 0px); }
+/* Phones, home view: the DOCUMENT scrolls. A fixed overlay with inner
+   scrolling never scrolls the page, so iOS keeps the URL pill expanded and
+   clamps the layer above it — the only way content renders beneath the bar
+   is real document flow: stage/strip hide behind the card anyway, the bar
+   goes sticky, and Safari collapses the pill as the visitor scrolls. */
+@media (max-width: 640px) {
+  body:has(#start:not([hidden])) {
+    display: block; height: auto; min-height: 100dvh; overflow-y: auto;
+  }
+  /* the card lives INSIDE the stage: the stage becomes plain flow, its
+     canvases and overlays sleep, the card is the page content */
+  body:has(#start:not([hidden])) .stage {
+    position: static; overflow: visible; height: auto; min-height: 0;
+  }
+  body:has(#start:not([hidden])) .stage > canvas,
+  body:has(#start:not([hidden])) .hud,
+  body:has(#start:not([hidden])) .strip,
+  body:has(#start:not([hidden])) .dock { display: none; }
+  body:has(#start:not([hidden])) .bar {
+    position: sticky; top: 0; z-index: 50; height: 52px;
+  }
+  body:has(#start:not([hidden])) #start {
+    position: static; height: auto; min-height: calc(100dvh - 52px);
+    width: auto; box-sizing: border-box; /* 100% + side padding overflowed */
+  }
+}
 
 /* ── bar ─────────────────────────────────────────────────────────────────── */
 
@@ -103,7 +133,9 @@ body { overflow: hidden; }
   position: fixed; z-index: 40; inset: 0; top: 52px; margin: 0;
   width: 100%; height: calc(100% - 52px); max-height: none; overflow-y: auto;
   touch-action: pan-y;   /* its own scroll works despite the stage's none */
-  padding: 58px 30px 26px; text-align: center;   /* the top gap is the × its own row */
+  /* bottom padding clears the iOS floating bar: the card renders under it,
+     the last tile still scrolls fully into view */
+  padding: 58px 30px calc(26px + env(safe-area-inset-bottom, 0px)); text-align: center;   /* the top gap is the × its own row */
   background: rgba(14, 17, 18, .9); backdrop-filter: blur(12px);
   /* minmax(0,1fr): the column is the CONTAINER's width — a wide child (the
      wall's tile row) must scroll inside it, not inflate the track and shove
@@ -179,6 +211,30 @@ body { overflow: hidden; }
    thumbnail can look exactly like a share's when the capture WAS of that
    scene (the badge needs the tile as its positioning box) */
 .galtile { position: relative; }
+/* the tile's options button — a round, always-visible "⋯" */
+.galtile .run-menu {
+  position: absolute; top: 16px; right: 16px; z-index: 2;
+  width: 36px; height: 36px; border-radius: 50%; border: 0; cursor: pointer;
+  background: rgba(10, 14, 14, .72); color: #fff;
+  font: 700 18px/1 var(--ui); letter-spacing: .02em;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+.galtile .run-menu:hover { background: rgba(10, 14, 14, .92); }
+.tilemenu {
+  position: absolute; top: 58px; right: 16px; z-index: 6;
+  display: grid; gap: 2px; padding: 6px; min-width: 150px;
+  background: rgba(18, 22, 23, .97); border: 1px solid var(--line-2);
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.tilemenu button {
+  text-align: left; padding: 9px 12px; border-radius: 8px;
+  background: none; border: 0; cursor: pointer;
+  color: var(--paper); font: 500 13.5px var(--ui);
+}
+.tilemenu button:hover { background: rgba(255, 255, 255, .07); }
+.tilemenu button.danger { color: #ff8585; }
+.tilemenu button.danger.armed { background: rgba(178, 58, 58, .92); color: #fff; }
 .galtile .yours {
   position: absolute; top: 6px; right: 6px; z-index: 1;
   padding: 1px 6px 2px; border-radius: 5px;
@@ -504,11 +560,14 @@ body { overflow: hidden; }
 
 /* the upload dialog + the result link chip */
 .upcard {
-  position: absolute; left: 50%; top: 38%; transform: translate(-50%, -50%);
+  /* FIXED, not absolute: dialogs centre in the VIEWPORT — on the document-
+     scrolled home an absolute card anchors to the page top, out of view.
+     z above the start overlay (40): tile menus launch dialogs from the wall. */
+  position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%);
   display: flex; flex-direction: column; gap: 12px;
   width: min(340px, 86%); padding: 18px 18px 14px;
   background: rgba(10, 13, 13, .96); border: 1px solid var(--line-2);
-  border-radius: 16px; backdrop-filter: blur(8px); z-index: 30;
+  border-radius: 16px; backdrop-filter: blur(8px); z-index: 60;
 }
 .upcard b { font: 600 14px var(--sans, system-ui); color: var(--paper); }
 .upcard input {
@@ -758,6 +817,12 @@ body { overflow: hidden; }
 label.btn { cursor: pointer; }
 
 /* the SOG compression card: stage name + determinate bar */
+/* the train chooser: wrapped description, x in the corner */
+.lt-desc {
+  display: block; font: 400 13px var(--ui); color: var(--muted);
+  line-height: 1.5; padding-right: 20px;
+}
+.upcard .lt-x { top: 10px; right: 10px; }
 .sog-status {
   display: block; font: 400 12px var(--mono); color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -842,6 +907,15 @@ a.cbtn { text-decoration: none; }
 .galmeta { font: 400 12px var(--mono); color: var(--dim); letter-spacing: .02em; }
 
 /* wall tabs + the Mine management strip */
+/* the divider where the visitor's own tiles end and the presets begin —
+   shown only when both sides exist (the wall is ONE list, own-first) */
+.galsep {
+  width: min(640px, 100%);
+  display: flex; align-items: center; gap: 12px;
+  color: var(--dim); font: 400 11px var(--mono);
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.galsep::before, .galsep::after { content: ''; flex: 1; height: 1px; background: var(--line); }
 .galtabs { width: min(640px, 100%); margin-left: auto; margin-right: auto; }
 .galtabs span { display: inline-flex; gap: 14px; }
 /* the wall header speaks exactly like the Benchmarks label; with two tabs

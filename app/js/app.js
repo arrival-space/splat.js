@@ -8,10 +8,10 @@
 // PSNR, and Export writes a real .ply. The UI talks to ONE object — the
 // splat.js Session — plus the trainer's rendered canvas.
 
-import { createSession, gaussiansToPly } from '../../src/index.js';
+import { createSession, gaussiansToPly, undistortFrames } from '../../src/index.js';
 import {
-extractSharpFrames, planVideoFrames, videoFrameDimensions,
-videoPipelineResolution, isVideoFile, VIDEO_MAX_FRAMES,
+  extractSharpFrames, planVideoFrames, videoFrameDimensions,
+  videoPipelineResolution, isVideoFile, VIDEO_MAX_FRAMES,
 } from '../../src/io/video.js';
 import { recordCaptureVideo, cameraSupported } from './camera.js';
 import { saveLastCapture, loadLastCapture } from './store.js';
@@ -443,14 +443,26 @@ function boot() {
 
   $('gh').href = REPO;
   $('about-gh').href = REPO;
-  // the brand is simply the way home; the About sheet lives behind the
-  // hero's Read-more link instead
-  $('brand').addEventListener('click', () => { location.href = 'index.html'; });
+  // the brand: on the home tile view (nothing open) it tells the story —
+  // the About sheet; from inside a scene it stays the way back home
+  const openAbout = () => {
+    $('about').hidden = false;
+    // a pushed UI state: the phone's Back closes the sheet, not the app
+    if (!(history.state && history.state.sj)) history.pushState({ sj: 'about' }, '');
+  };
+  $('brand').addEventListener('click', () => {
+    const atHome = !$('start').hidden && $('detail').hidden;
+    if (atHome) openAbout();
+    else location.href = 'index.html';
+  });
   $('read-more').addEventListener('click', (e) => {
     e.preventDefault(); e.stopPropagation();
-    $('about').hidden = false;
+    openAbout();
   });
-  $('about-x').addEventListener('click', () => { $('about').hidden = true; });
+  $('about-x').addEventListener('click', () => {
+    if (history.state && history.state.sj === 'about') { history.back(); return; }
+    $('about').hidden = true;
+  });
   $('about').addEventListener('click', (e) => {
     if (!e.target.closest('.about-card')) $('about').hidden = true;
   });
@@ -492,18 +504,15 @@ function boot() {
     $('start').appendChild($('gallery'));
     $('detail-body').append($('set-desc'), document.querySelector('.startrow'), $('settings'));
     $('detail-back').addEventListener('click', () => {
+      // route through history so the phone's Back gesture stays in sync
+      if (history.state && history.state.sj === 'detail') { history.back(); return; }
       S.pendingShare = null;
       $('detail').hidden = true;
       $('start').hidden = false;
     });
-    if (!viewing) {
-      // The repository intentionally bundles only the synthetic photographs;
-      // larger benchmark sets are supplied by the hosted demo. A local clone
-      // must therefore start on the sample it can actually load.
-      const local = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname)
-        || location.protocol === 'file:';
-      open(PRESETS.find((p) => p.id === (local ? 'synthetic' : 'truck')));
-    }
+    // no implicit boot set: nothing loads until the visitor picks — the old
+    // truck default sat invisibly behind the start card and leaked into
+    // Back navigation ("why is the truck loaded?")
   }
   requestAnimationFrame(loop);
 
@@ -569,6 +578,24 @@ function showIntro() {
   $('start').hidden = false;
 }
 
+/** Build an own-photos set from a stored capture record (fetches the record
+ *  when none is passed). Records saved before capture-sorting existed replay
+ *  in stored order — sorted on the way out, same rules as a fresh pick. */
+async function openCaptureSet(rec = null) {
+  rec = rec || await loadLastCapture();
+  if (!rec || !rec.files || rec.files.length < 2) return null;
+  const files = rec.files.map((e) => new File([e.blob], e.name, { type: e.blob.type || 'image/jpeg' }));
+  await sortByCapture(files);
+  if (S.ownUrls) S.ownUrls.forEach(URL.revokeObjectURL);
+  S.ownUrls = files.map((f) => URL.createObjectURL(f));
+  const set = ownSet(files, S.ownUrls);
+  set.id = '__last';
+  set.kind = 'Saved on this device';
+  set.origin = `${files.length} frames from your last capture, restored from this browser's ` +
+    'own storage. They never left this device.';
+  return set;
+}
+
 /** the previous own capture, restored from this device's storage — a tile
  *  for the wall's Local tab (null when nothing is stored). Every set lives
  *  on the Scenes wall; PRESETS stay as data: gates, data deploys and the
@@ -582,29 +609,134 @@ async function lastCaptureTile() {
   b.title = `${rec.files.length} frames, saved on this device`;
   // the badge keeps it apart from the shares — a capture OF a known scene
   // makes the thumbnails near-identical
-  b.innerHTML = `<i class="yours">this device</i>
-    <span class="galname">Last capture</span>
-    <span class="galmeta">${rec.files.length} frames · never uploaded</span>`;
+  const capWhen = rec.created
+    ? new Date(rec.created).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
+  b.innerHTML = `
+    <button class="run-menu" title="Options">⋯</button>
+    <span class="galname">${rec.files.length} photos</span>
+    <span class="galmeta">${capWhen ? `${capWhen} · ` : ''}local</span>`;
   const img = Object.assign(new Image(), { src: URL.createObjectURL(rec.files[0].blob), alt: '' });
   b.prepend(img);
-  const makeSet = () => {
-    const files = rec.files.map((e) => new File([e.blob], e.name, { type: e.blob.type || 'image/jpeg' }));
-    if (S.ownUrls) S.ownUrls.forEach(URL.revokeObjectURL);
-    S.ownUrls = files.map((f) => URL.createObjectURL(f));
-    const set = ownSet(files, S.ownUrls);
-    set.id = '__last';
-    set.kind = 'Saved on this device';
-    set.origin = `${files.length} frames from your last capture, restored from this browser's ` +
-      'own storage. They never left this device.';
-    return set;
-  };
-  b.addEventListener('click', () => {
-    if (S.picking) { S.pending = makeSet(); paintCard(S.pending); return; }
-    const set = makeSet();
+  tileMenu(b.querySelector('.run-menu'), [
+    { label: 'Train', act: async () => {
+      const set = await openCaptureSet(rec);
+      if (!set) return;
+      open(set);
+      if (!WALL_FIRST) showDetail(set);
+    } },
+    { label: 'Delete', danger: true, act: async () => {
+      const { deleteLastCapture } = await import('./store.js');
+      await deleteLastCapture();
+      b.remove();
+    } },
+  ]);
+  b.addEventListener('click', async () => {
+    if (S.picking) { S.pending = await openCaptureSet(rec); paintCard(S.pending); return; }
+    const set = await openCaptureSet(rec);
+    if (!set) return;
     open(set);
     if (!WALL_FIRST) showDetail(set);
   });
   return b;
+}
+
+/** tiles for the local runs library — every training run this device has
+ *  started. Finished runs reopen in the viewer straight from their stored
+ *  result; interrupted ones stay listed (and deletable) as a record. */
+/** The tile's "⋯" options menu. items: [{ label, act, danger }] — danger
+ *  items arm into "Delete?" first; anything else fires and closes. */
+function tileMenu(btn, items) {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const existing = btn.parentElement.querySelector('.tilemenu');
+    document.querySelectorAll('.tilemenu').forEach((x) => x.remove());
+    if (existing) return; // second tap on the same ⋯ just closes
+    const m = document.createElement('div');
+    m.className = 'tilemenu';
+    for (const it of items) {
+      if (!it) continue;
+      const b = document.createElement('button');
+      b.textContent = it.label;
+      if (it.danger) b.className = 'danger';
+      b.addEventListener('click', async (ev) => {
+        ev.stopPropagation();
+        if (it.danger && b.dataset.armed !== '1') {
+          b.dataset.armed = '1';
+          b.textContent = 'Delete?';
+          b.classList.add('armed');
+          setTimeout(() => {
+            b.dataset.armed = '';
+            b.textContent = it.label;
+            b.classList.remove('armed');
+          }, 3000);
+          return;
+        }
+        m.remove();
+        await it.act();
+      });
+      m.appendChild(b);
+    }
+    btn.parentElement.appendChild(m);
+    const close = (ev) => {
+      if (m.contains(ev.target) || ev.target === btn) return;
+      m.remove();
+      removeEventListener('pointerdown', close, true);
+    };
+    addEventListener('pointerdown', close, true);
+  });
+}
+
+async function localRunTiles() {
+  const { listRuns, deleteRun } = await import('./store.js');
+  const runs = await listRuns();
+  return runs.map((r) => {
+    const b = document.createElement('div');
+    b.className = 'galtile';
+    b.style.cursor = r.sog ? 'pointer' : 'default';
+    // finished scenes wear the same sub-header as the preset tiles:
+    // splats · dB · MB — a scene is a scene, wherever it was trained
+    const state = r.status === 'finished'
+      ? `${fmt(r.splats || 0)} splats${r.psnr != null ? ` · ${(+r.psnr).toFixed(1)} dB` : ''}${r.sog ? ` · ${Math.max(1, Math.round(r.sog.size / 1e6))} MB` : ''}`
+      : (S.runId === r.id && S.state === 'train')
+        ? `training now · ${fmt(r.iter || 0)} cycles`
+        : `interrupted · ${fmt(r.iter || 0)} cycles`;
+    // same anatomy as a preset tile: name, a description referring back to
+    // the capture, then the stats line
+    const desc = r.status === 'finished'
+      ? `Trained on this device from ${r.frames ? `${fmt(r.frames)} photos` : 'your photos'}` +
+        `${r.iter ? `, ${fmt(r.iter)} cycles` : ''}${r.minutes ? ` in ${r.minutes} min` : ''}. Never uploaded.`
+      : '';
+    b.innerHTML = `
+      <button class="run-menu" title="Options">⋯</button>
+      <span class="galname">${esc(r.name || 'Training run')}</span>
+      ${desc ? `<span class="galdesc">${esc(desc)}</span>` : ''}
+      <span class="galmeta">${state}</span>`;
+    if (r.thumb) b.prepend(Object.assign(new Image(), { src: URL.createObjectURL(r.thumb), alt: '' }));
+    const openRun = () => restoreSession({
+      url: URL.createObjectURL(r.sog),
+      reconUrl: URL.createObjectURL(new Blob([JSON.stringify(r.recon)], { type: 'application/json' })),
+      localRun: r,
+    });
+    tileMenu(b.querySelector('.run-menu'), [
+      r.sog && r.recon && { label: 'View', act: openRun },
+      (r.sog || r.ownSrc) && { label: 'Train', act: () => { S._localRun = r; trainLocalChoice(); } },
+      r.sog && r.recon && { label: 'Share', act: () => shareDialog(r) },
+      { label: 'Delete', danger: true, act: async () => { await deleteRun(r.id); b.remove(); } },
+    ]);
+    b.addEventListener('click', () => {
+      if (r.sog && r.recon) {
+        restoreSession({
+          url: URL.createObjectURL(r.sog),
+          reconUrl: URL.createObjectURL(new Blob([JSON.stringify(r.recon)], { type: 'application/json' })),
+          localRun: r, // the viewer's Train button reads this
+        });
+      } else if (!(S.runId === r.id && S.state === 'train')) {
+        flash('This run stopped before finishing — no result was kept, only this record.', 5000);
+      }
+    });
+    return b;
+  });
 }
 
 /** the first `cnt` photos of a preset, honouring its skip list */
@@ -717,6 +849,7 @@ function showPicker() {
   paintCard(S.preset);
   $('card-x').hidden = false;
   $('start').hidden = false;
+  mountWall(); // rebuilt: a just-finished run's tile must already be there
 }
 
 function closePicker() {
@@ -724,6 +857,84 @@ function closePicker() {
   $('start').hidden = true;
   $('card-x').hidden = true;
   $('btn-go').textContent = 'Start training';
+}
+
+/** EXIF DateTimeOriginal (ms since epoch) from a JPEG's APP1 block — null
+ *  when absent. lastModified is NOT a substitute on iOS: the picker often
+ *  transcodes on selection and stamps THAT moment, shuffling the walk. */
+async function exifCaptureTime(file) {
+  try {
+    const b = new Uint8Array(await file.slice(0, 262144).arrayBuffer());
+    if (b[0] !== 0xff || b[1] !== 0xd8) return null;
+    let p = 2;
+    while (p + 4 < b.length) {
+      if (b[p] !== 0xff) return null;
+      const m = b[p + 1];
+      if (m === 0xd8 || m === 0x01 || (m >= 0xd0 && m <= 0xd7)) { p += 2; continue; }
+      if (m === 0xda || m === 0xd9) return null; // image data: no EXIF ahead
+      const len = (b[p + 2] << 8) | b[p + 3];
+      if (m === 0xe1 && len > 10 && b[p + 4] === 0x45 && b[p + 5] === 0x78 &&
+          b[p + 6] === 0x69 && b[p + 7] === 0x66 && b[p + 8] === 0 && b[p + 9] === 0) {
+        return tiffDate(b, p + 10, Math.min(len - 8, b.length - (p + 10)));
+      }
+      p += 2 + len;
+    }
+    return null;
+  } catch { return null; }
+}
+function tiffDate(b, off, size) {
+  if (size < 8) return null;
+  const dv = new DataView(b.buffer, b.byteOffset + off, size);
+  const le = dv.getUint16(0) === 0x4949;
+  const u16 = (o) => dv.getUint16(o, le);
+  const u32 = (o) => dv.getUint32(o, le);
+  if (u16(2) !== 42) return null;
+  const scan = (ifdOff, tags) => {
+    const out = {};
+    if (ifdOff + 2 > size) return out;
+    const n = u16(ifdOff);
+    for (let i = 0; i < n; i++) {
+      const e = ifdOff + 2 + i * 12;
+      if (e + 12 > size) break;
+      const tag = u16(e);
+      if (tags.includes(tag)) out[tag] = { type: u16(e + 2), count: u32(e + 4), value: u32(e + 8) };
+    }
+    return out;
+  };
+  const ifd0 = scan(u32(4), [0x8769, 0x0132]);
+  let at = null;
+  if (ifd0[0x8769]) {
+    const exif = scan(ifd0[0x8769].value, [0x9003, 0x9004]); // DateTimeOriginal, Digitized
+    const d = exif[0x9003] || exif[0x9004];
+    if (d && d.type === 2 && d.count >= 19) at = d.value;
+  }
+  if (at == null && ifd0[0x0132] && ifd0[0x0132].type === 2 && ifd0[0x0132].count >= 19) at = ifd0[0x0132].value;
+  if (at == null || at + 19 > size) return null;
+  let s = '';
+  for (let i = 0; i < 19; i++) s += String.fromCharCode(dv.getUint8(at + i));
+  const mm = s.match(/^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+  if (!mm) return null;
+  const t = new Date(+mm[1], +mm[2] - 1, +mm[3], +mm[4], +mm[5], +mm[6]).getTime();
+  return Number.isFinite(t) && t > 0 ? t : null;
+}
+
+/** Restore the capture sequence in place. EXIF time rules when present;
+ *  when the WHOLE set has none (iOS transcodes on pick and strips EXIF,
+ *  stamping mtime with the SELECTION moment — sorting by it preserves the
+ *  shuffle), the numeric name order (IMG_0421…, wide_date_time_seq…) is the
+ *  trustworthy key. Also feeds the landmarks beat's bottom-right overlay. */
+async function sortByCapture(files) {
+  const exifs = new Map(await Promise.all(files.map(async (f) => [f, await exifCaptureTime(f)])));
+  const anyExif = [...exifs.values()].some((v) => v != null);
+  const byName = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true });
+  if (anyExif) {
+    const stamps = new Map(files.map((f) => [f, exifs.get(f) ?? f.lastModified ?? 0]));
+    files.sort((a, b) => (stamps.get(a) - stamps.get(b)) || byName(a, b));
+  } else {
+    files.sort(byName);
+  }
+  S.capDates = new Map(files.map((f) => [f.name, exifs.get(f) ?? null]));
+  return files;
 }
 
 function ingestOwnFiles(list) {
@@ -750,6 +961,9 @@ async function useOwnPhotos(files) {
     flash('Pick at least a couple of overlapping photos, or choose one video.', 4500);
     return;
   }
+  // the phone picker hands files over in SELECTION order — restore the
+  // capture sequence (shared with the saved-capture restore path)
+  await sortByCapture(files);
   if (S.ownUrls) S.ownUrls.forEach(URL.revokeObjectURL);
   S.ownUrls = files.map((f) => URL.createObjectURL(f));
   // survive a refresh: the capture is kept on-device and offered back
@@ -1058,6 +1272,9 @@ const beatIndex = (stage) =>
 
 async function startPrep() {
   document.getElementById('failcard')?.remove();
+  // consume the detail-card history entry — Back during a run must not
+  // resurrect a card that no longer applies
+  if (history.state && history.state.sj) history.replaceState(null, '');
   const gen = S.gen;
   $('start').hidden = true;
   $('detail').hidden = true;
@@ -1149,7 +1366,6 @@ async function startPrep() {
       // decode-to-target (in the library), 720px features, a smaller SIFT
       // worker pool, and dropping gray/rgb once each stage has consumed them
       ...(phoneClass ? { lowMem: true } : {}),
-      frames: phoneClass ? { ...(frames || {}), featMaxDim: 720 } : frames,
       sfm: {
         siftFeats: st.siftFeats || 3900,
         // uiYield breaks BA's multi-second synchronous bursts during the
@@ -1158,6 +1374,11 @@ async function startPrep() {
         // throughput for nothing.
         ...(phoneClass ? { workers: 3, uiYield: true } : {}),
       },
+      // phones solve at the desktop feature resolution again: 720 was part
+      // of the OOM firefight, but the real culprit was the UI bitmap cache —
+      // and feature res is the measured pose-precision ceiling
+      // phone default 960 — an explicit Solve-resolution choice still wins
+      frames: phoneClass ? { featMaxDim: 960, ...(frames || {}) } : frames,
       trainer: Object.keys(trainerOpts).length ? trainerOpts : undefined,
     });
     S.session = session;
@@ -1400,6 +1621,39 @@ function buildSceneFromSession() {
 function startTraining() {
   S.state = 'train';
   S.trainT0 = performance.now();
+  // local library: every run is listed from the moment it starts — a small
+  // record now, the finished result later (see finish())
+  S.runId = `run_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  (async () => {
+    let thumb = null;
+    try {
+      const p = S.photos && S.photos[0];
+      if (p && p.url) {
+        const bmp = await createImageBitmap(await (await fetch(p.url)).blob(), { resizeWidth: 320 });
+        const cv = document.createElement('canvas');
+        cv.width = bmp.width; cv.height = bmp.height;
+        cv.getContext('2d').drawImage(bmp, 0, 0);
+        bmp.close();
+        thumb = await new Promise((res) => cv.toBlob(res, 'image/webp', 0.8));
+      }
+    } catch { /* the tile just goes textless */ }
+    const { saveRun } = await import('./store.js');
+    const pid = String((S.preset && S.preset.id) || '');
+    // own scenes are SCENES, not photos — a continued run keeps the name it
+    // already carries; the tile's description holds the capture details
+    let runName = (S.preset && S.preset.name) || 'Your photos';
+    if ((pid === '__own' || pid === '__last') && (runName === 'Your photos' || pid === '__last')) {
+      runName = 'Local Scene';
+    }
+    await saveRun({
+      id: S.runId, name: runName,
+      status: 'training', createdAt: Date.now(), updatedAt: Date.now(),
+      iter: 0, maxIters: S.maxIters, splats: S.splats || 0, psnr: null,
+      frames: (S.photos || []).length, thumb,
+      // own-photo runs can train again from the device's capture store
+      ownSrc: pid === '__own' || pid === '__last',
+    });
+  })().catch(() => {});
   const first = S.scene.cams.find((c) => c.R && c.state !== 'holdout') || S.scene.cams[0];
   if (first && first.R) {
     S.sel = first.i;
@@ -1432,6 +1686,13 @@ function onMetrics(m) {
   S.iter = m.iter;
   S.splats = m.splats;
   S.itersPerSec = m.itersPerSec;
+  // local library: keep the run record roughly current (survives a closed tab)
+  if (S.runId && (!S._runSaveT || performance.now() - S._runSaveT > 20000)) {
+    S._runSaveT = performance.now();
+    import('./store.js').then(({ patchRun }) => patchRun(S.runId, {
+      iter: m.iter, splats: m.splats, psnr: m.psnrTrain ?? null,
+    })).catch(() => {});
+  }
   // LOD training: hold the model at each detail level for a polish window,
   // snapshot it, then raise the growth limit and move on
   const LP = S.lodPlan;
@@ -1582,6 +1843,41 @@ async function deviceLostRecovery() {
   }
 }
 
+// ── iOS background guard ────────────────────────────────────────────────────
+// iOS purges WebGPU buffer contents from hidden tabs WITHOUT firing
+// device-loss: the worker-tick loop then keeps training a zeroed/garbage
+// model (seen in the wild: PSNR cliff mid-run, smeared splats, iter count
+// intact). On iOS training PAUSES while hidden; on return a params probe
+// decides between resuming and an honest restart. Desktop keeps its
+// background-training behavior — the corruption is iOS-specific.
+const IOS = /iP(hone|ad|od)/.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+if (IOS) document.addEventListener('visibilitychange', () => {
+  if (!S.session || S.state !== 'train') return;
+  if (document.visibilityState === 'hidden') {
+    if (S.session.training) {
+      S._bgPaused = true;
+      S.session.pause();
+    }
+  } else if (S._bgPaused) {
+    S._bgPaused = false;
+    const gen = S.gen;
+    (async () => {
+      const tr = S.session && S.session.trainer;
+      const ok = tr && tr.sanityProbe ? await tr.sanityProbe() : true;
+      if (S.gen !== gen || S.state !== 'train') return;
+      if (ok) {
+        S.session.start();
+        flash('Welcome back — training resumes.', 3500);
+      } else {
+        // the buffers didn't survive the background trip
+        flash('iOS cleared the model while the tab was hidden — restarting the training run.', 9000);
+        deviceLostRecovery();
+      }
+    })().catch(() => {});
+  }
+});
+
 async function finish() {
   S.state = 'done';
   S.iter = S.session.trainer.iter;   // honest count — the run may end early
@@ -1617,10 +1913,30 @@ async function finish() {
   // after they completed.
   S.plyBlob = null; S.sogBlob = null;
   const gen = S.gen;
-  S._finalizePromise = S.session.exportPlyBlob().then((b) => {
+  S._finalizePromise = S.session.exportPlyBlob().then(async (b) => {
     if (S.gen !== gen || S.state !== 'done') return;
     S.plyBlob = b;
     startTour();
+    // local library: a finished run's result is kept on this device — the
+    // sog + camera path + a render thumb, restorable from the Yours tab
+    if (!S.runId) return;
+    const runId = S.runId;
+    try {
+      const { plyToSog } = await import('./sog.js');
+      const sog = await plyToSog(new Uint8Array(await b.arrayBuffer()), {});
+      if (S.gen !== gen) return;
+      S.sogBlob = sog;
+      const { buildReconJson } = await import('./session_io.js');
+      const recon = buildReconJson(S);
+      const thumb = await renderShareThumb();
+      const { patchRun } = await import('./store.js');
+      await patchRun(runId, {
+        status: 'finished', iter: S.iter, splats: S.splats,
+        psnr: S.psnrHold ?? S.psnrTrain ?? null, minutes: S.minutes,
+        sog, recon, ...(thumb ? { thumb } : {}),
+      });
+      flash('Result saved on this device — it stays under Yours', 5000);
+    } catch (e) { console.warn('local save failed', e); }
   }).catch((err) => {
     console.error('finished model cache failed', err);
     if (S.gen === gen && S.state === 'done') {
@@ -1638,6 +1954,11 @@ async function finish() {
 // lands in the exact done-state viewer: tour, orbit, exports — no training.
 async function restoreSession(src) {
   try {
+    S._localRun = src.localRun || null; // set only by the local runs library
+    S._viewerOpen = true;
+    // the viewer is a navigable state: Back returns to the wall, never to
+    // whatever page happened to precede the app
+    if (!(history.state && history.state.sj)) history.pushState({ sj: 'viewer' }, '');
     $('start').hidden = true;
     flash('Loading the model …', 120000);
     // SOG + recon: the lite viewer — the engine renders the compressed splat
@@ -2044,8 +2365,150 @@ function renderControls() {
     train.title = `Solve and train the same ${rj.source.urls.length} photographs right here`;
     train.addEventListener('click', trainFromShare);
     c.appendChild(train);
+  } else if (S._localRun && S._localRun.ownSrc) {
+    // a local run of the visitor's own photos: continue on the model, or
+    // start fresh from the capture kept on this device
+    const train = document.createElement('button');
+    train.className = 'cbtn accent';
+    train.textContent = 'Train';
+    train.title = 'Keep training this model, or train new from the saved photos';
+    train.addEventListener('click', trainLocalChoice);
+    c.appendChild(train);
   }
   c.appendChild(buildExport());
+}
+
+/** The local-run viewer's Train: continue refining the saved model, or a
+ *  fresh solve from the photos in the capture store. */
+function trainLocalChoice() {
+  document.getElementById('ltchoice')?.remove();
+  const card = document.createElement('div');
+  card.className = 'upcard';
+  card.id = 'ltchoice';
+  card.innerHTML = `
+    <button class="card-x lt-x" id="lt-x" aria-label="Close">&times;</button>
+    <b>Train these photos</b>
+    <span class="lt-desc">Keep training refines the saved model further; Train new solves and
+    trains from scratch with the photos kept on this device.</span>
+    <div class="upcard-row">
+      <button class="btn btn-accent" id="lt-cont">Keep training</button>
+      <button class="btn btn-outline" id="lt-new">Train new</button>
+    </div>`;
+  $('stage').appendChild(card);
+  $('lt-x').addEventListener('click', () => card.remove());
+  $('lt-new').addEventListener('click', async () => {
+    card.remove();
+    const set = await openCaptureSet();
+    if (!set) { flash('The photos are no longer stored on this device.', 6000); return; }
+    stopTour();
+    S.restored = null;
+    open(set);
+    if (!WALL_FIRST) showDetail(set);
+  });
+  $('lt-cont').addEventListener('click', () => { card.remove(); continueLocalRun().catch((e) => {
+    console.error(e);
+    flash(`Could not continue this run: ${e.message}`, 8000);
+  }); });
+}
+
+/** Continue training a stored local run: decode its sog back into raw
+ *  Gaussians (un-baking the Mip opacity compensation — the export bakes it
+ *  for standard viewers, the trainer applies it itself), rebuild the session
+ *  from the stored camera solve + the capture's photos, and run on. */
+async function continueLocalRun() {
+  const lr = S._localRun;
+  if (!lr || !lr.sog || !lr.recon) return;
+  const rec = await loadLastCapture();
+  if (!rec || !rec.files) { flash('The photos are no longer stored on this device.', 6000); return; }
+  const recon = lr.recon;
+  // photos matched BY NAME to the run's own frame order — re-sorting could
+  // reorder against recon.cams imgIdx, and a newer capture must not sneak in
+  const byName = new Map(rec.files.map((e) => [e.name, e]));
+  const files = (recon.frames || []).map((fr) => {
+    const e = byName.get(fr.name);
+    return e ? new File([e.blob], e.name, { type: e.blob.type || 'image/jpeg' }) : null;
+  });
+  if (!files.length || files.some((f) => !f)) {
+    flash('The stored photos no longer match this run — Train new instead.', 7000);
+    return;
+  }
+  flash('Preparing to continue training …', 60000);
+  const { decodeModel } = await import('./session_io.js');
+  const { gaussians: g } = await decodeModel(new Uint8Array(await lr.sog.arrayBuffer()), null);
+  // un-bake opacity compensation (pure fn of position, mean scale, focal,
+  // camera centres — recompute and divide out in logit space)
+  {
+    const pos = [];
+    for (const c of recon.cams) {
+      const R = c.R, t = c.t;
+      pos.push(
+        -(R[0] * t[0] + R[3] * t[1] + R[6] * t[2]),
+        -(R[1] * t[0] + R[4] * t[1] + R[7] * t[2]),
+        -(R[2] * t[0] + R[5] * t[1] + R[8] * t[2]));
+    }
+    const fr0 = recon.frames[recon.cams[0].imgIdx];
+    const f = recon.cams[0].f * ((fr0.tw || fr0.fw) / fr0.fw);
+    const d = g.data;
+    for (let i = 0; i < g.n; i++) {
+      const b = i * 16;
+      let z2 = Infinity;
+      for (let c = 0; c < pos.length; c += 3) {
+        const dx = d[b] - pos[c], dy = d[b + 1] - pos[c + 1], dz = d[b + 2] - pos[c + 2];
+        const q = dx * dx + dy * dy + dz * dz;
+        if (q < z2) z2 = q;
+      }
+      const z = Math.max(1e-3, Math.sqrt(z2));
+      const sMean = Math.exp((d[b + 3] + d[b + 4] + d[b + 5]) / 3);
+      const s2d = f * sMean / z;
+      const comp = (s2d * s2d) / (s2d * s2d + 0.3);
+      const opa = 1 / (1 + Math.exp(-d[b + 13]));
+      const raw = Math.min(1 - 1e-6, Math.max(1e-6, opa / Math.max(comp, 1e-6)));
+      d[b + 13] = Math.log(raw / (1 - raw));
+    }
+  }
+  // tear down the viewer, build the training session (trainFromShare's reset)
+  stopTour();
+  try { S.session.dispose(); } catch (e) { /* view-only facade */ }
+  document.getElementById('cv-model')?.remove();
+  gpuCanvas = null;
+  S.gen++;
+  const gen = S.gen;
+  S.session = null; S.share = null; S.restored = null;
+  S._viewerOpen = false;
+  if (history.state && history.state.sj) history.replaceState(null, '');
+  S.plyBlob = null; S.sogBlob = null;
+  S.preset = { id: '__own', name: `${lr.name || 'Your photos'}` };
+  S.photos = files.map((f, i) => ({ url: URL.createObjectURL(f), name: f.name, i }));
+  const baseIter = lr.iter || 0;
+  const extra = Math.max(10000, Math.round((lr.maxIters || 20000) / 2));
+  S.maxIters = baseIter + extra;
+  const fr0 = recon.frames[0] || {};
+  const ses = createSession({
+    maxIters: S.maxIters, holdout: -1,
+    frames: { trainMaxDim: Math.max(fr0.tw || 0, fr0.th || 0) || undefined },
+    trainer: { maxSplats: Math.max(g.n, lr.splats || 0), capMult: 2, shDeg: 3 },
+  });
+  S.session = ses;
+  ses.on('stage', (e) => { if (S.gen === gen) onStage(e); });
+  ses.on('metrics', (e) => { if (S.gen === gen) onMetrics(e); });
+  ses.on('event', (e) => { if (S.gen === gen) onTrainEvent(e); });
+  await ses.load(files);
+  if (S.gen !== gen) return;
+  ses.useReconstruction({
+    cams: recon.cams.map((c) => ({ imgIdx: c.imgIdx, R: c.R, t: c.t, f: c.f, cx: c.cx, cy: c.cy })),
+    points: [],
+    k1: recon.k1 || 0, k2: recon.k2 || 0,
+  });
+  if (undistortFrames(ses.frames, ses.recon)) { /* targets match the original run */ }
+  await ses.seedFrom(g, { iter: baseIter });
+  if (S.gen !== gen) return;
+  S.iter = baseIter;
+  S.psnrTrain = null; S.psnrHold = null;
+  S.holdHist = []; S.chartEvents = []; S.growthStopped = false;
+  buildSceneFromSession();
+  mountModelCanvas();
+  startTraining();
+  flash(`Continuing from ${fmt(baseIter)} cycles — +${fmt(extra)} more.`, 6000);
 }
 
 /** Resume from done: raise the horizon, restore the curve, back to train. */
@@ -2300,14 +2763,16 @@ function uploadDialog() {
 
 /** Share the finished run: one link that opens the viewer (tour + compare
  *  + stats) with an arrival space behind it. Same sign-in as Upload. */
-function shareDialog() {
+function shareDialog(rec = null) {
+  // rec: share a STORED local scene (sog + recon + thumb from IndexedDB) —
+  // no live session required
   document.getElementById('upcard')?.remove();
   const card = document.createElement('div');
   card.className = 'upcard';
   card.id = 'upcard';
   // preset photographs already live on public URLs — only own captures
   // need uploading for the viewer-side comparison
-  const needsPhotos = !(S.loadedFiles || []).length || !(S.loadedFiles || []).every((f) => f.url);
+  const needsPhotos = !rec && (!(S.loadedFiles || []).length || !(S.loadedFiles || []).every((f) => f.url));
   const photoMb = ((S.loadedFiles || []).reduce((a, f) => a + ((f.source || f).size || 0), 0) / 1e6).toFixed(0);
   card.innerHTML = `
     <b>Share this creation</b>
@@ -2325,7 +2790,8 @@ function shareDialog() {
     </div>`;
   $('stage').appendChild(card);
   const input = card.querySelector('#sh-title');
-  input.value = S.preset.id === '__own' ? 'My splat' : S.preset.name;
+  input.value = rec ? (rec.name || 'Local Scene')
+    : (S.preset.id === '__own' ? 'My splat' : S.preset.name);
   input.focus();
   input.select();
   const close = () => card.remove();
@@ -2347,10 +2813,11 @@ function shareDialog() {
     S.uploading = true;
     try {
       const { shareCreation } = await import('./share.js');
-      const sog = await getSogBlob();
-      const thumb = (await photoThumb()) || (await renderShareThumb());
+      const sog = rec ? rec.sog : await getSogBlob();
+      const thumb = rec ? (rec.thumb || null) : ((await photoThumb()) || (await renderShareThumb()));
       const { spaceId, spaceUrl, link } = await shareCreation(S, sog, {
         title, privacy, includePhotos, thumbBlob: thumb, popup,
+        ...(rec ? { recon: rec.recon } : {}),
         onStatus: (m) => flash(m, 120000),
         onProgress: (pct) => flash(`Uploading … ${pct}%`, 120000),
       });
@@ -2399,7 +2866,12 @@ async function renderShareThumb() {
     // creator opened the capture with
     const c = S.scene.cams.find((k) => k.R) || null;
     if (!c) return null;
-    const W = 640, H = 400;
+    // the thumb wears the hero camera's own aspect — a portrait scene
+    // rendered into a landscape frame pads itself with unreconstructed
+    // darkness that no display-side crop can remove
+    const ar = (c.w && c.h) ? c.w / c.h : 1.6;
+    const W = ar >= 1 ? 640 : Math.max(240, Math.round(400 * ar));
+    const H = Math.round(W / ar);
     const cv = document.createElement('canvas');
     cv.width = W; cv.height = H;
     ses.view.attach(cv);
@@ -2442,9 +2914,8 @@ async function restoreShared(spaceId) {
     S.share = null;
     document.getElementById('share-hero')?.remove();
     $('start').hidden = false;
-    // back on the classic front page nothing is selected yet — do it now,
-    // and the feed too (boot skips mountWall when a share link is loading)
-    if (!WALL_FIRST && !S.preset) open(PRESETS.find((p) => p.id === 'truck'));
+    // the feed (boot skips mountWall when a share link is loading);
+    // no default set — the visitor picks from the wall
     mountWall();
     flash(`Could not load the shared creation: ${e.message}`, 9000);
   }
@@ -2523,6 +2994,45 @@ function showDetail(setOrPreset) {
   $('btn-go').disabled = !!S.noGpu;
   $('start').hidden = true;
   $('detail').hidden = false;
+  // the card is a navigable UI state: Back must close IT, not leave the app
+  if (!(history.state && history.state.sj === 'detail')) {
+    history.pushState({ sj: 'detail' }, '');
+  }
+}
+
+// Back closes pushed UI layers (About sheet, the viewer, the detail card)
+// instead of navigating away — history walks the same steps the visitor sees
+addEventListener('popstate', () => {
+  if (!$('about').hidden) { $('about').hidden = true; return; }
+  if (S._viewerOpen) { closeViewerToHome(); return; }
+  if (!$('detail').hidden) {
+    S.pendingShare = null;
+    $('detail').hidden = true;
+    $('start').hidden = false;
+  }
+});
+
+/** Tear the restored viewer down and land on the wall — the SPA counterpart
+ *  of the old full-page navigation home. */
+function closeViewerToHome() {
+  stopTour();
+  try { S.session && S.session.dispose(); } catch (e) { /* view-only facade */ }
+  document.getElementById('cv-model')?.remove();
+  document.getElementById('share-hero')?.remove();
+  document.getElementById('ltchoice')?.remove();
+  gpuCanvas = null;
+  S.gen++;
+  S.session = null; S.share = null; S.restored = null; S._localRun = null;
+  S._viewerOpen = false;
+  S.plyBlob = null; S.sogBlob = null;
+  S.state = 'ready'; S.preset = null; S.photos = [];
+  S.scene = null; S.tour = null;
+  $('strip').innerHTML = '';
+  $('controls').hidden = true;
+  $('detail').hidden = true;
+  dock('');
+  $('start').hidden = false;
+  mountWall(); // fresh tiles — runs may have finished or been added since
 }
 
 /** The creation's recon json (plain or store-zipped) — the photographs and
@@ -2566,50 +3076,46 @@ function creationTile(it, mine) {
  *  (management: privacy, link, delete). An empty wall stays invisible. */
 async function mountWall() {
   try {
-    const { fetchGallery } = await import('./share.js');
-    const [{ items }, capTile, capTileWall] = await Promise.all([
+    const { fetchGallery, fetchMine } = await import('./share.js');
+    const [{ items }, capTile, runTiles, myShares] = await Promise.all([
       fetchGallery({ count: 12 }),
       lastCaptureTile().catch(() => null),
-      lastCaptureTile().catch(() => null),   // second instance for Scenes
+      localRunTiles().catch(() => []),
+      hasToken() ? fetchMine().catch(() => []) : Promise.resolve([]),
     ]);
-    const localTab = hasToken() || !!capTile;
-    if ((!items || !items.length) && !localTab) return;
+    // ONE list, the visitor first: their capture, their runs, their shares
+    // always lead; the presets follow behind a slim divider. (The old
+    // Presets/Yours tabs became redundant the moment own content led.)
+    const own = [];
+    if (capTile) own.push(capTile);
+    for (const t of runTiles) own.push(t);
+    for (const it of (myShares || [])) own.push(creationTile(it, false));
+    if ((!items || !items.length) && !own.length) return;
     const host = $('gallery');
     host.innerHTML = `
-      <div class="orline galtabs"><span><b data-tab="community" class="on">Presets</b>${localTab ? `<b data-tab="mine">Yours</b>` : ''}</span></div>
-      <div class="galrow" data-pane="community"></div>
-      ${localTab ? '<div class="galrow" data-pane="mine" hidden></div>' : ''}`;
-    const row = host.querySelector('[data-pane="community"]');
-    // the visitor's own capture leads the wall; then the official presets
-    // (pinned first via splatjs.pin, otherwise newest-first), and OTHER
-    // users' shared scenes close the feed — the space id carries its owner
-    if (capTileWall) row.appendChild(capTileWall);
+      <div class="orline"><span>${own.length ? 'This device' : 'Presets'}</span></div>
+      <div class="galrow" data-pane="all"></div>`;
+    const row = host.querySelector('[data-pane="all"]');
+    for (const t of own) row.appendChild(t);
+    // official presets (pinned first via splatjs.pin, otherwise newest),
+    // then OTHER users' shared scenes — the space id carries its owner
     const OFFICIAL = '42485456_';
     const keyOf = (x) => (String(x.id).startsWith(OFFICIAL)
       ? ((x.splatjs && x.splatjs.pin) || 9e9)
       : 1e12);
-    const ordered = (items || []).slice().sort((a, b) => keyOf(a) - keyOf(b));
+    const mineIds = new Set((myShares || []).map((x) => String(x.id)));
+    const ordered = (items || []).slice()
+      .filter((x) => !mineIds.has(String(x.id)))   // no duplicate of an own share
+      .sort((a, b) => keyOf(a) - keyOf(b));
+    if (own.length && ordered.length) {
+      const sep = document.createElement('div');
+      sep.className = 'galsep';
+      sep.innerHTML = '<span>Presets</span>';
+      row.appendChild(sep);
+    }
     for (const it of ordered) row.appendChild(creationTile(it, false));
     dragScroll(row);
     host.hidden = false;
-    const mp = host.querySelector('[data-pane="mine"]');
-    if (mp && capTile) mp.appendChild(capTile);
-    let sharesLoaded = !hasToken();
-    host.querySelectorAll('[data-tab]').forEach((t) => t.addEventListener('click', async () => {
-      host.querySelectorAll('[data-tab]').forEach((x) => x.classList.toggle('on', x === t));
-      const mine = t.dataset.tab === 'mine';
-      host.querySelector('[data-pane="community"]').hidden = mine;
-      if (mp) mp.hidden = !mine;
-      if (mine && !sharesLoaded) {
-        sharesLoaded = true;
-        const { fetchMine } = await import('./share.js');
-        const my = await fetchMine();
-        if ((!my || !my.length) && !capTile) { mp.innerHTML = '<span class="galmeta" style="padding:12px 4px">Nothing of yours yet — capture a place or finish a run and press Share.</span>'; return; }
-        // same look as the Scenes tiles — no management strip here
-        for (const it of (my || [])) mp.appendChild(creationTile(it, false));
-        if (!capTile) dragScroll(mp);
-      }
-    }));
   } catch (e) { /* the wall is decoration — never block the app on it */ }
 }
 
@@ -2624,6 +3130,7 @@ function trainFromShare() {
   gpuCanvas = null;
   S.gen++;
   S.session = null; S.share = null; S.restored = null;
+  S._viewerOpen = false;
   S.plyBlob = null; S.sogBlob = null;
   S.state = 'ready';
   S.preset = { id: '__sample', name: rj.name || 'Shared sample' };
@@ -3415,6 +3922,17 @@ function drawRealMarks(ctx, r, imgIdx) {
   ctx.fillStyle = '#93a1a0';
   ctx.font = '500 10px "Spline Sans Mono", monospace';
   ctx.fillText(`${fmt(f.n)} LANDMARKS`, r.x + 4, r.y + r.h + 14);
+  // capture-order debugging: the photo's EXIF time, bottom-right — a walk
+  // must read as a monotonic clock here; n/a = no EXIF (name order decides)
+  const name = (S.photos[imgIdx] || {}).name || '';
+  const cap = S.capDates && S.capDates.get(name);
+  const pad2 = (v) => String(v).padStart(2, '0');
+  const label = cap
+    ? `${pad2(new Date(cap).getHours())}:${pad2(new Date(cap).getMinutes())}:${pad2(new Date(cap).getSeconds())}`
+    : name; // no EXIF: the file name IS the ordering key — show it instead
+  ctx.textAlign = 'right';
+  ctx.fillText(label, r.x + r.w - 4, r.y + r.h + 14);
+  ctx.textAlign = 'left';
 }
 
 /** two photographs, and the matches that survived between them */

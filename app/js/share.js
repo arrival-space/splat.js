@@ -21,7 +21,7 @@ const API = `${API_BASE}/api/v1`;
  *  Returns { spaceId, spaceUrl, link }. */
 export async function shareCreation(S, sogBlob, {
   title, privacy = 'Link Only', includePhotos = false, thumbBlob = null,
-  popup = null, onStatus = () => {}, onProgress = () => {},
+  popup = null, onStatus = () => {}, onProgress = () => {}, recon: reconOverride = null,
 } = {}) {
   const token = await getToken(onStatus, popup);
   const slug = (title || 'splat').toLowerCase().replace(/\W+/g, '_');
@@ -39,7 +39,7 @@ export async function shareCreation(S, sogBlob, {
     // 2) the recon (tour, compare, stats) — plus the photographs when the
     //    creator opted in (preset runs already reference public URLs).
     //    Photos upload in parallel, four in flight; a stray 429 retries.
-    const recon = buildReconJson(S);
+    const recon = reconOverride || buildReconJson(S); // records share without a live session
     if (includePhotos && S.loadedFiles && S.loadedFiles.length) {
       const total = S.loadedFiles.length;
       let done = 0;
