@@ -10,8 +10,8 @@
 
 import { createSession, gaussiansToPly } from '../../src/index.js';
 import {
-  extractSharpFrames, planVideoFrames, videoFrameDimensions,
-  videoPipelineResolution, isVideoFile,
+extractSharpFrames, planVideoFrames, videoFrameDimensions,
+videoPipelineResolution, isVideoFile, VIDEO_MAX_FRAMES,
 } from '../../src/io/video.js';
 import { recordCaptureVideo, cameraSupported } from './camera.js';
 import { saveLastCapture, loadLastCapture } from './store.js';
@@ -496,7 +496,14 @@ function boot() {
       $('detail').hidden = true;
       $('start').hidden = false;
     });
-    if (!viewing) open(PRESETS.find((p) => p.id === 'truck'));
+    if (!viewing) {
+      // The repository intentionally bundles only the synthetic photographs;
+      // larger benchmark sets are supplied by the hosted demo. A local clone
+      // must therefore start on the sample it can actually load.
+      const local = /^(localhost|127\.0\.0\.1|\[?::1\]?)$/.test(location.hostname)
+        || location.protocol === 'file:';
+      open(PRESETS.find((p) => p.id === (local ? 'synthetic' : 'truck')));
+    }
   }
   requestAnimationFrame(loop);
 
@@ -798,7 +805,7 @@ function paintVideoPlan() {
   const modeText = plan.mode === 'fps' ? `${plan.fps.toFixed(1)} FPS` : `${plan.count} requested`;
   const sizeText = videoDialogWidth ? ` · output ${plan.frameW} × ${plan.frameH}px` : '';
   estimate.textContent = plan.valid
-    ? `Estimated ${plan.targetFrames} frames · ${modeText}${sizeText}${plan.capped ? ' · capped at 200' : ''}`
+    ? `Estimated ${plan.targetFrames} frames · ${modeText}${sizeText}${plan.capped ? ` · capped at ${VIDEO_MAX_FRAMES}` : ''}`
     : 'This selection yields fewer than 12 frames. Increase FPS or use a longer video.';
   estimate.dataset.invalid = plan.valid ? '0' : '1';
   $('video-apply').disabled = videoDialogBusy || !plan.valid || !videoDialogFile;

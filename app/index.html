@@ -177,7 +177,7 @@
       </div>
       <div class="video-setting" id="video-count-row" hidden>
         <label for="video-count"><b>Target frames</b><small>More frames improve coverage but make camera matching slower.</small></label>
-        <input id="video-count" type="number" min="12" max="200" step="1" value="120">
+        <input id="video-count" type="number" min="12" max="500" step="1" value="120">
       </div>
       <div class="video-setting">
         <label for="video-resolution"><b>Extracted frame size</b><small>Frames are resized before they enter the camera solver and training pipeline.</small></label>
@@ -191,7 +191,7 @@
       </div>
 
       <div class="video-estimate" id="video-estimate">Waiting for video metadata …</div>
-      <p class="video-note">The engine scans locally, covers the full timeline, and keeps the sharpest frame in each sampling window. Maximum 200 frames. 4K and Original use considerably more memory; training settings may downscale them again.</p>
+      <p class="video-note">The engine scans locally, covers the full timeline, and keeps the sharpest frame in each sampling window. Maximum 500 frames. 4K and Original use considerably more memory; training settings may downscale them again.</p>
       <div class="video-work" id="video-work" hidden>
         <div class="video-work-head">
           <i class="video-spinner" id="video-spinner" aria-hidden="true"></i>

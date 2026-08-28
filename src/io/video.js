@@ -15,6 +15,8 @@
 // No dependencies, no DOM attachment; works wherever <video> can decode the
 // file (H.264/HEVC .mp4/.mov on Safari and Chrome, plus webm).
 
+export const VIDEO_MAX_FRAMES = 500;
+
 /**
  * @typedef {object} VideoExtractOptions
  * @property {number} [samplesPerSec=10]   sharpness sampling rate (video time)
@@ -34,6 +36,46 @@ const until = (el, ev, err = 'error') => new Promise((res, rej) => {
   el.addEventListener(ev, ok, { once: true });
   el.addEventListener('error', bad, { once: true });
 });
+
+const waitForPresentedFrame = (video, timeoutMs = 2000) => new Promise((resolve) => {
+  let callbackId = null;
+  let timer = null;
+  let settled = false;
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+    if (timer) clearTimeout(timer);
+    resolve();
+  };
+  callbackId = video.requestVideoFrameCallback(finish);
+  if (!settled) {
+    timer = setTimeout(() => {
+      if (typeof video.cancelVideoFrameCallback === 'function') {
+        video.cancelVideoFrameCallback(callbackId);
+      }
+      finish();
+    }, timeoutMs);
+  }
+});
+
+/** Seek and wait until the decoder has presented the requested frame.
+ *
+ * `seeked` alone is not sufficient in every browser: after playback reaches
+ * the end, Chromium can dispatch it while drawImage() still sees the final
+ * frame. Registering rVFC before the seek ties capture to the newly presented
+ * frame and prevents that stale final frame becoming output frame 1. */
+export async function seekToDecodedVideoFrame(video, time) {
+  const seeked = until(video, 'seeked');
+  // The stale-frame hazard exists when rewinding from EOF. Do not wait for
+  // rVFC on every paused seek: Chromium may stop delivering those callbacks
+  // after several seeks, which would leave extraction stuck mid-capture.
+  const presented = video.ended && typeof video.requestVideoFrameCallback === 'function'
+    ? waitForPresentedFrame(video)
+    : null;
+  video.currentTime = time;
+  await seeked;
+  if (presented) await presented;
+}
 
 /** Laplacian variance of a grayscale buffer (same sharpness measure the
  *  frame decoder uses for blur exclusion). */
@@ -79,9 +121,10 @@ export function planVideoFrames(duration, opts = {}) {
   const seconds = Math.max(0, Number(duration) || 0);
   const mode = opts.mode === 'count' ? 'count' : 'fps';
   const fps = Math.max(0.5, Math.min(10, Number(opts.fps) || 3));
-  const count = Math.max(12, Math.min(200, Math.round(Number(opts.count) || 120)));
-  const uncapped = mode === 'count' ? count : Math.max(1, Math.ceil(seconds * fps));
-  const targetFrames = Math.min(200, uncapped);
+  const requestedCount = Math.max(12, Math.round(Number(opts.count) || 120));
+  const count = Math.min(VIDEO_MAX_FRAMES, requestedCount);
+  const uncapped = mode === 'count' ? requestedCount : Math.max(1, Math.ceil(seconds * fps));
+  const targetFrames = Math.min(VIDEO_MAX_FRAMES, uncapped);
   return {
     mode, fps, count, targetFrames,
     capped: targetFrames < uncapped,
@@ -199,8 +242,7 @@ export async function extractSharpFrames(file, opts = {}) {
     const capCtx = capCv.getContext('2d');
     const frames = [];
     for (let i = 0; i < picked.length; i++) {
-      video.currentTime = picked[i].t;
-      await until(video, 'seeked');
+      await seekToDecodedVideoFrame(video, picked[i].t);
       capCtx.drawImage(video, 0, 0, frameW, frameH);
       const blob = await toBlob(capCv, opts.jpegQuality ?? 0.93);
       frames.push({ source: blob, name: `frame_${String(i + 1).padStart(5, '0')}.jpg` });

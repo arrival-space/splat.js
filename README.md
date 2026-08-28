@@ -59,7 +59,7 @@ photo sets are served on the hosted demo). A video can also be selected or
 dropped: an import dialog lets the user choose fixed FPS or an exact frame
 count plus the extracted-frame resolution before extraction. The browser then
 covers the full timeline, keeps the sharpest frame in each time window, and
-feeds those local JPEG frames into the same SfM engine. The dialog stays open
+feeds up to 500 local JPEG frames into the same SfM engine. The dialog stays open
 through scanning and JPEG encoding, showing live stage counts and progress.
 Once ready, the training and camera-resolution settings follow the extracted
 frame size automatically, with a browser-safe 1600px ceiling.
