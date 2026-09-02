@@ -462,16 +462,32 @@ body { overflow: hidden; }
 .about-note span { display: block; margin-top: 3px; font-size: 13px; color: var(--muted); line-height: 1.55; }
 
 .about-foot {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+  display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+  gap: 8px 12px;
   padding-top: 16px; border-top: 1px solid var(--line);
   font: 400 12px var(--mono); color: var(--dim);
 }
+/* an item never breaks inside itself ("Source on GitHub" / "↗" on two lines):
+   when the row is too narrow the whole item wraps to the next line */
+.about-foot > * { white-space: nowrap; }
 .about-foot a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .about-ver { color: var(--dim); font: 11px "Spline Sans Mono", monospace; margin-left: auto; }
 @media (max-width: 640px) {
-  .about-foot { flex-wrap: wrap; }
   .about-ver { flex-basis: 100%; margin-left: 0; }
 }
+
+/* the GPU line: the same facts as the Details sheet's GPU tab, where a
+   visitor reporting a slow or failing device finds them first */
+.about-gpu {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px;
+  margin: 0 0 18px; padding: 11px 15px;
+  border: 1px solid var(--line); border-radius: 12px; background: var(--panel-2);
+  font: 400 12.5px var(--mono); color: var(--muted); line-height: 1.5;
+}
+.about-gpu[hidden] { display: none; }
+.about-gpu b { font: 600 12px var(--ui); color: var(--paper); letter-spacing: .02em; }
+.about-gpu span { flex: 1 1 200px; min-width: 0; }
+.about-gpu .btn { margin-left: auto; padding: 4px 10px; font-size: 11.5px; }
 .about-foot a:hover { color: #5ee7d6; }
 
 /* run-length hint on the start card */

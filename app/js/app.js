@@ -445,6 +445,7 @@ function boot() {
   // the About sheet; from inside a scene it stays the way back home
   const openAbout = () => {
     $('about').hidden = false;
+    renderAboutGpu();
     // a pushed UI state: the phone's Back closes the sheet, not the app
     if (!(history.state && history.state.sj)) history.pushState({ sj: 'about' }, '');
   };
@@ -538,6 +539,7 @@ async function checkGpu() {
     S.gpuProbe = adapter ? { adapter, info: adapter.info || {} } : { failed: true };
   } catch { S.gpuProbe = { failed: true }; }
   if (!$('details').hidden && S.detailTab === 'gpu') renderDetails();
+  if (!$('about').hidden) renderAboutGpu();
   if (location.search.includes('nogpu')) ok = false;
   if (ok) return;
   S.noGpu = true;
@@ -4275,6 +4277,25 @@ function gpuFacts() {
     screen: `${screen.width}×${screen.height} @${devicePixelRatio}`,
     ips: S.itersPerSec || 0,
   };
+}
+
+/** the about card's "This device" line — filled when the card opens and
+ *  again when the boot probe lands */
+function renderAboutGpu() {
+  const el = $('about-gpu');
+  if (!el) return;
+  const g = gpuFacts();
+  el.hidden = false;
+  const bits = [g.name];
+  if (g.maxBufferSize !== '—') bits.push(`${g.maxBufferSize} buffers`);
+  if (g.features.length) bits.push(g.features.filter((f) => /subgroups|shader-f16/.test(f)).join(', '));
+  if (g.ips) bits.push(`${fmt(g.ips)} cycles/s`);
+  $('about-gpu-txt').textContent = bits.filter(Boolean).join(' · ');
+  const btn = $('about-gpu-copy');
+  if (!btn.dataset.wired) {
+    btn.dataset.wired = '1';
+    btn.addEventListener('click', () => copyGpuReport(btn));
+  }
 }
 
 /** the GPU tab of the Details sheet (stat: the sheet's row builder) */
