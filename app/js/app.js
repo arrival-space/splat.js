@@ -309,7 +309,7 @@ function boot() {
     }
     useOwnPhotos(files);
   });
-  $('d-close').addEventListener('click', () => { $('details').hidden = true; });
+  $('d-close').addEventListener('click', closeDetails);
   $('d-prev').addEventListener('click', () => detailFlip(-1));
   $('d-next').addEventListener('click', () => detailFlip(1));
 
@@ -409,7 +409,7 @@ function boot() {
     if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
     if (!$('about').hidden) { if (e.key === 'Escape') $('about').hidden = true; return; }
     if (!$('details').hidden) {
-      if (e.key === 'Escape') $('details').hidden = true;
+      if (e.key === 'Escape') closeDetails();
       if (S.detailTab === 'marks' && e.key === 'ArrowLeft') detailFlip(-1);
       if (S.detailTab === 'marks' && e.key === 'ArrowRight') detailFlip(1);
       return;
@@ -484,6 +484,14 @@ function boot() {
   }
   const mp = new URLSearchParams(location.search);
   const viewing = mp.get('space') || mp.get('model');
+  if (mp.get('details')) {
+    // the sheet's state came with the address (a refresh, or a link sent to
+    // someone to read their GPU): open it on that tab — on the wall only the
+    // GPU tab has anything to say, a viewer opening below re-renders it
+    S.detailTab = mp.get('details');
+    S._detailsFromUrl = true;
+    if (!viewing) openDetails();
+  }
   if (WALL_FIRST) {
     // nothing preselected: the hero asks for photos, the Community wall
     // below offers finished creations to view (and train from there)
@@ -523,8 +531,13 @@ function boot() {
 async function checkGpu() {
   let ok = false;
   try {
-    ok = !!(navigator.gpu && await navigator.gpu.requestAdapter());
-  } catch { /* the probe itself failing is the same answer */ }
+    const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
+    ok = !!adapter;
+    // kept for the Details sheet's GPU tab (and its report) — the only
+    // source when no session exists yet
+    S.gpuProbe = adapter ? { adapter, info: adapter.info || {} } : { failed: true };
+  } catch { S.gpuProbe = { failed: true }; }
+  if (!$('details').hidden && S.detailTab === 'gpu') renderDetails();
   if (location.search.includes('nogpu')) ok = false;
   if (ok) return;
   S.noGpu = true;
@@ -719,6 +732,13 @@ async function localRunTiles() {
       ${desc ? `<span class="galdesc">${esc(desc)}</span>` : ''}
       <span class="galmeta">${state}</span>`;
     if (r.thumb) b.prepend(Object.assign(new Image(), { src: URL.createObjectURL(r.thumb), alt: '' }));
+    const viewFromState = (rec) => {
+      S._localRun = rec;
+      continueLocalRun(true).catch((e) => {
+        console.error(e);
+        flash(`Could not open this run: ${e.message}`, 8000);
+      });
+    };
     const openRun = () => restoreSession({
       url: URL.createObjectURL(r.sog),
       reconUrl: URL.createObjectURL(new Blob([JSON.stringify(r.recon)], { type: 'application/json' })),
@@ -731,8 +751,9 @@ async function localRunTiles() {
         flash(`Could not continue this run: ${e.message}`, 8000);
       });
     };
+    const viewable = !!(r.recon && (r.sog || (r.status === 'finished' && r.state)));
     tileMenu(b.querySelector('.run-menu'), [
-      r.sog && r.recon && { label: 'View', act: openRun },
+      viewable && { label: 'View', act: r.sog ? openRun : () => viewFromState(r) },
       (r.sog || retrainable || (r.state && r.recon)) && { label: 'Train', act: () => { S._localRun = r; trainLocalChoice(); } },
       r.sog && r.recon && { label: 'Share', act: () => shareDialog(r) },
       { label: 'Delete', danger: true, act: async () => { await deleteRun(r.id); b.remove(); } },
@@ -744,6 +765,10 @@ async function localRunTiles() {
           reconUrl: URL.createObjectURL(new Blob([JSON.stringify(r.recon)], { type: 'application/json' })),
           localRun: r, // the viewer's Train button reads this
         });
+      } else if (r.status === 'finished' && r.state && r.recon) {
+        // finished but never compressed: the viewer reopens from the raw
+        // state (Compress there turns it into a sog tile)
+        viewFromState(r);
       } else if (r.state && r.recon && !(S.runId === r.id && S.state === 'train')) {
         // a pause checkpoint: no sog to view yet, but the run continues
         // exactly where it stopped
@@ -1799,9 +1824,11 @@ async function deviceLostRecovery() {
   if (S._recovering) return;
   const gen = S.gen;
   if (S.state === 'done') {
-    flash(S.plyBlob
+    flash(S.plyBlob || S.sogBlob
       ? 'The browser reclaimed the graphics device — the finished model is safe, export still works.'
-      : 'The browser reclaimed the graphics device.', 9000);
+      : S.runId
+        ? 'The browser reclaimed the graphics device — the result is saved on this device under Yours.'
+        : 'The browser reclaimed the graphics device.', 9000);
     return;
   }
   if (S.state !== 'train') return;
@@ -1887,10 +1914,11 @@ if (!IOS) document.addEventListener('visibilitychange', () => {
   }
 });
 
-async function finish() {
+/** The done-state viewer: land at the photographer's view, controls, tour.
+ *  Shared by a run finishing live and a finished run reopened from its
+ *  state checkpoint (viewOnly continueLocalRun). */
+function enterDone() {
   S.state = 'done';
-  S.iter = S.session.trainer.iter;   // honest count — the run may end early
-  S.minutes = Math.max(1, Math.round((performance.now() - S.trainT0) / 60000));
   S.atFrame = -1; S.fadeTo = 0;
   vp.lock = null; vp.freeF = null;
   $('stage').dataset.cursor = 'grab';
@@ -1906,6 +1934,13 @@ async function finish() {
   renderControls();
   dock('');
   startTour();
+  if (S._detailsFromUrl) { S._detailsFromUrl = false; openDetails(); }   // ?details=<tab> reopens the sheet
+}
+
+async function finish() {
+  S.iter = S.session.trainer.iter;   // honest count — the run may end early
+  S.minutes = Math.max(1, Math.round((performance.now() - S.trainT0) / 60000));
+  enterDone();
   const hold = S.psnrHold != null ? ` · ${S.psnrHold.toFixed(1)} dB on the photograph it never saw` : '';
   flash(`Done${hold}`, 6000);
   if (EVAL.on) {
@@ -1916,41 +1951,34 @@ async function finish() {
       flash(`Test PSNR ${r.psnr.toFixed(2)} dB over ${r.frames.length} held-out photos`, 12000);
     }).catch(() => {});
   }
-  // cache the export now, while the device is certainly alive — iOS can
-  // reclaim it from a backgrounded tab, and the readback path dies with it
-  S.plyBlob = null; S.sogBlob = null;
-  // secure the raw state FIRST (a plain readback, seconds): a 3-hour result
-  // must survive even when the export chain below hangs or the device dies
-  // (seen in the wild: sog compression frozen 30 min after a 2h train). The
-  // sog-success patch drops this checkpoint again once the result is stored.
+  S.plyBlob = null; S.sogBlob = null; S._sogJob = null;
+  // The result is secured as a RAW STATE checkpoint (a plain readback,
+  // seconds) — the same record a pause writes, marked finished. It is
+  // viewable and resumable from Yours without anything else. Nothing heavy
+  // runs here: the .ply export (an O(splats × cameras) bake on the main
+  // thread), the SOG compression (k-means on a second GPU device) and the
+  // per-photo scoring used to start right now and left the finished viewer
+  // at ~1 fps for minutes — exactly while the creator wanted to look at the
+  // result. They are on demand: Compress (or Share / Download .sog) runs the
+  // ONE compression job (getSogBlob), scoring runs when Details opens.
+  const gen = S.gen;
+  while (S._ckptBusy) await new Promise((r) => setTimeout(r, 200));   // a 'hidden' write in flight
   try { await checkpointRun('finish'); } catch { /* best-effort */ }
-  S.session.exportPlyBlob().then(async (b) => {
-    S.plyBlob = b;
-    // local library: a finished run's result is kept on this device — the
-    // sog + camera path + a render thumb, restorable from the Yours tab
-    if (!S.runId) return;
-    const runId = S.runId, gen = S.gen;
+  if (S.runId && S.gen === gen) {
     try {
-      const { plyToSog } = await import('./sog.js');
-      const sog = await plyToSog(new Uint8Array(await b.arrayBuffer()), {});
-      if (S.gen !== gen) return; // a new run started while compressing
-      S.sogBlob = sog;
-      const { buildReconJson } = await import('./session_io.js');
-      const recon = buildReconJson(S);
       const thumb = await renderShareThumb();
+      if (S.gen !== gen) return;
       const { patchRun } = await import('./store.js');
-      await patchRun(runId, {
+      await patchRun(S.runId, {
         status: 'finished', iter: S.iter, splats: S.splats,
         // app runs train every photo (holdout -1): train PSNR is the number
         psnr: S.psnrHold ?? S.psnrTrain ?? null, minutes: S.minutes,
-        sog, recon, ...(thumb ? { thumb } : {}),
-        state: null, ckptAt: null,   // the pause checkpoint yields to the sog
+        ...(thumb ? { thumb } : {}),
       });
       flash('Result saved on this device — it stays under Yours', 5000);
     } catch (e) { console.warn('local save failed', e); }
-  }).catch(() => {});
+  }
   if (PERF.on) perfCard();
-  scoreFrames();
 }
 
 // ── restore: present a saved run without re-training ────────────────────────
@@ -2178,6 +2206,7 @@ function finishRestore(ses, reconJson, nSplats, hasState, gaussians) {
     } else if (cams.length > 2) {
       startTour();
     }
+    if (S._detailsFromUrl) { S._detailsFromUrl = false; openDetails(); }   // ?details=<tab> reopens the sheet
     // the stand-in hero image fades once the model actually renders — for
     // the SOG-lite viewer that is when the asset finishes streaming
     const hero = document.getElementById('share-hero');
@@ -2289,6 +2318,7 @@ async function scoreFrames() {
     try {
       c.psnr = await S.session.evalFramePsnr(c.ci);
       paintStrip();
+      if (!$('details').hidden) renderDetails();
     } catch { return; }
   }
 }
@@ -2340,6 +2370,26 @@ function renderControls() {
     startTour(true);
   });
   c.appendChild(play);
+
+  if (!S.restored && !S.sogBlob && S.session && S.session.trainer && S.session.trainer.device) {
+    // the web-delivery format is optional and costs real GPU time (k-means
+    // on a second device) — the creator starts it, never the finish
+    const sog = document.createElement('button');
+    sog.className = 'cbtn';
+    sog.id = 'c-sog';
+    sog.textContent = 'Compress';
+    sog.title = 'Compress to .sog — 10-20x smaller, for sharing and the web';
+    sog.addEventListener('click', async () => {
+      try {
+        const blob = await getSogBlob();
+        flash(`${fmt(S.splats)} splats compressed to ${(blob.size / 1e6).toFixed(1)} MB — Share and Download .sog are instant now.`, 5000);
+      } catch (e) {
+        console.error(e);
+        flash(`SOG compression failed: ${e.message}`, 6000);
+      }
+    });
+    c.appendChild(sog);
+  }
 
   const stats = document.createElement('button');
   stats.className = 'statchip';
@@ -2459,7 +2509,9 @@ function trainLocalChoice() {
  *  Gaussians (un-baking the Mip opacity compensation — the export bakes it
  *  for standard viewers, the trainer applies it itself), rebuild the session
  *  from the stored camera solve + the capture's photos, and run on. */
-async function continueLocalRun() {
+/** viewOnly: reopen a FINISHED run from its state checkpoint straight into
+ *  the done viewer (same run record, so Compress patches the sog in) */
+async function continueLocalRun(viewOnly = false) {
   const lr = S._localRun;
   if (!lr || !lr.recon || !(lr.state || lr.sog)) return;
   const recon = lr.recon;
@@ -2594,6 +2646,17 @@ async function continueLocalRun() {
   S.holdHist = []; S.chartEvents = []; S.growthStopped = false;
   buildSceneFromSession();
   mountModelCanvas();
+  if (viewOnly) {
+    S.maxIters = baseIter;
+    S.runId = lr.id;
+    S.minutes = lr.minutes || 0;
+    S.psnrTrain = lr.psnr ?? null;
+    S.splats = g.n;
+    S.trainT0 = performance.now();
+    enterDone();
+    flash(`${fmt(g.n)} splats — Compress turns this into a shareable .sog`, 6000);
+    return;
+  }
   if (lr.state && lr.status !== 'finished') S._resumeRunId = lr.id;
   startTraining();
   flash(`Continuing from ${fmt(baseIter)} cycles — +${fmt(S.maxIters - baseIter)} more.`, 6000);
@@ -2632,7 +2695,24 @@ const DL_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true" class="
  *  models and the writer reports its stages. */
 async function getSogBlob() {
   if (S.sogBlob) return S.sogBlob;
+  // ONE compression per run: a second request (Download .sog while Share is
+  // compressing, or the old auto-compress at finish) used to start a second
+  // k-means job on a second GPU device
+  if (S._sogJob && S._sogJob.gen === S.gen) return S._sogJob.p;
+  const gen = S.gen;
+  const p = compressSog(gen).finally(() => { if (S._sogJob && S._sogJob.gen === gen) S._sogJob = null; });
+  S._sogJob = { gen, p };
+  return p;
+}
+
+async function compressSog(gen) {
+  // the viewer is not navigable while the compressor owns the GPU — pause
+  // the tour instead of rendering into the stall, resume it afterwards
+  const wasTour = !!S.tour;
+  stopTour();
   const ply = S.plyBlob || await S.session.exportPlyBlob();
+  if (S.gen !== gen) throw new Error('run changed');
+  S.plyBlob = ply;
   document.getElementById('sogcard')?.remove();
   const card = document.createElement('div');
   card.className = 'upcard';
@@ -2653,10 +2733,26 @@ async function getSogBlob() {
         if (bar && frac != null) bar.style.width = `${(frac * 100).toFixed(1)}%`;
       },
     });
+    if (S.gen !== gen) throw new Error('run changed');
     S.sogBlob = blob;
+    renderControls();   // the Compress button has done its job
+    // the library record: sog in, the raw state checkpoint out (10-20x
+    // smaller, and the sog is what the wall tile opens)
+    if (S.runId) {
+      try {
+        const { buildReconJson } = await import('./session_io.js');
+        const { patchRun } = await import('./store.js');
+        await patchRun(S.runId, {
+          sog: blob, recon: buildReconJson(S), splats: S.splats,
+          psnr: S.psnrHold ?? S.psnrTrain ?? null,
+          state: null, ckptAt: null,
+        });
+      } catch (e) { console.warn('local save failed', e); }
+    }
     return blob;
   } finally {
     document.getElementById('sogcard')?.remove();
+    if (wasTour && S.gen === gen && S.state === 'done' && !S.tour) startTour(true);
   }
 }
 
@@ -4146,15 +4242,139 @@ function pairStage(ctx, w, h, dpr) {
 }
 
 // ── details sheet ───────────────────────────────────────────────────────────
-const DTABS = [['score', 'Score'], ['marks', 'Landmarks'], ['matches', 'Matching'], ['cams', 'Cameras'], ['perf', 'Timing']];
+const DTABS = [['score', 'Score'], ['marks', 'Landmarks'], ['matches', 'Matching'], ['cams', 'Cameras'], ['perf', 'Timing'], ['gpu', 'GPU']];
+
+// ── GPU facts: what this device is, for the Details sheet and bug reports ──
+// The adapter probed at boot serves the wall (no session yet); a live
+// session's own adapter/device replaces it (its limits are the ones granted).
+function gpuFacts() {
+  const g = S.session && S.session.gpu;
+  const adapter = (g && g.adapter) || (S.gpuProbe && S.gpuProbe.adapter) || null;
+  const device = (g && g.device) || null;
+  const info = (g && g.info) || (adapter && adapter.info) || (S.gpuProbe && S.gpuProbe.info) || {};
+  const lim = (device && device.limits) || (adapter && adapter.limits) || null;
+  const feats = device ? [...device.features] : adapter ? [...adapter.features] : [];
+  const gb = (v) => v ? `${(v / (1 << 30)).toFixed(v >= (1 << 30) ? 1 : 2)} GB` : '—';
+  const nav = navigator;
+  return {
+    ready: !!(adapter || device || S.gpuProbe),
+    name: [info.vendor, info.architecture, info.device].filter(Boolean).join(' ') || (S.gpuProbe && S.gpuProbe.failed ? 'no WebGPU adapter' : '…'),
+    description: info.description || '',
+    vendor: info.vendor || '—', architecture: info.architecture || '—', device: info.device || '—',
+    granted: !!device,
+    features: feats.filter((f) => /subgroups|shader-f16|timestamp-query|float32-filterable|bgra8unorm-storage/.test(f)),
+    maxBufferSize: lim ? gb(lim.maxBufferSize) : '—',
+    maxStorageBinding: lim ? gb(lim.maxStorageBufferBindingSize) : '—',
+    workgroupStorage: lim ? `${(lim.maxComputeWorkgroupStorageSize / 1024).toFixed(0)} KB` : '—',
+    invocations: lim ? String(lim.maxComputeInvocationsPerWorkgroup) : '—',
+    texture2d: lim ? String(lim.maxTextureDimension2D) : '—',
+    ua: nav.userAgent,
+    platform: (nav.userAgentData && nav.userAgentData.platform) || nav.platform || '—',
+    cores: nav.hardwareConcurrency || '—',
+    memory: nav.deviceMemory ? `${nav.deviceMemory} GB` : '—',
+    screen: `${screen.width}×${screen.height} @${devicePixelRatio}`,
+    ips: S.itersPerSec || 0,
+  };
+}
+
+/** the GPU tab of the Details sheet (stat: the sheet's row builder) */
+function gpuTab(stat) {
+  const g = gpuFacts();
+  return {
+    cap: 'The graphics adapter this browser gives the trainer, and the limits it granted.',
+    title: g.name,
+    body: [
+      g.description ? esc(g.description) : 'Vendor, architecture and device as WebGPU reports them; browsers deliberately keep this coarse.',
+      'Training speed is mostly memory bandwidth: the same photos train at identical quality on ' +
+      'a phone and a desktop card, dozens of times apart in cycles per second. Copy the report ' +
+      'below when something trains slower than expected, or fails to start.',
+    ],
+    rows: [
+      stat('Vendor', esc(g.vendor)),
+      stat('Architecture', esc(g.architecture)),
+      stat('Device', esc(g.device)),
+      stat('Buffer limit', g.maxBufferSize, 'accent'),
+      stat('Storage binding', g.maxStorageBinding),
+      stat('Workgroup memory', g.workgroupStorage),
+      stat('Features', g.features.length ? esc(g.features.join(', ')) : '—'),
+      g.ips ? stat('Speed', `${fmt(g.ips)} <small>cycles/s</small>`) : '',
+      stat('Screen', esc(g.screen)),
+      stat('CPU cores', esc(String(g.cores))),
+    ].filter(Boolean),
+    btns: [{ label: 'Copy GPU report', fn: copyGpuReport }],
+  };
+}
+
+function buildGpuReport() {
+  const g = gpuFacts();
+  const L = [];
+  L.push(`splat.js gpu report — ${new Date().toISOString()}`);
+  L.push(`url: ${location.href}`);
+  L.push(`ua: ${g.ua}`);
+  L.push(`platform: ${g.platform} · cores ${g.cores} · memory ${g.memory}`);
+  L.push(`screen: ${g.screen}`);
+  L.push(`gpu: ${g.name}${g.description ? ` — ${g.description}` : ''}`);
+  L.push(`limits: maxBufferSize ${g.maxBufferSize} · maxStorageBufferBindingSize ${g.maxStorageBinding} · workgroup storage ${g.workgroupStorage} · invocations ${g.invocations} · texture2d ${g.texture2d}`);
+  L.push(`features: ${g.features.join(', ') || 'none of interest'}${g.granted ? ' (device granted)' : ' (adapter)'}`);
+  if (S.session) {
+    L.push(`session: ${S.state} · ${fmt(S.splats || 0)} splats · ${fmt(S.iter || 0)} cycles${g.ips ? ` · ${fmt(g.ips)} cycles/s` : ''}`);
+    L.push(`settings: ${JSON.stringify(S.settings)} · preset ${S.preset ? S.preset.id : '?'}`);
+  }
+  return L.join('\n');
+}
+
+async function copyGpuReport(btn) {
+  const old = btn.textContent;
+  try {
+    await navigator.clipboard.writeText(buildGpuReport());
+    btn.textContent = 'Copied ✓';
+  } catch {
+    btn.textContent = 'Copy failed';
+  }
+  setTimeout(() => { btn.textContent = old; }, 1600);
+}
+
+/** the sheet's state lives in the address: ?details=<tab> — a refresh keeps
+ *  it open, and the link hands the same tab (GPU, say) to whoever it is sent
+ *  to, on THEIR device */
+function syncDetailsUrl() {
+  const u = new URL(location.href);
+  const was = u.searchParams.get('details');
+  const now = $('details').hidden ? null : S.detailTab;
+  if ((was || null) === now) return;
+  if (now) u.searchParams.set('details', now); else u.searchParams.delete('details');
+  history.replaceState(history.state, '', u);
+}
+
+function closeDetails() {
+  $('details').hidden = true;
+  syncDetailsUrl();
+}
 
 function openDetails() {
   $('details').hidden = false;
+  if (!S.session) {
+    // the wall: only the device itself has facts to show
+    S.detailTab = 'gpu';
+    renderDetails();
+    syncDetailsUrl();
+    return;
+  }
+  // per-photo scores: one render + readback per camera, started the first
+  // time the sheet asks for them (not at finish, where they stole the GPU
+  // from the viewer)
+  if (S.state === 'done' && S.session && S.session.trainer && S.session.trainer.device &&
+      S.scene && S._scoredGen !== S.gen) {
+    S._scoredGen = S.gen;
+    scoreFrames().catch(() => {});
+  }
   $('d-export').replaceChildren(buildExport());
   renderDetails();
+  syncDetailsUrl();
 }
 
 function renderDetails() {
+  if (!S.session) return renderDetailsNoSession();
   const ses = S.session, recon = ses.recon;
   const n = S.photos.length;
   const placed = recon.cams.length;
@@ -4178,7 +4398,7 @@ function renderDetails() {
     const b = document.createElement('button');
     b.textContent = label;
     b.setAttribute('aria-pressed', String(S.detailTab === id));
-    b.addEventListener('click', () => { S.detailTab = id; renderDetails(); });
+    b.addEventListener('click', () => { S.detailTab = id; renderDetails(); syncDetailsUrl(); });
     segHost.appendChild(b);
   });
 
@@ -4228,7 +4448,7 @@ function renderDetails() {
         label: 'Look at a frame it never saw',
         fn: () => {
           const h = S.scene.cams.find((c) => c.state === 'holdout');
-          $('details').hidden = true;
+          closeDetails();
           S.compare = 'swipe';
           select(h ? h.i : S.sel);
         },
@@ -4311,16 +4531,17 @@ function renderDetails() {
         { label: 'Copy to clipboard', fn: copyPerfLog },
       ],
     },
+    gpu: S.detailTab === 'gpu' ? gpuTab(stat) : null,
   }[S.detailTab];
 
   $('d-prev').hidden = $('d-next').hidden = S.detailTab !== 'marks';
 
   // the visual slot: the photo/pair/cameras canvas, the score chart, or the log
-  const vis = S.detailTab === 'perf' ? 'perf' : S.detailTab === 'score' ? 'chart' : 'cv';
+  const vis = (S.detailTab === 'perf' || S.detailTab === 'gpu') ? 'perf' : S.detailTab === 'score' ? 'chart' : 'cv';
   $('d-cv').hidden = vis !== 'cv';
   $('d-chart').hidden = vis !== 'chart';
   $('d-perf').hidden = vis !== 'perf';
-  if (vis === 'perf') $('d-perf').textContent = buildPerfReport();
+  if (vis === 'perf') $('d-perf').textContent = S.detailTab === 'gpu' ? buildGpuReport() : buildPerfReport();
   if (vis === 'chart') {
     if (!dchart) dchart = new Chart($('d-chart'), {});
     dchart.maxIter = S.maxIters;
@@ -4364,6 +4585,34 @@ function renderDetails() {
   if (dvp) dvp.resize();
 }
 
+/** the sheet on the wall, before any run: the GPU tab alone */
+function renderDetailsNoSession() {
+  S.detailTab = 'gpu';
+  $('d-sub').textContent = 'This device · no run open';
+  $('d-export').replaceChildren();
+  const segHost = $('d-seg');
+  segHost.innerHTML = '';
+  const b = document.createElement('button');
+  b.textContent = 'GPU';
+  b.setAttribute('aria-pressed', 'true');
+  segHost.appendChild(b);
+  const stat = (k, v, tone) =>
+    `<div class="stat"><span class="stat-k">${k}</span>
+     <span class="stat-v"${tone ? ` data-tone="${tone}"` : ''}>${v}</span></div>`;
+  const T = gpuTab(stat);
+  $('d-prev').hidden = $('d-next').hidden = true;
+  $('d-cv').hidden = true;
+  $('d-chart').hidden = true;
+  $('d-perf').hidden = false;
+  $('d-perf').textContent = buildGpuReport();
+  $('d-cap').textContent = T.cap;
+  $('d-txt').innerHTML =
+    `<h3>${T.title}</h3>${T.body.map((p) => `<p>${p}</p>`).join('')}<div class="grp">${T.rows.join('')}</div>` +
+    `<div class="tabbtns">${T.btns.map((b2, i) => `<button class="btn btn-quiet" data-bi="${i}">${b2.label}</button>`).join('')}</div>`;
+  $('d-txt').querySelectorAll('[data-bi]').forEach((el) =>
+    el.addEventListener('click', () => T.btns[el.dataset.bi].fn(el)));
+}
+
 /** Landmarks tab: step through the photos (the filmstrip is under the sheet) */
 function detailFlip(dir) {
   const n = S.photos.length;
@@ -4376,8 +4625,8 @@ function detailFlip(dir) {
 }
 
 function drawDetail() {
-  // score = the chart canvas, perf = the log pre — neither repaints per frame
-  if (S.detailTab === 'perf' || S.detailTab === 'score') return;
+  // score = the chart canvas, perf/gpu = the log pre — none repaints per frame
+  if (S.detailTab === 'perf' || S.detailTab === 'gpu' || S.detailTab === 'score' || !S.session) return;
   const cv = $('d-cv');
   if (!cv.clientWidth) return;
   if (S.detailTab === 'cams') {

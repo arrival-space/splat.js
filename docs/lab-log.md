@@ -457,6 +457,22 @@ suite green after all of it.
   (a nightly scheduled task was set up and dropped the same day —
   redundant while we build daily).
 
+- **App (user-facing), same day**: `?placement=1` sticky set ships the ladder
+  combo to nightly + live for hands-on testing (43a7104). Matching stage
+  no longer flickers/blacks between pairs (29ed943: shown pair held ≥ 700 ms,
+  switch only when both bitmaps are decoded). Done-state 1 fps bug: finish()
+  used to start the PLY export (O(n·cams) bake on the main thread), the SOG
+  k-means on a SECOND GPU device and per-camera PSNR readbacks the moment
+  training ended — while the tour rendered every frame; Download .sog during
+  that started a second k-means. Now finish() only checkpoints the raw state
+  (+ thumb) and marks the run finished; a Compress button (or Share /
+  Download .sog) runs ONE compression job with the tour paused, patches the
+  sog into the library record; scoring runs when Details opens; a finished
+  uncompressed run reopens from its state via the wall tile. Details sheet
+  gains a GPU tab (adapter/limits/features, copyable report) that also works
+  on the wall, and `?details=<tab>` in the URL so a refresh or a sent link
+  reopens it.
+
 ## 2026-08-31 (defaults: measured rollout)
 
 - **DC-convention bridge shipped** (b5b2356): PLY/SOG imports keep the
