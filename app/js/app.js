@@ -91,6 +91,20 @@ const MINSCALE_OVR = parseFloat(sessionStorage.getItem('splatjs_minscale'));
 const NEEDLE_ON = (Number.isFinite(DILATE_OVR) && DILATE_OVR > 0 && DILATE_OVR <= 1)
   || Number.isFinite(ANISO_OVR) || (Number.isFinite(MINSCALE_OVR) && MINSCALE_OVR > 0);
 
+// ?placement=1: the PLACEMENT experimental set — the 2026-09-02 ladder combo
+// (docs/plan-placement-2026-09-02.md): base A (mipComp off, anisoReg 0,
+// minScale 1e-5, stock dilate 0.3) + refineV2 + growRate 0.1. Truck 30k
+// +0.30, garden +0.03 over the MCMC set. Without the Mip compensation the
+// trained model IS what PlayCanvas / pcview / SuperSplat rasterize, so the
+// export carries no opacity bake (session.exportPlyBlob) and a continued
+// share is not un-baked. Sticky like ?mcmc; ?placement=0 clears.
+{
+  const q = new URLSearchParams(location.search);
+  if (q.get('placement') === '0') sessionStorage.removeItem('splatjs_placement');
+  else if (q.get('placement')) sessionStorage.setItem('splatjs_placement', '1');
+}
+const PLACEMENT_ON = sessionStorage.getItem('splatjs_placement') === '1';
+
 // training settings (start-card panel), persisted across visits.
 // res 0 = auto, iters 0 = the 20k default, buf = working-buffer scale.
 // Phones start from lighter defaults; anything saved wins.
@@ -1203,6 +1217,11 @@ async function startPrep() {
       if (Number.isFinite(ANISO_OVR) && ANISO_OVR >= 0) trainerOpts.anisoReg = ANISO_OVR;
       if (Number.isFinite(MINSCALE_OVR) && MINSCALE_OVR > 0 && MINSCALE_OVR < 1e-3) trainerOpts.minScale = MINSCALE_OVR;
       flash(`Needle set active — dilate ${trainerOpts.dilate ?? 0.3}, anisoReg ${trainerOpts.anisoReg ?? 'default'}, minScale ${trainerOpts.minScale ?? '1e-4'} (?dilate=0 clears)`, 6000);
+    }
+    if (PLACEMENT_ON) {
+      // applied after the MCMC set so growRate 0.1 wins over its 0.05
+      Object.assign(trainerOpts, { mipComp: false, anisoReg: 0, minScale: 1e-5, refineV2: true, growRate: 0.1 });
+      flash('Placement set active — mipComp off, anisoReg 0, minScale 1e-5, refineV2, growRate 0.1 (?placement=0 clears)', 6000);
     }
     // Auto splat budget: sized from the CYCLE budget, not just the solve —
     // the measured capacity law (~15 splats/cycle classic, ~35 under MCMC),
@@ -2475,8 +2494,11 @@ async function continueLocalRun() {
   }
   // un-bake opacity compensation (pure fn of position, mean scale, focal,
   // camera centres — recompute and divide out in logit space); only sog/ply
-  // exports carry the baking, the raw checkpoint never does
-  if (!lr.state) {
+  // exports carry the baking, the raw checkpoint never does. Under the
+  // placement set the trainer has no Mip compensation, so its exports were
+  // never baked and there is nothing to divide out (a comp-trained share
+  // continued under the set keeps its baked opacities — experimental).
+  if (!lr.state && !PLACEMENT_ON) {
     const pos = [];
     for (const c of recon.cams) {
       const R = c.R, t = c.t;
