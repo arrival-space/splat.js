@@ -205,9 +205,16 @@
         sent, and nothing is stored.</span>
     </div>
     <div class="about-gpu" id="about-gpu" hidden>
-      <b>This device</b>
+      <div class="about-gpu-head">
+        <b>Device Info</b>
+        <button class="iconbtn" id="about-gpu-copy" type="button" title="Copy GPU report" aria-label="Copy GPU report">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="11" height="11" rx="2"/>
+            <path d="M5 15V6a2 2 0 0 1 2-2h9"/>
+          </svg>
+        </button>
+      </div>
       <span id="about-gpu-txt">…</span>
-      <button class="btn btn-quiet" id="about-gpu-copy" type="button">Copy GPU report</button>
     </div>
     <div class="about-foot">
       <a id="about-gh" target="_blank" rel="noopener">Source on GitHub ↗</a>

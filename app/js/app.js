@@ -4340,7 +4340,14 @@ function renderAboutGpu() {
   const btn = $('about-gpu-copy');
   if (!btn.dataset.wired) {
     btn.dataset.wired = '1';
-    btn.addEventListener('click', () => copyGpuReport(btn));
+    // an icon button: the copied state shows as colour + title, not text
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(buildGpuReport());
+        btn.dataset.done = '1'; btn.title = 'Copied ✓';
+      } catch { btn.title = 'Copy failed'; }
+      setTimeout(() => { btn.dataset.done = ''; btn.title = 'Copy GPU report'; }, 1600);
+    });
   }
 }
 
