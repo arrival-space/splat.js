@@ -26,6 +26,8 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('opareg') ? `_or${Q.get('opareg')}` : '') + (Q.get('scalereg') ? `_sr${Q.get('scalereg')}` : '')
   + (Q.get('oregref') ? `_orr${Q.get('oregref')}` : '') + (Q.get('oregrefmax') ? `_orm${Q.get('oregrefmax')}` : '')
   + (Q.get('donor') ? `_dw${Q.get('donor')}` : '')
+  + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
+  + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('econ') ? `_e${Q.get('econ')}` : '')
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
 const logEl = document.getElementById('log');
@@ -85,6 +87,18 @@ try {
       : {
         maxSplats: +(Q.get('maxsplats') || Math.min(2000000, Math.round(ITERS * 35))), capMult: 8, shDeg: 3,
         growRate: 0.05, mcmcNoise: true, scaleReg: 0.01, moveCap: 0.25, shLr: 3e-4,
+        // econ=brush: the Brush economy as ONE package (its pieces never
+        // transplanted one at a time): no loss-side reg, decay 0.004/200it,
+        // dead below 1/255, every dead splat relocated each refine (200 it),
+        // donors ∝ opacity among rendered splats. Individual knobs BELOW
+        // override it (attribution cells).
+        ...(Q.get('econ') === 'brush' ? { opacityReg: 0, opaDecay: 0.004, deadThr: 1 / 255, poolMin: 0,
+          moveCap: 1, donorWeight: 'opavis', refineEvery: 200 } : {}),
+        // opacity economy knobs (lab log 2026-09-02, source verdict): dead
+        // threshold, donor-pool floor, Brush-style opacity decay (per 200 it)
+        ...(Q.get('deadthr') ? { deadThr: +Q.get('deadthr') } : {}),
+        ...(Q.get('poolmin') != null ? { poolMin: +Q.get('poolmin') } : {}),
+        ...(Q.get('opadecay') ? { opaDecay: +Q.get('opadecay') } : {}),
         ...(Q.get('maxscale') ? { maxScale: +Q.get('maxscale') } : {}),
         // per-frame (key,id) entry budget (default maxSplats*24); rung 4 probe
         ...(Q.get('entriescap') ? { entriesCap: +Q.get('entriescap') } : {}),

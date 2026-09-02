@@ -773,6 +773,11 @@ export class GSTrainer {
         ? this.basePosLr * Math.pow(this.opts.lrExp, Math.min(1, this.iter / this.horizon))
         : this.basePosLr * Math.pow(0.01, Math.min(1, this.iter / (0.75 * this.horizon)));
     this.adamData[0] = this.adamData[1] = this.adamData[2] = posLr;
+    if (this.opts.opaDecay > 0) {
+      // opts.opaDecay in Brush units (opacity per 200 iterations at t=0),
+      // applied per step with their linear (1-t) ramp — flg.z in the kernel
+      this.adamData[30] = (this.opts.opaDecay / 200) * (1 - Math.min(1, this.iter / this.horizon));
+    }
     if (this.opts.opaRegRefN > 0) {
       // opaRegRefMax caps the factor (1 = only ever weaken above the ref;
       // a stronger reg during growth measured −0.12 at 1.05M)
@@ -1228,16 +1233,21 @@ export class GSTrainer {
     this.bufGatherRead.unmap();
 
     const sig = (x) => 1 / (1 + Math.exp(-x));
+    // opts.deadThr: below it a splat is relocated (ours 0.02; LichtFeld
+    // 0.005, Brush 1/255). opts.poolMin: donors need at least this opacity
+    // (0 = the whole live population, as 3DGS-MCMC / Brush draw)
+    const deadThr = this.opts.deadThr ?? 0.02;
+    const poolMin = this.opts.poolMin ?? 0.05;
     let dead = [];
     const pool = [];      // donor candidates (alive enough to carry mass)
     let deadAll = 0;
     for (let i = 0; i < this.n; i++) {
       const o = sig(g[i * 4]);
-      if (o < 0.02) { deadAll++; if (canReloc) dead.push(i); }
-      else if (o >= 0.05) pool.push(i);
+      if (o < deadThr) { deadAll++; if (canReloc) dead.push(i); }
+      else if (o >= poolMin) pool.push(i);
     }
     let survived = 0;
-    if (this._lastReloc) for (const i of this._lastReloc) if (sig(g[i * 4]) >= 0.02) survived++;
+    if (this._lastReloc) for (const i of this._lastReloc) if (sig(g[i * 4]) >= deadThr) survived++;
     const census = { dead: deadAll, survived, lastReloc: this._lastReloc ? this._lastReloc.length : 0 };
     if (pool.length < 16) return { moved: 0, grown: 0, n: this.n, ...census };
     const moveCap = Math.ceil(this.n * (this.opts.moveCap ?? 1.0));
@@ -1251,13 +1261,17 @@ export class GSTrainer {
     // opts.donorWeight: 'err' (default), 'opa' (3DGS-MCMC exact: donors ∝
     // opacity, so eq-9 clones are born visible — with error mass the pool's
     // p50 opacity 0.08 splits into clones at 0.02–0.04, the death line), or
-    // 'erropa' (product)
+    // 'erropa' (product), 'opavis' (Brush: ∝ opacity among the splats that
+    // rendered in the window — error mass > 0 is the visibility record)
     const dw = this.opts.donorWeight ?? 'err';
     const cdf = new Float64Array(pool.length);
     let acc = 0;
     for (let k = 0; k < pool.length; k++) {
       const p = pool[k] * 4;
-      acc += dw === 'opa' ? sig(g[p]) : dw === 'erropa' ? g[p + 2] * sig(g[p]) : g[p + 2];
+      acc += dw === 'opa' ? sig(g[p])
+        : dw === 'erropa' ? g[p + 2] * sig(g[p])
+        : dw === 'opavis' ? (g[p + 2] > 0 ? sig(g[p]) : 0)
+        : g[p + 2];
       cdf[k] = acc;
     }
     if (!(acc > 0)) {
@@ -1458,15 +1472,16 @@ export class GSTrainer {
     let dead = [];
     const donors = [];
     let deadAll = 0;
+    const deadThr = this.opts.deadThr ?? 0.02;
     for (let i = 0; i < this.n; i++) {
       const o = sig(params[i * STRIDE + 13]);
-      if (o < 0.02) { deadAll++; if (canReloc) dead.push(i); }
+      if (o < deadThr) { deadAll++; if (canReloc) dead.push(i); }
       else if (o > 0.4) donors.push(i);
     }
     // telemetry: how many of the rows relocated last round are still alive
     let survived = 0;
     if (this._lastReloc) {
-      for (const i of this._lastReloc) if (sig(params[i * STRIDE + 13]) >= 0.02) survived++;
+      for (const i of this._lastReloc) if (sig(params[i * STRIDE + 13]) >= deadThr) survived++;
     }
     const census = { dead: deadAll, survived, lastReloc: this._lastReloc ? this._lastReloc.length : 0 };
     if (donors.length < 16) return { moved: 0, grown: 0, n: this.n, ...census };

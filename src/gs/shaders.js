@@ -1297,6 +1297,16 @@ fn main(@builtin(global_invocation_id) gid: vec3u,
   // opacity floor (flg.y): a shallower pit than the ±cl.z clamp so a splat
   // that lost its view climbs back inside a few hundred steps
   if (slot == 13u && au.flg.y > 0.0) { p = max(p, -au.flg.y); }
+  // flg.z: Brush-style opacity decay — a constant subtracted in OPACITY
+  // space every step (Brush: o -= 0.004*(1-t) per 200 it, then prune below
+  // 1/255) in place of the loss-side reg above (reg.x = 0 with it). Unlike
+  // the reg it is not Adam-normalised, so a splat the data supports outruns
+  // it easily while an unsupported one fades at a fixed rate.
+  if (slot == 13u && au.flg.z > 0.0 && regOn) {
+    let o = 1.0 / (1.0 + exp(-p));
+    let o2 = max(o - au.flg.z, 1e-4);
+    p = log(o2 / (1.0 - o2));
+  }
   params[j] = p;
 }
 `;
