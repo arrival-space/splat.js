@@ -50,10 +50,10 @@ exactly as trained.
 | 0 | PASS — same-seed spread 0.006 dB; cross-seed 0.19 is the floor |
 | 1 | PASS — A adopted (3 seeds: A 25.37 mean vs C 25.29); rung 7 skipped |
 | 2 | DROPPED — regvis −0.02 / −0.15; dead 0 % ⇒ relocation never fires; the unconditional reg is the MCMC death signal, not a bug. Telemetry kept |
-| 3 | KEEPERS: refineV2 (+0.12) and growRate 0.1 (+0.25); combo +0.30 → truck 25.67. Rejected: errDonors, splitV2, growUntil, refineEvery 250/100 (cadence itself hurts under refineV2). Garden confirm running |
-| 4 | staged — 2M cap on the combo (`gen_cells.mjs 4 --base=...`) |
+| 3 | CLOSED — KEEPERS: refineV2 (+0.12) and growRate 0.1 (+0.25); combo +0.30 → truck 25.67, garden +0.03. Rejected: errDonors, splitV2, growUntil, refineEvery 250/100 (cadence itself hurts under refineV2) |
+| 4 | DIAGNOSED — "2M" cell is really 1.61M (cap = seed·capMult = 25,141·8·8): −0.61 mean, 59 % dead at the cap, 0.5 dB same-seed chaos. Entry budget cleared (overflow 0). Regs ×0.65 at 1.61M +0.4…1.0 while the same at 1.05M is −0.23 → reg weight must scale 1/n. 4c attribution: the recovery is the OPACITY reg alone (or-only at 1.61M 25.70 = first high-capacity cell at par with 1.05M; scaling scaleReg along −0.15; stronger reg during growth −0.12) → `opts.opaRegRefN` / `opaRegRefMax` (opacity only, factor ≤ 1). 4d donor draw ∝ opacity / err×opa (MCMC-exact) rejected (−0.09 / −0.12). 4e: 1/n rule at 1.61M over 2 seeds −0.30 (seed 2 always 0.4–0.6 under seed 1 at that capacity) → **DROPPED** by the stop rule; `opaRegRefN` opt-in, 1.05M stays the cap. 1.05M side: opacityReg flat 0.0065–0.01, cliff at 0.015 (−0.28) |
 | 5 | RE-RANKED behind 4/6: with moveCap 0.25 every dead splat is relocated each refine, so compaction cannot cut n or ms/iter at fixed cap; only worth building if a keeper raises deadPct |
-| 6 | staged — poslr 0.07 / 0.3, SH ramp off on the combo |
+| 6 | poslr 0.07 −0.14 (rejected, third time), poslr 0.3 +0.07 / 0.5 +0.08 (4 of 4 cells up, under the keep line → separate arm in the garden confirm), SH ramp off −0.18 (rejected). Garden confirm of poslr 0.5: +0.04 / +0.01 — non-regressing, still under the line → documented arm, not a default |
 
 ## Gate protocol
 

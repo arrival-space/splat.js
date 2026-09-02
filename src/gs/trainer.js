@@ -603,6 +603,14 @@ export class GSTrainer {
       // scale ratchet fix) and the opacity logit floor
       this.opts.regVisOnly ? 1 : 0, this.opts.opaFloor ?? 0, 0, 0,
     ], 16);
+    // opts.opaRegRefN: the splat count at which opacityReg applies as
+    // configured; the per-step weight scales by opaRegRefN/n (capped by
+    // opaRegRefMax). The reg is a per-splat constant while the data gradient
+    // a splat receives falls with n (3DGS-MCMC's reg is mean()-scaled, i.e.
+    // 1/n per splat), so a weight tuned at ~1M starves a 1.6M model (lab log
+    // 2026-09-02, rung 4: 59 % dead at the cap, −0.6 dB; the same weight
+    // ×0.65 recovers it — scaleReg must NOT scale along, that costs 0.12).
+    this.opaRegBase = this.adamData[24];
     this.lastRefine = 0;
     // opts.seed: deterministic camera schedule + refine draws (bench A/B —
     // unseeded, the same cell spreads ~0.37 dB run to run on truck 30k).
@@ -765,6 +773,12 @@ export class GSTrainer {
         ? this.basePosLr * Math.pow(this.opts.lrExp, Math.min(1, this.iter / this.horizon))
         : this.basePosLr * Math.pow(0.01, Math.min(1, this.iter / (0.75 * this.horizon)));
     this.adamData[0] = this.adamData[1] = this.adamData[2] = posLr;
+    if (this.opts.opaRegRefN > 0) {
+      // opaRegRefMax caps the factor (1 = only ever weaken above the ref;
+      // a stronger reg during growth measured −0.12 at 1.05M)
+      const f = Math.min(this.opts.opaRegRefMax ?? 1, this.opts.opaRegRefN / Math.max(1, this.n));
+      this.adamData[24] = this.opaRegBase * f;
+    }
     if (this.v2) { // log-scale 1e-2 -> 6e-3 exponential
       const sLr = 1e-2 * Math.pow(0.6, Math.min(1, this.iter / this.horizon));
       this.adamData[3] = this.adamData[4] = this.adamData[5] = sLr;
@@ -1234,9 +1248,18 @@ export class GSTrainer {
 
     // donor sampling ∝ accumulated error mass (fallback: opacity, e.g. the
     // first refine of a run before any window has accumulated)
+    // opts.donorWeight: 'err' (default), 'opa' (3DGS-MCMC exact: donors ∝
+    // opacity, so eq-9 clones are born visible — with error mass the pool's
+    // p50 opacity 0.08 splits into clones at 0.02–0.04, the death line), or
+    // 'erropa' (product)
+    const dw = this.opts.donorWeight ?? 'err';
     const cdf = new Float64Array(pool.length);
     let acc = 0;
-    for (let k = 0; k < pool.length; k++) { acc += g[pool[k] * 4 + 2]; cdf[k] = acc; }
+    for (let k = 0; k < pool.length; k++) {
+      const p = pool[k] * 4;
+      acc += dw === 'opa' ? sig(g[p]) : dw === 'erropa' ? g[p + 2] * sig(g[p]) : g[p + 2];
+      cdf[k] = acc;
+    }
     if (!(acc > 0)) {
       acc = 0;
       for (let k = 0; k < pool.length; k++) { acc += sig(g[pool[k] * 4]); cdf[k] = acc; }

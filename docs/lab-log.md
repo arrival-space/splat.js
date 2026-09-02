@@ -99,6 +99,191 @@ All cells: truck, frozen COLMAP-identical poses (`scratch/truck_ab_recon.json`),
   regression.** Garden's denser SfM seed reaches the cap early even at
   0.05, so the growRate gain is a truck (sparse seed) effect; refineV2
   holds level. Rung 3 CLOSED: keepers refineV2 + growRate 0.1.
+- **Rung 4 (capacity) first cell**: `?maxsplats=2000000` on the combo,
+  s1 = **25.09** (−0.57 vs 25.67 at 1.05M), 1,609,024 splats, deadPct 0,
+  8.4 min. Two findings before the second seed even lands:
+  - The "2M" cell never had a 2M cap: `cap = min(seed·capMult, maxSplats)`
+    (trainer.js:198) and the seed cloud is the 25,141 SfM points × 8
+    clones, × capMult 8 = exactly 1,609,024. s2 shows the same count at
+    iter 14.8k. So the cell is really a **1.61M** cell — which happens to
+    be Brush's count (1.63M) on the same scene. At Brush's capacity we
+    LOSE 0.57 dB while Brush is +0.4 over our 1.05M number: whatever
+    dilutes at high n is ours, not a capacity law.
+  - Growth reaches 1.61M at refine ~22 (201k·1.1^22, iter ~13k), so the
+    cell spends 17k iterations at capacity — more than the combo does at
+    1.05M (reached ~11k). Iterations-at-capacity was the rung-3 gain
+    driver, so that is not the loss either.
+  Prime suspect: the per-frame (key,id) entry budget, `entriesCap =
+  maxSplats·24` (48M at 2M). The scan kernel flags tiles that overflow it
+  and readLoss accumulates `trainer.entryOverflowTiles`, but no bench
+  cell ever reported it. Added `overflowTiles` to the bench result and a
+  `?entriescap=` passthrough (tag `_ec`); the 2M cells in the running
+  chain predate the edit, so a probe cell follows the chain. If the count
+  is non-zero the "capacity dilutes" verdict of 2026-09-01 was a budget
+  bug, not placement.
+- **Rung 4 second seed + rung 6** (all on the combo, vs 25.664 / 25.674):
+  | cell | s1 | s2 | mean | vs combo | dead% |
+  |---|---|---|---|---|---|
+  | cap "2M" (= 1.61M) | 25.090 | 25.029 | 25.06 | **−0.61** | 0 / 12.0 |
+  | poslr 0.07 (≈ Brush) | 25.551 | 25.506 | 25.53 | −0.14 | 0.8 |
+  | poslr 0.3 | 25.700 | 25.771 | 25.74 | +0.07 | 0.65 |
+  | SH ramp off | 25.289 | 25.687 | 25.49 | −0.18 | 0.8 |
+  Rung 6: Brush's position LR is still wrong for us (−0.14, third time
+  negative); 0.3 is +0.04/+0.10 — both seeds up but under the +0.1 keep
+  line, so a 0.5 cell probes whether there is a peak between 0.3 and 1.0
+  before anything is adopted. SH ramp off rejected (−0.18, 0.4 seed
+  spread: the early full-SH fit is unstable).
+  Rung 4: the 1.61M cell loses on both seeds, and the second one ends
+  with **12 % dead** at the horizon (s1: 0 %). The new refine census log
+  (`bench_*_refines.txt`, posted per cell from now on) shows what the
+  population does at 1.05M: the moment growth reaches the cap (~11k) a
+  **quarter of all splats is dead per refine** (relocated 262,500 =
+  moveCap·n, dead 269k), and only 35–40 % of the relocated survive the
+  next 500 iterations; churn decays to ~3 % dead per refine by 25k.
+  Reading: our opacity/scale regs are per-splat CONSTANTS (adam kernel
+  `g += reg·σ'`), while 3DGS-MCMC's are `mean()`-scaled, i.e. 1/n per
+  splat. The data gradient a splat receives falls with n (more splats
+  share the same pixels), so the reg/data balance tilts toward death as n
+  grows — exactly the 1.61M distribution: opacity p50 0.055 vs 0.080,
+  long axis p95 0.36 vs 0.26 (dimmer, longer, more of them). Probe cells
+  queued (`gen_cells.mjs 4b`): overflowTiles at 1.61M, entry budget ×2,
+  regs ×0.65 (= 1.05/1.61) at 1.61M, and the same regs at 1.05M as the
+  control.
+- **Rung 4b probes** (seed 1; the 1.61M cell was 25.09 in the first pass):
+  | cell | psnr | dead% @30k | overflow | note |
+  |---|---|---|---|---|
+  | 1.61M again (same seed) | 24.571 | 9.0 | 0 | same cell as 25.09: **0.52 dB same-seed spread** at this n |
+  | 1.61M, entry budget ×2 | 25.162 | 9.2 | 0 | inside that spread → budget is not it |
+  | **1.61M, regs ×0.65** | **25.577** | 4.2 | 0 | +0.4…1.0 over the 1.61M cell |
+  | 1.05M, regs ×0.65 (control) | 25.439 | 0.1 | — | **−0.23** vs the combo |
+  Entry-budget hypothesis dead (overflow 0 everywhere, doubling it does
+  nothing). The reg hypothesis holds on both arms: the same ×0.65 that
+  costs 0.23 at 1.05M recovers ≥0.4 at 1.61M — the right reg weight
+  scales with 1/n, as 3DGS-MCMC's mean() formulation implies. The 1.61M
+  census explains the same-seed chaos: at the cap 948k of 1.61M are dead
+  (59 %), moveCap relocates 402k per refine and 72 % of those die again
+  within 500 iterations; with ×0.65 the peak is 53 % and the tail decays
+  twice as fast (172k dead at 29.5k vs 314k). Brush's truck export for
+  comparison (1.63M): opacity p50 0.094 / p95 0.57 / p99 0.90 vs ours
+  0.080 / 0.28 / 0.51 — Brush keeps a genuinely opaque tail; our
+  Adam-normalised constant reg never lets one form.
+  Implemented `opts.regRefN` (+ `regRefMax`): per-step reg weights =
+  configured × regRefN/n (bench `?regref=`, `?regrefmax=`). Rung 4c cells:
+  regRefN 1.05M at 1.05M (differs from the combo only during growth) and
+  at 1.61M (2 seeds), the ≤1-clamped variant, and opacityReg-only ×0.65
+  for attribution.
+- **Rung 6 poslr 0.5**: 25.763 / 25.729 = 25.746, **+0.08** (s1 +0.10,
+  s2 +0.06). With 0.3 at +0.07 that is a plateau, 4 cells out of 4 above
+  the combo (same-seed spread is 0.006) but under the +0.1 keep line.
+  Not adopted on truck alone; carried as a separate arm into the final
+  garden confirm — garden decides.
+- **Rung 4c (regs ∝ 1/n)**:
+  | cell | s1 | s2 | dead% | vs |
+  |---|---|---|---|---|
+  | 1.05M, both regs × 1.05M/n (stronger during growth) | 25.598 | 25.501 | 1.4 | −0.12 vs combo |
+  | 1.61M, both regs × 1.05M/n | 25.551 | 25.312 | 5.4 / 7.0 | +0.37 vs 1.61M raw |
+  | 1.61M, both regs, factor ≤ 1 | 25.401 | | 4.6 | |
+  | **1.61M, opacityReg ×0.65 only** (scaleReg 0.01) | **25.701** | | 2.2 | **+0.04 vs the 1.05M combo** |
+  Attribution is clean: the recovery is the OPACITY reg; scaling scaleReg
+  along costs ~0.15 (25.55 vs 25.70) and a stronger reg during growth
+  costs 0.12. So: `opts.opaRegRefN` (opacity only, factor ≤ 1 by default,
+  bench `?oregref=`) replaces the two-reg knob. The or-only 1.61M cell is
+  the first high-capacity run that does not lose to 1.05M — and it is
+  seed 1 only, with the 1.61M seed spread at 0.24. Rung 4e: second seed,
+  the 1/n rule at 1.61M (2 seeds), opacityReg 0.005 at 1.61M, and the
+  1.05M side (0.0065 / 0.015) to see whether 0.01 is at the optimum.
+- **Rung 4d (donor draw, `opts.donorWeight`)** — REJECTED. refineV2 draws
+  relocation donors ∝ accumulated error mass; the pool's p50 opacity is
+  0.08, so eq-9 clones are born at 0.02–0.04, the death line (65–70 % of
+  relocated splats die within 500 iterations). 3DGS-MCMC draws ∝ opacity.
+  Result on the combo: `opa` 25.512 / 25.651 (−0.09), `erropa` 25.593 /
+  25.508 (−0.12). Error-guided placement is worth more than clone
+  survival; the churn is a feature (bad clones die, good ones stay).
+- **Rung 4e (opacityReg only, both caps) — RUNG 4 DROPPED.** Combo
+  reference s1 25.664 / s2 25.674.
+
+  | cell | s1 | s2 | dead % | Δ mean |
+  |---|---|---|---|---|
+  | 1.61M opacityReg 0.0065 | 25.701 | 25.260 | 0 / 0 | −0.19 |
+  | 1.61M `opaRegRefN` 1.05M (×0.65 at cap, ≤1) | 25.652 | 25.084 | 2.2 / 1.6 | −0.30 |
+  | 1.61M opacityReg 0.005 | 25.569 | — | 0 | −0.10 (s1) |
+  | 1.05M opacityReg 0.0065 | 25.700 | — | 0.3 | +0.04 (s1) |
+  | 1.05M opacityReg 0.015 | 25.384 | — | 4.0 | −0.28 (s1) |
+
+  Reading: the reg fix recovers about half of the raw 1.61M loss (24.9 →
+  25.4 mean) but 1.61M never beats 1.05M on truck, and seed 2 sits
+  0.4–0.6 under seed 1 in every 1.61M cell — the 0.5 dB same-seed chaos
+  measured in 4b is a property of that capacity, not of the reg. Stop
+  rule (two negatives in a row) → rung 4 dropped; `opaRegRefN` stays
+  opt-in, 1.05M stays the truck cap. On the 1.05M side the opacity reg is
+  flat from 0.0065 to 0.01 and falls off a cliff at 0.015 (dead 4 %), so
+  0.01 is at the safe edge of the plateau, not in the middle of it. The
+  earlier −0.23 for "both regs ×0.65 at 1.05M" was entirely scaleReg.
+  User check-in during this rung ("looks like parameter tuning — are the
+  fundamentals solid?"): correct. The opacity economy (clone birth at
+  0.02–0.04, 72 % relocation deaths, p95 opacity 0.28 vs Brush 0.57) is a
+  system property; no constant fixes it. Next: source-level comparison
+  of the LichtFeld MCMC and Brush relocation/pruning paths (pulled
+  LichtFeld to e6645167, 78 commits incl. "training VRAM −30 % + faster"
+  #1917) before any further cell.
+- **Garden confirm, rung 6 arm (poslr 0.5 on the combo)**: 26.582 /
+  26.657 vs combo 26.544 / 26.644 → +0.04 / +0.01, dead 0 %. Garden does
+  not regress; truck +0.08 mean. Under the keep line on both sets, so
+  poslr 0.5 stays a documented arm (bench `?poslr=0.5`), not a default.
+  Combo unchanged: truck 25.67, garden 26.60.
+- **Source reading (Brush HEAD 8b7f5c6 vs v0.3.0, LichtFeld e6645167)**
+  — the loss normalisation was misread by the agent reports: our
+  Charbonnier gradient is a raw per-pixel sum (no 1/P, `shaders.js:719`)
+  while LichtFeld's L1 is a mean over pixels with regs `0.01·σ'(o)/N`; per
+  splat the two reg/data ratios are within 2× at 1–2M. The reg strength is
+  NOT the fundamental. The structural differences are: dead threshold
+  (ours 0.02, LichtFeld 0.005, Brush 1/255), relocation cadence (500 /
+  100 / 200 it) and count (0.25·n cap / all dead / all pruned), donor pool
+  (o ≥ 0.05 ∝ err, ratio ≤ 3 / all ∝ err, ratio ≤ 51 / ∝ o·visible),
+  child opacity (eq-9 from an 0.08-median pool → 0.02–0.04 / eq-9 floor
+  0.005 / `1−(1−o)^(1/√2)`) and Brush's `o −= 0.004·(1−t)` opacity decay
+  every 200 it in place of any loss-side reg. Brush HEAD changed nearly
+  every training-math item since v0.3.0 (the 26.07 reference): random
+  background black ± 0.1, Mip 3D scale floor, zeroed Adam moments on both
+  split halves, LR schedule in median-scene units, opacity lr 0.012.
+  Before porting any of it: re-run Brush at HEAD under the matched truck
+  protocol (built from source — no release after v0.3.0; rustup installed
+  via winget, `cargo build --release -p brush-cli`, flag rename
+  `--total-steps` → `--total-train-iters`).
+- **Brush HEAD (8b7f5c6) re-benchmark, truck, identical protocol** (219
+  train / 32 eval, 979 px, SH3, 2M cap, 30k; runner
+  `C:\Dev\brush\run-truck-benchmark-head.ps1`, log + PLY in
+  `runs\truck-30k-head`). **26.139 / 0.8960, 1,596,378 splats, 710 s** vs
+  v0.3.0 26.071 / 0.8962, 1,632,170, 458 s → **+0.07 dB at 30k, SSIM
+  flat, 55 % slower wall-clock** (23.7 vs 15.3 ms/it, the splat count is
+  2.5× higher through the first 10k).
+
+  | iter | HEAD | v0.3.0 | Δ | HEAD splats | v0.3.0 splats |
+  |---|---|---|---|---|---|
+  | 5k | 24.42 | 24.05 | +0.37 | 1.01M | 408k |
+  | 10k | 25.30 | 25.04 | +0.26 | 1.35M | 999k |
+  | 15k | 25.59 | 25.38 | +0.21 | 1.57M | 1.63M |
+  | 20k | 25.82 | 25.83 | −0.01 | | |
+  | 25k | 25.96 | 25.90 | +0.06 | | |
+  | 30k | **26.14** | **26.07** | +0.07 | 1.60M | 1.63M |
+
+  Reading: the year of changes bought sample efficiency EARLY (the whole
+  +0.2…0.4 lead is built before growth stops at 15k and comes from
+  growing 2.5× faster) and almost nothing at the 30k ceiling — Brush's
+  ceiling on truck is ~26.1 either way. Export distributions
+  (`splat_stats.mjs`): HEAD bakes the Mip 3D scale floor into the PLY
+  (`bake_min_scale`: `s' = sqrt(s² + f²)`, opacity × sqrt(det s²/det s'²)),
+  so its export has thin-axis p5 1.25e-3 (v0.3.0 2.2e-6), aniso p50
+  **4.5** (v0.3.0 88), ratio > 20 in **6.3 %** of splats (v0.3.0 72 %).
+  Opacity is unchanged: p50 0.099 / p95 0.63 / p99 0.87 (v0.3.0 0.094 /
+  0.57 / 0.90). Consequence for us: needles are neither necessary nor
+  harmful for the ceiling — two Brush builds with opposite shape
+  distributions land at the same PSNR with the same OPACITY distribution
+  (p95 ≈ 0.6 vs our 0.28). The opacity economy is the fundamental, as
+  the source reading said. Gap ours (25.67) → Brush HEAD: 0.47.
+  Not adopted from HEAD for now: the 3D filter (it is an export-safety
+  and aliasing feature, PSNR-neutral here), random background (truck has
+  no alpha). Worth a cell later: their growth curve (1M splats by 5k).
 
 ## 2026-09-01 (the thinness ban: trt finds the ceiling in one closeup)
 

@@ -22,3 +22,8 @@ examples/
 scripts/
 data/*
 !data/synthetic
+
+# Burn/Brush CLI autotune cache (brush_cli run with this dir as CWD)
+target/
+# headless bench runner output (the tracked baseline lives in tests/bench/*.jsonl)
+tests/bench/results/

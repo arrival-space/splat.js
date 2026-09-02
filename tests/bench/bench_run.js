@@ -14,6 +14,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('aniso') != null ? `_ar${Q.get('aniso')}` : '')
   + (Q.get('ssim') ? `_ssim${Q.get('ssim')}` : '')
   + (Q.get('maxsplats') ? `_cap${Q.get('maxsplats')}` : '')
+  + (Q.get('entriescap') ? `_ec${Q.get('entriescap')}` : '')
   + (Q.get('minscale') ? `_ms${Q.get('minscale')}` : '')
   + (Q.get('comp') != null ? `_c${Q.get('comp')}` : '')
   + (Q.get('regvis') ? '_rv' : '') + (Q.get('opafloor') ? `_of${Q.get('opafloor')}` : '')
@@ -22,6 +23,9 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('refevery') ? `_re${Q.get('refevery')}` : '') + (Q.get('growuntil') ? `_gu${Q.get('growuntil')}` : '')
   + (Q.get('relocuntil') ? `_ru${Q.get('relocuntil')}` : '')
   + (Q.get('poslr') ? `_pl${Q.get('poslr')}` : '') + (Q.get('shramp') === '0' ? '_nsr' : '')
+  + (Q.get('opareg') ? `_or${Q.get('opareg')}` : '') + (Q.get('scalereg') ? `_sr${Q.get('scalereg')}` : '')
+  + (Q.get('oregref') ? `_orr${Q.get('oregref')}` : '') + (Q.get('oregrefmax') ? `_orm${Q.get('oregrefmax')}` : '')
+  + (Q.get('donor') ? `_dw${Q.get('donor')}` : '')
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
 const logEl = document.getElementById('log');
@@ -82,6 +86,8 @@ try {
         maxSplats: +(Q.get('maxsplats') || Math.min(2000000, Math.round(ITERS * 35))), capMult: 8, shDeg: 3,
         growRate: 0.05, mcmcNoise: true, scaleReg: 0.01, moveCap: 0.25, shLr: 3e-4,
         ...(Q.get('maxscale') ? { maxScale: +Q.get('maxscale') } : {}),
+        // per-frame (key,id) entry budget (default maxSplats*24); rung 4 probe
+        ...(Q.get('entriescap') ? { entriesCap: +Q.get('entriescap') } : {}),
         ...(Q.get('dilate') ? { dilate: +Q.get('dilate') } : {}),
         ...(Q.get('aniso') != null ? { anisoReg: +Q.get('aniso') } : {}),
         ...(Q.get('minscale') ? { minScale: +Q.get('minscale') } : {}),
@@ -97,6 +103,14 @@ try {
         ...(Q.get('movecap') ? { moveCap: +Q.get('movecap') } : {}),
         ...(Q.get('poslr') ? { posLrScale: +Q.get('poslr') } : {}),
         ...(Q.get('shramp') === '0' ? { shRamp: false } : {}),
+        // reg weights are per-splat constants (3DGS-MCMC's are mean()-scaled,
+        // i.e. 1/n) — rung 4 tests whether they must shrink with capacity
+        ...(Q.get('opareg') ? { opacityReg: +Q.get('opareg') } : {}),
+        ...(Q.get('scalereg') ? { scaleReg: +Q.get('scalereg') } : {}),
+        // opacityReg ∝ 1/n above oregref splats (rung 4: capacity dilution)
+        ...(Q.get('oregref') ? { opaRegRefN: +Q.get('oregref') } : {}),
+        ...(Q.get('oregrefmax') ? { opaRegRefMax: +Q.get('oregrefmax') } : {}),
+        ...(Q.get('donor') ? { donorWeight: Q.get('donor') } : {}),
         ...(Q.get('ssim') ? { ssimWeight: +Q.get('ssim') } : {}),
         ...(Q.get('v2') ? { engine: 'v2' } : {}),
         ...(Q.get('growfrac') ? { growFrac: +Q.get('growfrac') } : {}),
@@ -105,7 +119,10 @@ try {
         ...(Q.get('relocuntil') ? { relocUntil: +Q.get('relocuntil') } : {}),
       },
   });
-  ses.on('log', (m) => console.log('[SES]', m));
+  // refine census lines (dead / relocated / grown per call) are the only
+  // record of what the population did mid-run — posted next to the result
+  const refineLog = [];
+  ses.on('log', (m) => { console.log('[SES]', m); if (/^refine @/.test(m)) refineLog.push(m); });
   let beat = 0;
   ses.on('stage', (e) => { if (Date.now() - beat > 30000) { beat = Date.now(); say('solve-' + e.stage, { done: e.done, total: e.total }); } });
   await ses.load(files);
@@ -193,12 +210,16 @@ try {
     heldOut,
     protocol: cfg.holdout1 ? 'holdout1' : 'eval8',
     trainMin, solveMin, deadPct,
+    // tiles whose (key,id) entry budget overflowed over the whole run — a
+    // non-zero count means whole tiles were silently skipped in training
+    overflowTiles: ses.trainer.entryOverflowTiles || 0,
     splats: ses.trainer.n,
     cams: recon.cams.length, of: ses.frames.length,
     rms: recon.rmsBA && +recon.rmsBA.toFixed(3),
     res: cfg.res || 1600, ts: new Date().toISOString(),
   };
   await post(`bench_${TAG}_result.json`, JSON.stringify(result));
+  try { await post(`bench_${TAG}_refines.txt`, refineLog.join('\n')); } catch {}
   await say('DONE', result);
 } catch (e) {
   console.error(e);
