@@ -177,6 +177,7 @@ const S = {
   prep: null,                  // latest solve stage event
   feats: new Map(),            // image -> { n, x, y } (real keypoints)
   lastPairEv: null,            // latest surviving pair with sample matches
+  shownPair: null,             // the pair ON STAGE: { ev, a, b, since } — held, never black
   regCams: [],                 // cameras as they register (beat 3)
   solveStats: { pairsChecked: 0, pairsUsable: 0, solveSec: 0 },
   chartEvents: [],             // real refine/growth moments for the curve
@@ -1057,7 +1058,7 @@ async function open(preset, autostart = false) {
   S.scene = null;
   S.sel = 0; S.atFrame = -1; S.fade = 0; S.fadeTo = 0;
   S.iter = 0; S.splats = 0; S.psnrTrain = null; S.psnrHold = null;
-  S.prep = null; S.feats = new Map(); S.lastPairEv = null; S.regCams = [];
+  S.prep = null; S.feats = new Map(); S.lastPairEv = null; S.shownPair = null; S.regCams = [];
   S.regPts = null; S.regPtsCount = 0;
   S.growNote = null;
   S.tour = null;
@@ -1143,7 +1144,7 @@ async function startPrep() {
   S.iter = 0; S.splats = 0; S.psnrTrain = null; S.psnrHold = null;
   S.itersPerSec = 0; S.minutes = 0; S.etaAt = null;
   S.holdHist = []; S.chartEvents = []; S.growthStopped = false;
-  S.feats = new Map(); S.lastPairEv = null; S.regCams = [];
+  S.feats = new Map(); S.lastPairEv = null; S.shownPair = null; S.regCams = [];
   S.regPts = null; S.regPtsCount = 0; S.growNote = null;
   S.solveStats = { pairsChecked: 0, pairsUsable: 0, solveSec: 0 };
   S.maxIters = PERF.on ? PERF.iters : (S.settings.iters || INITIAL_ITERS);
@@ -1430,7 +1431,14 @@ function onStage(e) {
   if (e.stage === 'matching' && e.detail) {
     S.solveStats.pairsChecked = e.done;
     S.solveStats.pairsUsable = e.detail.usable;
-    if (e.detail.pair) { S.lastPairEv = e.detail.pair; S.sel = e.detail.pair.i; }
+    if (e.detail.pair) {
+      S.lastPairEv = e.detail.pair; S.sel = e.detail.pair.i;
+      // start both decodes now so the pair is ready by the time the stage
+      // may switch to it (the LRU rarely holds a pair's photos already)
+      const p1 = S.photos[e.detail.pair.i], p2 = S.photos[e.detail.pair.j];
+      if (p1 && p1.url) bmp(p1.url);
+      if (p2 && p2.url) bmp(p2.url);
+    }
   }
   if (e.stage === 'register' && e.detail && e.detail.R) {
     const fr = S.session && S.session.frames && S.session.frames[e.detail.image];
@@ -4077,18 +4085,31 @@ function drawRealMarks(ctx, r, imgIdx) {
   ctx.textAlign = 'left';
 }
 
-/** two photographs, and the matches that survived between them */
+/** two photographs, and the matches that survived between them.
+ *  The stage HOLDS what it shows: a newer pair replaces the current one only
+ *  when both of its bitmaps are decoded and the current pair has had its
+ *  PAIR_HOLD on screen. Matching emits many pairs a second and the display
+ *  LRU rarely holds both photos of a fresh pair, so switching on every
+ *  event was a black frame per decode and a photo swap per event (flicker,
+ *  "hardly see the photos"). Evicted bitmaps are never closed (img.js), so
+ *  keeping references here is safe. Before the first pair is ready, the
+ *  single-photo stage stands in — never black. */
+const PAIR_HOLD = 700;
 function pairStage(ctx, w, h, dpr) {
+  const now = performance.now();
+  const cand = S.lastPairEv;
+  let sp = S.shownPair;
+  if (cand && (!sp || (cand !== sp.ev && now - sp.since >= PAIR_HOLD))) {
+    const p1 = S.photos && S.photos[cand.i];
+    const p2 = S.photos && S.photos[cand.j];
+    const a = p1 && p1.url ? readyBmp(p1.url) : null;
+    const b = p2 && p2.url ? readyBmp(p2.url) : null;
+    if (a && b) sp = S.shownPair = { ev: cand, a, b, since: now };
+  }
+  if (!sp) return photoStage(ctx, w, h, dpr, true);
   ctx.fillStyle = '#070909';
   ctx.fillRect(0, 0, w, h);
-  const ev = S.lastPairEv;
-  if (!ev) return;
-  const p1 = S.photos && S.photos[ev.i];
-  const p2 = S.photos && S.photos[ev.j];
-  if (!p1 || !p2 || !p1.url || !p2.url) return;
-  const a = readyBmp(p1.url);
-  const b = readyBmp(p2.url);
-  if (!a || !b) return;
+  const { ev, a, b } = sp;
   const half = w / dpr / 2;
   ctx.save(); ctx.scale(dpr, dpr);
   const r1 = fitRect(a.width, a.height, half, h / dpr, 14);
