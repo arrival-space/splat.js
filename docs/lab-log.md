@@ -4,6 +4,102 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-02 (placement ladder, docs/plan-placement-2026-09-02.md)
+
+All cells: truck, frozen COLMAP-identical poses (`scratch/truck_ab_recon.json`),
+30k, 1.05M cap, eval8 (32 frames), ~6.8 min each.
+
+- **Rung 0 — seeded runs.** `opts.seed` (mulberry32) now drives the camera
+  schedule and every refine draw; bench `?seed=`. Same-seed repeat:
+  25.418 vs 25.412 (**0.006 dB**, was ~0.37 unseeded). Seed 2: 25.228 —
+  the cross-seed spread (0.19) is now the noise floor, so A/Bs compare
+  per seed pair and keepers must win on both.
+- **Rung 1 — Mip comp off (`opts.mipComp`, bench `?comp=0`).** Brush
+  semantics = dilate 0.3 + NO opacity compensation, which is also exactly
+  what pcview renders (PlayCanvas 2.21.4 adds +0.3 unconditionally and
+  only applies the Mip factor under GSPLAT_AA, which we don't enable).
+  | cell | s1 | s2 | s3 | mean |
+  |---|---|---|---|---|
+  | C needle (dil 0.1, comp on) | 25.418 | 25.228 | 25.228 | 25.29 |
+  | **A dil 0.3, comp off** | 25.308 | 25.425 | 25.368 | **25.37** |
+  | B dil 0.1, comp off | 25.268 | 25.387 | — | 25.33 |
+  Seeds disagree on the sign (seed × config interaction is real); A wins
+  2 of 3 seeds, +0.08 mean → **A adopted as the base** for every later
+  rung (it is also the only variant external viewers render exactly as
+  trained: no export bake needed). Shape stats (seed-1 PLYs): A aniso
+  p50 83.8, ratio>20 73 %, thin<1e-3 79 % — Brush was 88 / 72 % / 59 %;
+  A also keeps opacity higher (p50 0.072 vs C 0.049: no fade).
+  deadPct at horizon: A 0.7–0.9 %, B 1.3–1.5 %, C 0.85–1.2 %.
+  Rung 7 (Mip 3D filter) is therefore skipped: it only pays if a
+  dilate<0.3 base had won.
+- Half the splats in every cell sit AT the minScale wall (thin p5..p50 =
+  1.98e-4 = 1e-5·r). Under comp-off + 0.3 dilation a sub-pixel thin axis
+  renders identically whatever its value, so the wall is harmless there.
+- **Rung 2 — opacity/scale reg gated on visibility (`opts.regVisOnly`,
+  bench `?regvis=1`) — DROPPED.** Hypothesis was that the unconditional
+  reg is a "ratchet" (Adam walks a culled splat's logit to −9 at full lr)
+  that kills usable splats. Result on base A: s1 25.285 (−0.02), s2 25.271
+  (−0.15), **deadPct 0.00** on both, trainMin 4.6 vs 6.7. Reading: the
+  ratchet IS the MCMC death signal — with it gated nothing ever crosses
+  o<0.02, `_refineLegacy` never relocates, and placement freezes after
+  the growth phase. (3DGS-MCMC applies opacity reg unconditionally for
+  exactly this reason.) Side effects worth keeping in mind: opacity p50
+  0.27 / p75 0.87 (vs 0.07 / 0.2 in A), aniso p50 20 (vs 84), wall
+  splats drop from p50 to p25, and the 30 % speedup is real (denser
+  transmittance floor ⇒ fewer splats blended per pixel). The regvis+
+  opaFloor cells were cancelled (opaFloor is moot when nothing dies).
+  `opts.opaFloor` alone (keeps dead logits at −7 instead of −9 so a
+  relocated clone's neighbourhood recovers faster) stays as an optional
+  2-cell appendix if rung 3 leaves the GPU idle. Dead/survived telemetry
+  (`(dead N, last round S/L survived)` in the refine log) stays.
+- **Rung 3 — placement knobs, one at a time on base A** (`scratch/gen_cells.mjs 3`,
+  `scratch/rung_table.mjs` for the table). Base A per seed: 25.308 / 25.425.
+  | knob | s1 | s2 | Δmean | dead % | min | verdict |
+  |---|---|---|---|---|---|---|
+  | growRate 0.1 (`?growrate=`) | 25.516 | 25.711 | **+0.25** | 1.0/1.6 | 7.8 | keep |
+  | refineV2 (`?refv2=1`) | 25.417 | 25.548 | **+0.12** | 1.4/0.6 | 6.5 | keep |
+  | refineEvery 250 | 25.451 | 25.441 | +0.08 | 0.0 | 8.3 | lean (no distribution move) |
+  | growUntil 15000 | 25.284 | 25.357 | −0.05 | 0.5 | 5.8 | no — but only 751k splats |
+  | errDonors | 25.281 | 24.953 | −0.25 | 3.0/2.8 | 7.2 | no (error-placed clones die) |
+  | splitV2 | 24.929 | 24.978 | −0.41 | 1.1/1.4 | 5.8 | no |
+  | refineV2 + refineEvery 100 | 24.846 | 24.853 | −0.52 | 0.1/0.3 | 7.6 | no |
+  Reading: (1) the bench (and the app's MCMC set) pin `growRate` 0.05
+  with capMult 8, so n(t) = n0·1.05^(t/500) needs ln 8 / ln 1.05 ≈ 43
+  refines = **21.5k iters to reach the cap — 1k before growth freezes at
+  0.75·30k**; the full population trains for only ~8k iters (and
+  growUntil 15000 never got there: 751k). At 0.1 the cap lands at ~11k,
+  at 0.15 at ~7.4k. The gain is iterations-at-capacity, not a placement
+  effect — and it shrinks with the horizon (60k app default); (2) refineV2's
+  eq-9 relocation is the only knob that moves the distribution toward
+  Brush (aniso p50 148, ratio>20 81 %, opacity p95 0.28 vs A's 84 / 73 %
+  / 0.42) and it is faster (no CPU round trip); (3) growth is per refine
+  CALL, so refineEvery and growRate are confounded — re100 also grew 5×
+  faster; the combo round runs the growth-normalised cadence cell
+  (rv2 + gr0.05 + re250 ≡ rv2 + gr0.1 per iteration). Combo round
+  (`gen_cells.mjs 3c`): rv2+gr0.1, gr0.15, rv2+gr0.05+re250, 2 seeds;
+  then garden confirm (`gen_cells.mjs g --set=garden`) A vs rv2+gr0.1.
+- **Rung 3 combo round** (truck, same seeds):
+  | cell | s1 | s2 | mean | vs A | min |
+  |---|---|---|---|---|---|
+  | **rv2 + gr0.1** | 25.664 | 25.674 | **25.669** | **+0.30** | 7.1 |
+  | gr0.15 (legacy) | 25.531 | 25.707 | 25.619 | +0.25 | 8.2 |
+  | gr0.1 (legacy) | 25.516 | 25.711 | 25.613 | +0.25 | 7.8 |
+  | rv2 + gr0.05 + re250 | 25.037 | 25.374 | 25.206 | −0.16 | 7.2 |
+  The keepers stack (+0.06 over gr0.1 alone, but 0.7 min faster and a
+  0.01 seed spread vs 0.20). Growth saturates between 0.1 and 0.15 →
+  0.1. The growth-normalised cadence cell settles the refineEvery
+  question: same splats-per-iteration curve as the combo, −0.46 mean —
+  under refineV2 it is the relocation FREQUENCY that hurts (a relocated
+  clone gets relocated again before it recovers), not growth speed.
+  **refineEvery 500 is final.** Rung-3 result: base A + refineV2 +
+  growRate 0.1 = 25.67 on truck 30k (was 24.97 stock two days ago;
+  Brush-native 26.07 → 0.40 left).
+- **Garden confirm** (frozen poses, 30k, 1.05M, eval8 24 frames, ~6.5 min):
+  base A 26.557 / 26.580, combo 26.544 / 26.644 → **+0.03 mean, no
+  regression.** Garden's denser SfM seed reaches the cap early even at
+  0.05, so the growRate gain is a truck (sparse seed) effect; refineV2
+  holds level. Rung 3 CLOSED: keepers refineV2 + growRate 0.1.
+
 ## 2026-09-01 (the thinness ban: trt finds the ceiling in one closeup)
 
 trt compared the San Pedro sign closeup, Brush vs ours: theirs thin

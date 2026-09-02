@@ -576,7 +576,8 @@ export class Session {
             ms: Math.round(performance.now() - r0), moved: r.moved, grown: r.grown });
         }
         if (r.moved || r.grown) {
-          this._log(`refine @${trainer.iter}: relocated ${r.moved}, grew +${r.grown} -> ${r.n} splats`);
+          this._log(`refine @${trainer.iter}: relocated ${r.moved}, grew +${r.grown} -> ${r.n} splats`
+            + (r.dead != null ? ` (dead ${r.dead}, last round ${r.survived}/${r.lastReloc} survived)` : ''));
           this._em.emit('event', { kind: 'refine', iter: trainer.iter, ...r });
         }
       }
@@ -732,8 +733,10 @@ export class Session {
       const { data, n, sh, shK } = await this.trainer.readGaussians();
       const meta = this.trainer.camMeta[0];
       // a view-only restore has no training cameras — its model came from an
-      // export that already baked the compensation, so pass it through
-      const baked = meta
+      // export that already baked the compensation, so pass it through.
+      // A trainer without Mip compensation (opts.mipComp false) rendered
+      // exactly what external rasterizers render: nothing to bake.
+      const baked = (meta && this.trainer.mipComp !== false)
         ? bakeOpacityCompensation(data, n, meta.f,
             Float32Array.from(this.trainer.camMeta.flatMap(camPosition)))
         : data;

@@ -5,7 +5,7 @@ import {
   SCAN_SRC, SCATTER_SRC, SORT_SRC, ADAM_SRC, SH_ADAM_SRC, BLIT_SRC, shRestCoefs,
   GATHER_SRC, REFINE_APPLY_SRC, SSIM_SRC, makeSsaaLossSrc,
 } from './shaders.js';
-import { rodrigues, m3mul } from '../sfm/geometry.js';
+import { rodrigues, m3mul, makeRng } from '../sfm/geometry.js';
 import { createGpu } from '../gpu/context.js';
 
 export class GSTrainer {
@@ -45,9 +45,12 @@ export class GSTrainer {
     // which is what text/edge ringing compensates for. Lowering it trades
     // that floor against distant-texture aliasing.
     this.dilate = this.opts.dilate ?? 0.3;
+    // opts.mipComp false: no opacity compensation for the dilation (Brush /
+    // classic-3DGS semantics, and what external viewers rasterize)
+    this.mipComp = this.opts.mipComp ?? true;
     this.pipeProject = d.createComputePipeline({
       label: 'project', layout: 'auto',
-      compute: { module: mk(makeProjectSrc(this.opts.eCut, this.opts.aMin, this.opts.radClamp, this.shDeg, this.dcMode, this.dilate), 'project'), entryPoint: 'main' },
+      compute: { module: mk(makeProjectSrc(this.opts.eCut, this.opts.aMin, this.opts.radClamp, this.shDeg, this.dcMode, this.dilate, this.mipComp), 'project'), entryPoint: 'main' },
     });
     // the (key,id) entry budget scales with an explicit splat ceiling — the
     // fixed 12M cap silently dropped tiles at 800k splats (fast iterations,
@@ -131,7 +134,7 @@ export class GSTrainer {
       // anisoReg default 0.005 (was 0.02): with SIFT-grade poses the needle
       // pathology is gone (camping p99 ratio 42:1) and the stronger pull
       // toward isotropy measurably blurs edges (-0.8dB holdout on train-84)
-      compute: { module: mk(makeChainSrc(this.opts.anisoReg ?? (this.v2 ? 0 : 0.005), this.shDeg, this.dcMode, this.opts.statMax ?? false, this.dilate), 'chain'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+      compute: { module: mk(makeChainSrc(this.opts.anisoReg ?? (this.v2 ? 0 : 0.005), this.shDeg, this.dcMode, this.opts.statMax ?? false, this.dilate, this.mipComp), 'chain'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
     });
     this.pipeAdam = d.createComputePipeline({
       label: 'adam', layout: 'auto',
@@ -288,7 +291,7 @@ export class GSTrainer {
 
     this.uniTrain = buf(144, B.UNIFORM | B.COPY_DST, 'uniTrain');
     this.uniView = buf(144, B.UNIFORM | B.COPY_DST, 'uniView');
-    this.uniAdam = buf(112, B.UNIFORM | B.COPY_DST, 'uniAdam');
+    this.uniAdam = buf(128, B.UNIFORM | B.COPY_DST, 'uniAdam');
 
     // phase-2 refine: 16 bytes/splat gathered for the CPU decision, a plan of
     // 32-byte ops back, executed GPU-side (no params/moments round trip).
@@ -560,7 +563,7 @@ export class GSTrainer {
     // training length (default matches main.js auto-stop) instead of a
     // hardcoded 30k that predates the longer default runs
     this.horizon = this.opts.maxIters ?? 60000;
-    this.adamData = new Float32Array(28);
+    this.adamData = new Float32Array(32);
     const r = sceneRadius;
     // posLrScale: experiment knob — the reference implementations run their
     // position lr 20-60x LOWER relative to scene extent (median vs our P90,
@@ -596,9 +599,16 @@ export class GSTrainer {
       // v2: no Langevin — apply-kernel split offsets do the dispersing
       this.v2 ? 0 : (this.opts.mcmcNoise === true ? 5e5 : (this.opts.mcmcNoise ?? 0)),
       this.v2 ? 1 : 0,                                  // reg.w: unbounded DC color
+      // flg: regVisOnly (regs act only on rendered splats — the opacity /
+      // scale ratchet fix) and the opacity logit floor
+      this.opts.regVisOnly ? 1 : 0, this.opts.opaFloor ?? 0, 0, 0,
     ], 16);
     this.lastRefine = 0;
-    this.rand = () => Math.random();
+    // opts.seed: deterministic camera schedule + refine draws (bench A/B —
+    // unseeded, the same cell spreads ~0.37 dB run to run on truck 30k).
+    // Atomic float order in the kernels stays nondeterministic, so this
+    // narrows the spread, it does not zero it.
+    this.rand = Number.isFinite(this.opts.seed) ? makeRng(this.opts.seed) : () => Math.random();
 
     // gradcheck metadata
     this.hBySlot = [
@@ -1025,7 +1035,7 @@ export class GSTrainer {
    *  alpha-conserving split (o -> 1-sqrt(1-o), scales /sqrt2, +/- ellipsoid
    *  offset pair via the apply kernel) — image-neutral at birth, no
    *  Langevin needed. Readback stays 16 bytes/splat. */
-  async _refineV3(rng = Math.random) {
+  async _refineV3(rng = this.rand) {
     const d = this.device;
     const canReloc = this.iter < (this.opts.relocUntil ?? Infinity);
     const limit = Math.min(this.cap, this.growLimit || this.cap);
@@ -1171,7 +1181,7 @@ export class GSTrainer {
     return { moved: dead.length, grown, n: this.n };
   }
 
-  async refine(rng = Math.random) {
+  async refine(rng = this.rand) {
     if (this.v2 && (this.opts.v2Refine ?? true)) return this._refineV3(rng);
     // OPT-IN while unproven: at truck 40k the v2 mechanics plateau 0.1-0.2 dB
     // BELOW the legacy path (best 25.38 vs 25.49) and one knob combination
@@ -1206,12 +1216,16 @@ export class GSTrainer {
     const sig = (x) => 1 / (1 + Math.exp(-x));
     let dead = [];
     const pool = [];      // donor candidates (alive enough to carry mass)
+    let deadAll = 0;
     for (let i = 0; i < this.n; i++) {
       const o = sig(g[i * 4]);
-      if (o < 0.02) { if (canReloc) dead.push(i); }
+      if (o < 0.02) { deadAll++; if (canReloc) dead.push(i); }
       else if (o >= 0.05) pool.push(i);
     }
-    if (pool.length < 16) return { moved: 0, grown: 0, n: this.n };
+    let survived = 0;
+    if (this._lastReloc) for (const i of this._lastReloc) if (sig(g[i * 4]) >= 0.02) survived++;
+    const census = { dead: deadAll, survived, lastReloc: this._lastReloc ? this._lastReloc.length : 0 };
+    if (pool.length < 16) return { moved: 0, grown: 0, n: this.n, ...census };
     const moveCap = Math.ceil(this.n * (this.opts.moveCap ?? 1.0));
     if (dead.length > moveCap) dead = dead.slice(0, moveCap);
     const grown = canGrow
@@ -1278,6 +1292,7 @@ export class GSTrainer {
     };
     for (const slot of dead) assign(slot, false);
     for (const dst of eqGrow) assign(dst, true);
+    this._lastReloc = dead;
 
     // eq-9 per donor group (binoms are tiny — compute on the fly)
     if (!this._binoms) {
@@ -1359,7 +1374,7 @@ export class GSTrainer {
       this.adamData[23] = this.n * STRIDE;
       this.camUniforms = this.camMeta.map((mm, i) => this._camUniform(mm, 1, mm.offset, i));
     }
-    return { moved: dead.length, grown, n: this.n };
+    return { moved: dead.length, grown, n: this.n, ...census };
   }
 
   /** Legacy MCMC-lite refinement: relocate dead splats onto jittered copies of
@@ -1370,7 +1385,7 @@ export class GSTrainer {
    *  born at opacity 0.25 and half-trained clones would otherwise ship in
    *  the export); default Infinity = relocate for the whole run.
    *  Returns { moved, grown, n }. */
-  async _refineLegacy(rng = Math.random) {
+  async _refineLegacy(rng = this.rand) {
     const canReloc = this.iter < (this.opts.relocUntil ?? Infinity);
     const canGrow = this.iter < (this.opts.growUntil ?? 0.75 * this.horizon) && this.n < Math.min(this.cap, this.growLimit || this.cap);
     if (!canReloc && !canGrow) return { moved: 0, grown: 0, n: this.n };
@@ -1419,12 +1434,19 @@ export class GSTrainer {
 
     let dead = [];
     const donors = [];
+    let deadAll = 0;
     for (let i = 0; i < this.n; i++) {
       const o = sig(params[i * STRIDE + 13]);
-      if (o < 0.02) { if (canReloc) dead.push(i); }
+      if (o < 0.02) { deadAll++; if (canReloc) dead.push(i); }
       else if (o > 0.4) donors.push(i);
     }
-    if (donors.length < 16) return { moved: 0, grown: 0, n: this.n };
+    // telemetry: how many of the rows relocated last round are still alive
+    let survived = 0;
+    if (this._lastReloc) {
+      for (const i of this._lastReloc) if (sig(params[i * STRIDE + 13]) >= 0.02) survived++;
+    }
+    const census = { dead: deadAll, survived, lastReloc: this._lastReloc ? this._lastReloc.length : 0 };
+    if (donors.length < 16) return { moved: 0, grown: 0, n: this.n, ...census };
     // relocation ceiling per refine — at the old hard 5%, any dead fraction
     // above it stayed dead FOREVER (a monotonic capacity leak; the reference
     // relocates every dead splat every 100 iters)
@@ -1539,6 +1561,7 @@ export class GSTrainer {
       }
     };
     for (const i of dead) spawnAt(i * STRIDE, false); // relocation: to mass, as before
+    this._lastReloc = dead;
     // growth: new capacity where mass already is (stop late in training so
     // the last iterations refine a stable population)
     // 0.15/step with the 1e-4 minScale floor: capacity converts to real
@@ -1578,7 +1601,7 @@ export class GSTrainer {
     rbT.unmap(); rbT.destroy();
     // entry-budget drops (whole tiles skipped) are counted by the scan pass
     // into stats[3] and surfaced via readLoss -> this.entryOverflowTiles
-    return { moved: dead.length, grown, n: this.n, maxTile, overflow: this.entryOverflowTiles || 0 };
+    return { moved: dead.length, grown, n: this.n, maxTile, overflow: this.entryOverflowTiles || 0, ...census };
   }
 
   /** Cheap health probe: sample the head of the params buffer. iOS Safari

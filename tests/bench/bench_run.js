@@ -14,7 +14,15 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('aniso') != null ? `_ar${Q.get('aniso')}` : '')
   + (Q.get('ssim') ? `_ssim${Q.get('ssim')}` : '')
   + (Q.get('maxsplats') ? `_cap${Q.get('maxsplats')}` : '')
-  + (Q.get('minscale') ? `_ms${Q.get('minscale')}` : '');
+  + (Q.get('minscale') ? `_ms${Q.get('minscale')}` : '')
+  + (Q.get('comp') != null ? `_c${Q.get('comp')}` : '')
+  + (Q.get('regvis') ? '_rv' : '') + (Q.get('opafloor') ? `_of${Q.get('opafloor')}` : '')
+  + (Q.get('refv2') ? '_rv2' : '') + (Q.get('errdon') ? '_ed' : '') + (Q.get('splitv2') ? '_sv2' : '')
+  + (Q.get('growrate') ? `_gr${Q.get('growrate')}` : '') + (Q.get('movecap') ? `_mc${Q.get('movecap')}` : '')
+  + (Q.get('refevery') ? `_re${Q.get('refevery')}` : '') + (Q.get('growuntil') ? `_gu${Q.get('growuntil')}` : '')
+  + (Q.get('relocuntil') ? `_ru${Q.get('relocuntil')}` : '')
+  + (Q.get('poslr') ? `_pl${Q.get('poslr')}` : '') + (Q.get('shramp') === '0' ? '_nsr' : '')
+  + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
 const logEl = document.getElementById('log');
 const post = (name, body) => fetch(`/scratch/${name}`, { method: 'POST', body });
@@ -77,11 +85,24 @@ try {
         ...(Q.get('dilate') ? { dilate: +Q.get('dilate') } : {}),
         ...(Q.get('aniso') != null ? { anisoReg: +Q.get('aniso') } : {}),
         ...(Q.get('minscale') ? { minScale: +Q.get('minscale') } : {}),
+        ...(Q.get('seed') ? { seed: +Q.get('seed') } : {}),
+        ...(Q.get('comp') != null ? { mipComp: Q.get('comp') !== '0' } : {}),
+        ...(Q.get('regvis') ? { regVisOnly: true } : {}),
+        ...(Q.get('opafloor') ? { opaFloor: +Q.get('opafloor') } : {}),
+        // placement knobs (rung 3 of docs/plan-placement-2026-09-02.md)
+        ...(Q.get('refv2') ? { refineV2: true } : {}),
+        ...(Q.get('errdon') ? { errDonors: true } : {}),
+        ...(Q.get('splitv2') ? { splitV2: true } : {}),
+        ...(Q.get('growrate') ? { growRate: +Q.get('growrate') } : {}),
+        ...(Q.get('movecap') ? { moveCap: +Q.get('movecap') } : {}),
+        ...(Q.get('poslr') ? { posLrScale: +Q.get('poslr') } : {}),
+        ...(Q.get('shramp') === '0' ? { shRamp: false } : {}),
         ...(Q.get('ssim') ? { ssimWeight: +Q.get('ssim') } : {}),
         ...(Q.get('v2') ? { engine: 'v2' } : {}),
         ...(Q.get('growfrac') ? { growFrac: +Q.get('growfrac') } : {}),
         ...(Q.get('growtau') ? { growTau: +Q.get('growtau') } : {}),
         ...(Q.get('growuntil') ? { growUntil: +Q.get('growuntil') } : {}),
+        ...(Q.get('relocuntil') ? { relocUntil: +Q.get('relocuntil') } : {}),
       },
   });
   ses.on('log', (m) => console.log('[SES]', m));
@@ -141,6 +162,14 @@ try {
   await done;
   clearInterval(guard);
   const trainMin = +((Date.now() - trainT) / 60000).toFixed(1);
+  // dead census at the horizon (opacity < 1/255: what the export purges)
+  let deadPct = null;
+  {
+    const { data, n } = await ses.trainer.readGaussians();
+    let dead = 0;
+    for (let i = 0; i < n; i++) if (data[i * 16 + 13] <= Math.log(1 / 254)) dead++;
+    deadPct = +(100 * dead / n).toFixed(2);
+  }
 
   let psnrTest = null, heldOut = 0;
   if (cfg.holdout1) {
@@ -163,7 +192,7 @@ try {
     psnrTest,
     heldOut,
     protocol: cfg.holdout1 ? 'holdout1' : 'eval8',
-    trainMin, solveMin,
+    trainMin, solveMin, deadPct,
     splats: ses.trainer.n,
     cams: recon.cams.length, of: ses.frames.length,
     rms: recon.rmsBA && +recon.rmsBA.toFixed(3),
