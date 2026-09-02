@@ -82,7 +82,9 @@ try {
     // shrinks big sets and PSNR at reduced res is not comparable run-to-run)
     frames: { trainMaxDim: cfg.res || 1600 },
     // ?classic=1: pre-MCMC defaults (A/B for small-set anomalies)
-    ...(Q.has('classic') ? {} : { refineEvery: +(Q.get('refevery') || 500) }),
+    // refine cadence is a SESSION option: the economy packages carry their
+    // own (Brush 200, LichtFeld 100); ?refevery overrides either
+    ...(Q.has('classic') ? {} : { refineEvery: +(Q.get('refevery') || (Q.get('econ') === 'brush' ? 200 : Q.get('econ') === 'lf' ? 100 : 500)) }),
     trainer: Q.has('classic')
       ? { maxSplats: Math.min(600000, Math.round(ITERS * 15)), capMult: 8, shDeg: 3 }
       : {
@@ -94,12 +96,12 @@ try {
         // donors ∝ opacity among rendered splats. Individual knobs BELOW
         // override it (attribution cells).
         ...(Q.get('econ') === 'brush' ? { opacityReg: 0, opaDecay: 0.004, deadThr: 1 / 255, poolMin: 0,
-          moveCap: 1, donorWeight: 'opavis', refineEvery: 200 } : {}),
+          moveCap: 1, donorWeight: 'opavis' } : {}),
         // econ=lf: the LichtFeld MCMC economy — reg kept (0.01, mean-scaled
         // there), dead below 0.005, ALL dead relocated every 100 it, donors
         // ∝ error over the whole population, ratio cap 51, growth 5 %/refine
         ...(Q.get('econ') === 'lf' ? { deadThr: 0.005, poolMin: 0, ratioCap: 51, moveCap: 1,
-          refineEvery: 100, growRate: 0.05 } : {}),
+          growRate: 0.05 } : {}),
         // opacity economy knobs (lab log 2026-09-02, source verdict): dead
         // threshold, donor-pool floor, Brush-style opacity decay (per 200 it)
         ...(Q.get('deadthr') ? { deadThr: +Q.get('deadthr') } : {}),
