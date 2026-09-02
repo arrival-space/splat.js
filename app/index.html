@@ -86,7 +86,9 @@
       <div class="setrow setrow-range" id="row-count" hidden title="How many of the set's images to use. More images, longer solve — pair matching grows with the square of the count."><label for="set-count">Images</label>
         <input id="set-count" type="range" min="2" step="1" value="42">
         <button class="countv" id="set-count-v" title="Use every image">42 / 251</button></div>
-      <div class="setrow" title="One knob for the rows below. Draft is quick and light, Showcase trains long at the largest splat budget. Editing a row below shows Custom."><label for="set-q">Quality</label>
+      <!-- the quality macro lives in the dropdown beside Start; this row stays
+           in the DOM (the two selects mirror each other) but is not shown -->
+      <div class="setrow" hidden title="One knob for the rows below. Draft is quick and light, Showcase trains long at the largest splat budget. Editing a row below shows Custom."><label for="set-q">Quality</label>
         <select id="set-q">
           <option value="draft">Draft</option>
           <option value="standard">Standard</option>

@@ -525,7 +525,8 @@ body { overflow: hidden; }
 .startrow .q-quick { margin-left: 10px; }
 .startrow .setgear { margin-left: 4px; }
 .q-quick {
-  height: 47px; padding: 0 12px;
+  appearance: none; -webkit-appearance: none;   /* no native chevron */
+  height: 47px; padding: 0 14px; text-align: center; text-align-last: center;
   font: 500 13px var(--ui); color: var(--muted);
   background: var(--panel-2); border: 1px solid transparent; border-radius: var(--pill);
   cursor: pointer;
