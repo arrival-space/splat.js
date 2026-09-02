@@ -547,11 +547,18 @@ function boot() {
 async function checkGpu() {
   let ok = false;
   try {
-    const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
+    // the SAME request the trainer makes (src/gpu/context.js): on a dual-GPU
+    // laptop the default adapter is often the integrated one while training
+    // lands on the discrete one — the report must name the training adapter
+    const adapter = navigator.gpu && await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' });
     ok = !!adapter;
+    let def = null;
+    try { def = adapter && await navigator.gpu.requestAdapter(); } catch { /* optional */ }
     // kept for the Details sheet's GPU tab (and its report) — the only
     // source when no session exists yet
-    S.gpuProbe = adapter ? { adapter, info: adapter.info || {} } : { failed: true };
+    S.gpuProbe = adapter
+      ? { adapter, info: adapter.info || {}, defaultInfo: (def && def.info) || null }
+      : { failed: true };
   } catch { S.gpuProbe = { failed: true }; }
   if (!$('details').hidden && S.detailTab === 'gpu') renderDetails();
   if (!$('about').hidden) renderAboutGpu();
@@ -4301,12 +4308,24 @@ function gpuFacts() {
   const feats = device ? [...device.features] : adapter ? [...adapter.features] : [];
   const gb = (v) => v ? `${(v / (1 << 30)).toFixed(v >= (1 << 30) ? 1 : 2)} GB` : '—';
   const nav = navigator;
+  // model: the marketing name of the GPU Chrome's own process renders on
+  // (WebGL). webgpu: the adapter the TRAINER gets. On a dual-GPU laptop these
+  // can differ (Chrome on the Intel iGPU, WebGPU high-performance on the
+  // NVIDIA) — then the training adapter leads and the browser GPU is named
+  // separately, never pasted together into one false name.
   const model = webglName();
   const webgpu = [info.vendor, info.architecture, info.device].filter(Boolean).join(' ');
+  const di = S.gpuProbe && S.gpuProbe.defaultInfo;
+  const defaultGpu = di ? [di.vendor, di.architecture, di.device].filter(Boolean).join(' ') : '';
+  const sameVendor = !!(model && info.vendor && model.toLowerCase().includes(info.vendor.toLowerCase()));
+  const name = sameVendor ? `${model} (${info.architecture || 'WebGPU'})`
+    : webgpu ? (model ? `${webgpu} (WebGPU) · browser on ${model}` : webgpu)
+      : model || (S.gpuProbe && S.gpuProbe.failed ? 'no WebGPU adapter' : '…');
   return {
     ready: !!(adapter || device || S.gpuProbe),
-    model, webgpu,
-    name: model || webgpu || (S.gpuProbe && S.gpuProbe.failed ? 'no WebGPU adapter' : '…'),
+    model, webgpu, sameVendor,
+    defaultGpu: defaultGpu && defaultGpu !== webgpu ? defaultGpu : '',
+    name,
     description: info.description || '',
     vendor: info.vendor || '—', architecture: info.architecture || '—', device: info.device || '—',
     granted: !!device,
@@ -4332,7 +4351,7 @@ function renderAboutGpu() {
   if (!el) return;
   const g = gpuFacts();
   el.hidden = false;
-  const bits = [g.model ? `${g.model}${g.architecture !== '—' ? ` (${g.architecture})` : ''}` : g.name];
+  const bits = [g.name];
   if (g.maxBufferSize !== '—') bits.push(`${g.maxBufferSize} buffers`);
   if (g.features.length) bits.push(g.features.filter((f) => /subgroups|shader-f16/.test(f)).join(', '));
   if (g.ips) bits.push(`${fmt(g.ips)} cycles/s`);
@@ -4364,7 +4383,9 @@ function gpuTab(stat) {
       'below when something trains slower than expected, or fails to start.',
     ],
     rows: [
-      stat('Model', esc(g.model || '—'), 'accent'),
+      stat('Training adapter', esc(g.webgpu || '—'), 'accent'),
+      stat(g.sameVendor ? 'Model' : 'Browser GPU (WebGL)', esc(g.model || '—')),
+      g.defaultGpu ? stat('Default adapter', esc(g.defaultGpu)) : '',
       stat('Vendor', esc(g.vendor)),
       stat('Architecture', esc(g.architecture)),
       stat('Device', esc(g.device)),
@@ -4388,7 +4409,9 @@ function buildGpuReport() {
   L.push(`ua: ${g.ua}`);
   L.push(`platform: ${g.platform} · cores ${g.cores} · memory ${g.memory}`);
   L.push(`screen: ${g.screen}`);
-  L.push(`gpu: ${g.model || '?'} · webgpu: ${g.webgpu || '—'}${g.description ? ` — ${g.description}` : ''}`);
+  L.push(`training adapter (WebGPU, high-performance): ${g.webgpu || '—'}${g.description ? ` — ${g.description}` : ''}`);
+  L.push(`browser gpu (WebGL): ${g.model || '?'}${g.sameVendor ? ' (same device)' : ''}`);
+  if (g.defaultGpu) L.push(`default WebGPU adapter: ${g.defaultGpu} (training asks for high-performance instead)`);
   L.push(`limits: maxBufferSize ${g.maxBufferSize} · maxStorageBufferBindingSize ${g.maxStorageBinding} · workgroup storage ${g.workgroupStorage} · invocations ${g.invocations} · texture2d ${g.texture2d}`);
   L.push(`features: ${g.features.join(', ') || 'none of interest'}${g.granted ? ' (device granted)' : ' (adapter)'}`);
   if (S.session) {
