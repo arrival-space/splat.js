@@ -27,7 +27,8 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('oregref') ? `_orr${Q.get('oregref')}` : '') + (Q.get('oregrefmax') ? `_orm${Q.get('oregrefmax')}` : '')
   + (Q.get('donor') ? `_dw${Q.get('donor')}` : '')
   + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
-  + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('econ') ? `_e${Q.get('econ')}` : '')
+  + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
+  + (Q.get('econ') ? `_e${Q.get('econ')}` : '')
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
 const logEl = document.getElementById('log');
@@ -94,11 +95,17 @@ try {
         // override it (attribution cells).
         ...(Q.get('econ') === 'brush' ? { opacityReg: 0, opaDecay: 0.004, deadThr: 1 / 255, poolMin: 0,
           moveCap: 1, donorWeight: 'opavis', refineEvery: 200 } : {}),
+        // econ=lf: the LichtFeld MCMC economy — reg kept (0.01, mean-scaled
+        // there), dead below 0.005, ALL dead relocated every 100 it, donors
+        // ∝ error over the whole population, ratio cap 51, growth 5 %/refine
+        ...(Q.get('econ') === 'lf' ? { deadThr: 0.005, poolMin: 0, ratioCap: 51, moveCap: 1,
+          refineEvery: 100, growRate: 0.05 } : {}),
         // opacity economy knobs (lab log 2026-09-02, source verdict): dead
         // threshold, donor-pool floor, Brush-style opacity decay (per 200 it)
         ...(Q.get('deadthr') ? { deadThr: +Q.get('deadthr') } : {}),
         ...(Q.get('poolmin') != null ? { poolMin: +Q.get('poolmin') } : {}),
         ...(Q.get('opadecay') ? { opaDecay: +Q.get('opadecay') } : {}),
+        ...(Q.get('ratiocap') ? { ratioCap: +Q.get('ratiocap') } : {}),
         ...(Q.get('maxscale') ? { maxScale: +Q.get('maxscale') } : {}),
         // per-frame (key,id) entry budget (default maxSplats*24); rung 4 probe
         ...(Q.get('entriescap') ? { entriesCap: +Q.get('entriescap') } : {}),
