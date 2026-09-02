@@ -407,7 +407,7 @@ function boot() {
   const WASD = ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'KeyQ', 'KeyE', 'ShiftLeft', 'ShiftRight'];
   addEventListener('keydown', (e) => {
     if (e.target && /^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
-    if (!$('about').hidden) { if (e.key === 'Escape') $('about').hidden = true; return; }
+    if (!$('about').hidden) { if (e.key === 'Escape') closeAbout(); return; }
     if (!$('details').hidden) {
       if (e.key === 'Escape') closeDetails();
       if (S.detailTab === 'marks' && e.key === 'ArrowLeft') detailFlip(-1);
@@ -443,12 +443,29 @@ function boot() {
   $('about-gh').href = REPO;
   // the brand: on the home tile view (nothing open) it tells the story —
   // the About sheet; from inside a scene it stays the way back home
-  const openAbout = () => {
+  // the card's state lives in the address (?about=1): a refresh keeps it
+  // open, a sent link opens it — with the GPU line — on the recipient's device
+  const aboutUrl = (on) => {
+    const u = new URL(location.href);
+    if (on) u.searchParams.set('about', '1'); else u.searchParams.delete('about');
+    return u;
+  };
+  const openAbout = (fromUrl = false) => {
     $('about').hidden = false;
     renderAboutGpu();
-    // a pushed UI state: the phone's Back closes the sheet, not the app
-    if (!(history.state && history.state.sj)) history.pushState({ sj: 'about' }, '');
+    // a pushed UI state: the phone's Back closes the sheet, not the app —
+    // unless the address already said so at load (nothing to go back to)
+    if (fromUrl || (history.state && history.state.sj)) history.replaceState({ sj: 'about' }, '', aboutUrl(true));
+    else history.pushState({ sj: 'about' }, '', aboutUrl(true));
   };
+  const closeAbout = () => {
+    const fromUrl = S._aboutFromUrl;
+    S._aboutFromUrl = false;
+    if (history.state && history.state.sj === 'about' && !fromUrl) { history.back(); return; }
+    $('about').hidden = true;
+    history.replaceState(null, '', aboutUrl(false));
+  };
+  window.closeAbout = closeAbout;
   $('brand').addEventListener('click', () => {
     const atHome = !$('start').hidden && $('detail').hidden;
     if (atHome) openAbout();
@@ -458,15 +475,13 @@ function boot() {
     e.preventDefault(); e.stopPropagation();
     openAbout();
   });
-  $('about-x').addEventListener('click', () => {
-    if (history.state && history.state.sj === 'about') { history.back(); return; }
-    $('about').hidden = true;
-  });
+  $('about-x').addEventListener('click', closeAbout);
   $('about').addEventListener('click', (e) => {
-    if (!e.target.closest('.about-card')) $('about').hidden = true;
+    if (!e.target.closest('.about-card')) closeAbout();
   });
 
   checkGpu();
+  if (new URLSearchParams(location.search).get('about')) { S._aboutFromUrl = true; openAbout(true); }
   // a refresh mid-run would throw away the model (and, before storage
   // landed, the capture) — ask first
   addEventListener('beforeunload', (e) => {
@@ -4249,6 +4264,34 @@ const DTABS = [['score', 'Score'], ['marks', 'Landmarks'], ['matches', 'Matching
 // ── GPU facts: what this device is, for the Details sheet and bug reports ──
 // The adapter probed at boot serves the wall (no session yet); a live
 // session's own adapter/device replaces it (its limits are the ones granted).
+/** the GPU's marketing name — WebGPU's adapter info stops at vendor +
+ *  architecture ("nvidia blackwell"); the WebGL debug renderer string carries
+ *  the model ("NVIDIA GeForce RTX 5080"). Read once, from a throwaway context. */
+function webglName() {
+  if (S._glName !== undefined) return S._glName;
+  let name = '';
+  try {
+    const cv = document.createElement('canvas');
+    const gl = cv.getContext('webgl2') || cv.getContext('webgl');
+    const ext = gl && gl.getExtension('WEBGL_debug_renderer_info');
+    let r = ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : (gl ? gl.getParameter(gl.RENDERER) : '');
+    r = String(r || '');
+    // "ANGLE (NVIDIA, NVIDIA GeForce RTX 5080 (0x00002C02) Direct3D11 vs_5_0 ps_5_0, D3D11)"
+    // "ANGLE (Apple, ANGLE Metal Renderer: Apple M2, Unspecified Version)"
+    // "ANGLE (Qualcomm, Adreno (TM) 740, OpenGL ES 3.2 V@0615.0 ...)"
+    if (/^ANGLE \(/.test(r)) {
+      const parts = r.slice(7, -1).split(', ');
+      r = parts[1] || parts[0] || '';
+    }
+    name = r.replace(/^ANGLE \w+ Renderer: /, '').replace(/ \(0x[0-9A-Fa-f]+\)/, '')
+      .replace(/ (Direct3D|OpenGL|Vulkan|Metal|vs_)\S*.*$/, '').trim();
+    const lose = gl && gl.getExtension('WEBGL_lose_context');
+    if (lose) lose.loseContext();
+  } catch { /* no WebGL: the WebGPU words will do */ }
+  S._glName = name;
+  return name;
+}
+
 function gpuFacts() {
   const g = S.session && S.session.gpu;
   const adapter = (g && g.adapter) || (S.gpuProbe && S.gpuProbe.adapter) || null;
@@ -4258,9 +4301,12 @@ function gpuFacts() {
   const feats = device ? [...device.features] : adapter ? [...adapter.features] : [];
   const gb = (v) => v ? `${(v / (1 << 30)).toFixed(v >= (1 << 30) ? 1 : 2)} GB` : '—';
   const nav = navigator;
+  const model = webglName();
+  const webgpu = [info.vendor, info.architecture, info.device].filter(Boolean).join(' ');
   return {
     ready: !!(adapter || device || S.gpuProbe),
-    name: [info.vendor, info.architecture, info.device].filter(Boolean).join(' ') || (S.gpuProbe && S.gpuProbe.failed ? 'no WebGPU adapter' : '…'),
+    model, webgpu,
+    name: model || webgpu || (S.gpuProbe && S.gpuProbe.failed ? 'no WebGPU adapter' : '…'),
     description: info.description || '',
     vendor: info.vendor || '—', architecture: info.architecture || '—', device: info.device || '—',
     granted: !!device,
@@ -4286,7 +4332,7 @@ function renderAboutGpu() {
   if (!el) return;
   const g = gpuFacts();
   el.hidden = false;
-  const bits = [g.name];
+  const bits = [g.model ? `${g.model}${g.architecture !== '—' ? ` (${g.architecture})` : ''}` : g.name];
   if (g.maxBufferSize !== '—') bits.push(`${g.maxBufferSize} buffers`);
   if (g.features.length) bits.push(g.features.filter((f) => /subgroups|shader-f16/.test(f)).join(', '));
   if (g.ips) bits.push(`${fmt(g.ips)} cycles/s`);
@@ -4311,6 +4357,7 @@ function gpuTab(stat) {
       'below when something trains slower than expected, or fails to start.',
     ],
     rows: [
+      stat('Model', esc(g.model || '—'), 'accent'),
       stat('Vendor', esc(g.vendor)),
       stat('Architecture', esc(g.architecture)),
       stat('Device', esc(g.device)),
@@ -4334,7 +4381,7 @@ function buildGpuReport() {
   L.push(`ua: ${g.ua}`);
   L.push(`platform: ${g.platform} · cores ${g.cores} · memory ${g.memory}`);
   L.push(`screen: ${g.screen}`);
-  L.push(`gpu: ${g.name}${g.description ? ` — ${g.description}` : ''}`);
+  L.push(`gpu: ${g.model || '?'} · webgpu: ${g.webgpu || '—'}${g.description ? ` — ${g.description}` : ''}`);
   L.push(`limits: maxBufferSize ${g.maxBufferSize} · maxStorageBufferBindingSize ${g.maxStorageBinding} · workgroup storage ${g.workgroupStorage} · invocations ${g.invocations} · texture2d ${g.texture2d}`);
   L.push(`features: ${g.features.join(', ') || 'none of interest'}${g.granted ? ' (device granted)' : ' (adapter)'}`);
   if (S.session) {
