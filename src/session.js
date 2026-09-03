@@ -397,7 +397,7 @@ export class Session {
       this.trainer.device.queue.writeBuffer(this.trainer.bufSH, 0,
         gaussians.sh.buffer, gaussians.sh.byteOffset, gaussians.n * this.trainer.shK * 3 * 4);
     }
-    if (opts.iter) this.trainer.iter = opts.iter;
+    if (opts.iter) { this.trainer.iter = opts.iter; this.trainer.adamT0 = opts.iter; }
     this.trainer.excluded = new Set();
     this.holdout = -1;
     this.trainer.holdout = -1;

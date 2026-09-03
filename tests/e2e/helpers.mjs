@@ -76,12 +76,20 @@ export function paramStats(page) {
   return page.evaluate(async () => {
     const { data, n, shK, dc } = await window.__splat.session.exportRawState();
     const sig = (x) => 1 / (1 + Math.exp(-x));
-    let oSum = 0, sSum = 0, pMax = 0, bad = 0;
+    let oSum = 0, sSum = 0, pMax = 0, pAlive = 0, bad = 0;
     for (let i = 0; i < n; i++) {
       const b = i * 16;
-      oSum += sig(data[b + 13]);
+      const o = sig(data[b + 13]);
+      oSum += o;
       sSum += (data[b + 3] + data[b + 4] + data[b + 5]) / 3;
-      pMax = Math.max(pMax, Math.abs(data[b]), Math.abs(data[b + 1]), Math.abs(data[b + 2]));
+      const pm = Math.max(Math.abs(data[b]), Math.abs(data[b + 1]), Math.abs(data[b + 2]));
+      pMax = Math.max(pMax, pm);
+      // faint splats random-walk under the MCMC Langevin noise (by design —
+      // relocation picks the dead ones up; the gate is soft, so big splats
+      // up to opacity ~0.1 still get unit-sized kicks): the all-splat
+      // maximum is noise. The SOLID population is what must survive a
+      // resume in place.
+      if (o > 0.2) pAlive = Math.max(pAlive, pm);
       for (let k = 0; k < 16; k++) if (!Number.isFinite(data[b + k])) bad++;
     }
     return {
@@ -90,6 +98,10 @@ export function paramStats(page) {
       oMean: oSum / n,
       logScaleMean: sSum / n,
       posAbsMax: pMax,
+      posAliveMax: pAlive,
+      // the trainer's scene radius scales position lr, min/max scale and the
+      // noise — a resume must rebuild with the ORIGINAL one
+      radius: window.__splat.session.model.radius,
       nonFinite: bad,
     };
   });

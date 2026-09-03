@@ -758,7 +758,12 @@ export class GSTrainer {
     d.queue.writeBuffer(this.bufTileCnt, 0, this.tileZero);
     this.iter++;
     this.pixelsSeen += meta.w * meta.h;
-    this.adamData[19] = this.iter;
+    // Adam's bias-correction step count runs from the moments' birth, not the
+    // run's: a resume restores params at iteration N with ZERO moments, and
+    // t = N would make the first steps 3-6x lr for hundreds of iterations
+    // (1-b1^t ≈ 1 while m, v are still tiny) — the warm-restart kick the
+    // resume e2e measured once the resumed trainer got its real config back
+    this.adamData[19] = this.iter - (this.adamT0 || 0);
     // exponential position-lr decay to 1% at 75% of the horizon, then a
     // floor-lr polish phase. A/B'd vs INRIA-style full-length decay on
     // camping @40k: full-length gains +0.18 train but LOSES 0.15dB holdout

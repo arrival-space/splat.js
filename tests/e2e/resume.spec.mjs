@@ -54,8 +54,13 @@ test('pause -> checkpoint -> reload -> resume, model intact and learning', async
   expect(post.n).toBe(pre.n);                  // population survives exactly
   expect(post.dc).toBe(pre.dc);
   expect(post.nonFinite).toBe(0);
-  expect(post.posAbsMax).toBeGreaterThan(pre.posAbsMax * 0.95);
-  expect(post.posAbsMax).toBeLessThan(pre.posAbsMax * 1.05);
+  // live splats stay put (dead ones random-walk under the Langevin noise —
+  // the all-splat maximum is not a stability signal); the scene radius must
+  // come back exactly (resume once fell back to 10: every radius-scaled
+  // quantity was wrong, hidden while the resumed trainer lost its noise)
+  expect(post.radius).toBeCloseTo(pre.radius, 3);
+  expect(post.posAliveMax).toBeGreaterThan(pre.posAliveMax * 0.95);
+  expect(post.posAliveMax).toBeLessThan(pre.posAliveMax * 1.05);
   // a few steps of drift are fine; the transparency collapse was 100x
   expect(post.oMean).toBeGreaterThan(pre.oMean * 0.5);
   expect(post.oMean).toBeLessThan(pre.oMean * 2);

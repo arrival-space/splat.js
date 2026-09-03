@@ -2675,7 +2675,11 @@ async function continueLocalRun(viewOnly = false) {
     ...(recon.fFeat ? { fFeat: recon.fFeat } : {}),
   });
   if (undistortFrames(ses.frames, ses.recon)) { /* targets match the original run */ }
-  await ses.seedFrom(g, { iter: baseIter });
+  // the recon JSON carries the run's scene radius — without it seedFrom
+  // falls back to 10 and every radius-scaled quantity (position lr, min/max
+  // scale, Langevin noise) is wrong on resume (e2e resume caught it once the
+  // recipe replayed the MCMC noise: positions doubled within a few steps)
+  await ses.seedFrom(g, { iter: baseIter, sceneRadius: recon.sceneRadius || undefined });
   if (S.gen !== gen) return;
   S.iter = baseIter;
   S.psnrTrain = null; S.psnrHold = null;
