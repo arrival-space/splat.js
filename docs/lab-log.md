@@ -93,10 +93,27 @@ trainer option; the first package cell silently ran at 500 because of that).
   not relocation churn. The two bicycle default cells were lost to a rig
   incident (a second chain merged into the matrix's browser; see memory)
   and rerun seeded afterwards, with a seeded frozen-pose garden 40k A/B.
-  Probes queued on garden 40k (frozen poses, seed 1): minScale 1e-4,
-  anisoReg 0.001, relocUntil 36k (the churn control). Training time:
-  +10…60 % on the placement set (long splats touch more tiles), a second
-  cost the flip must answer.
+  Bicycle reruns (seeded): 20k default 23.25 vs placement 23.60 (**+0.35**),
+  40k 23.66 vs 23.39 (**−0.27**). Seeded frozen-pose garden 40k A/B:
+  default 26.848 / 26.786, placement 26.633 / 26.542 = **−0.22 / −0.25**.
+- **Garden 40k probes** (frozen poses, seed 1, vs default 26.848 / plain
+  placement 26.633): minScale 1e-4 **26.781** (+0.15: thin < 1e-3 goes
+  83 % → 0 %, aniso p50 113 → 14.5); anisoReg 0.001 26.62 (0: rounder,
+  aniso p50 5.6, no score); **relocUntil 0.9·H = 26.844 — the whole loss
+  back**. So the churn hypothesis was right at the score level: relocation
+  running to the last iteration leaves quarter-population clone churn that
+  never settles; the needle pile is real but costs ~0.07 on top. Neither
+  probe restores the 40k opacity (p50 0.12 / p95 0.36 vs 20k's 0.20 /
+  0.60) — the dim-tail economy is the residual. Long-horizon default
+  candidate: placement + relocUntil 0.9·horizon (+ minScale 1e-4 to be
+  measured in combination). Training time +10…60 % on the placement set
+  (long splats touch more tiles) stays the second cost the flip must
+  answer.
+- **Truck signature** (user: 60 min of training, iterations wherever they
+  land; the README's row is 26.37 @ 250k / ~65 min): bench `?minutes=`
+  hard stop + `?postview=` viewer recon; two candidates queued at the 2M
+  cap on frozen poses — placement + relocUntil 108k (horizon 120k) and the
+  current default (horizon 130k).
 
 ## 2026-09-02 (placement ladder, docs/plan-placement-2026-09-02.md)
 
