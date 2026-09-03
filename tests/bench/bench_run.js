@@ -251,7 +251,7 @@ try {
       session: ses, preset: { id: SET, name: Q.get('viewname') || SET },
       loadedFiles: files.map((fl) => ({ name: fl.name, url: dataRoot + fl.name })),
       minutes: Math.round(trainMin), psnrTrain: last ? last[1] : null, psnrHold: null,
-      psnrTest: (typeof test !== 'undefined' && test) ? { psnr: psnrTest, frames: test.frames } : null,
+      psnrTest: psnrTest != null ? { psnr: psnrTest, frames: heldOut } : null,
       holdHist: [],
     };
     await post(Q.get('postview'), JSON.stringify(buildReconJson(S)));
