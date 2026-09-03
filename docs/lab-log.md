@@ -4,6 +4,54 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-03 (opacity economy: packages P1/P2 → the scale reg was the wall)
+
+Truck, frozen poses, 30k / 1.05M, on the rung-3 combo (base A + refineV2 +
+growRate 0.1). Combo reference: s1 25.664 · s2 25.674 · s3 25.463 (seed 3
+is a harder schedule; every seed-3 cell is judged against 25.463).
+Knobs added (all opt-in, defaults untouched): `opaDecay` (Brush's
+`o -= 0.004·(1−t)` per 200 it, applied per step in opacity space in the
+Adam kernel, flg.z), `deadThr`, `poolMin`, `donorWeight 'opavis'`,
+`deadTiny`, bench `?ratiocap`, packages `?econ=brush` / `?econ=lf`
+(the packages set the SESSION refine cadence — `refineEvery` is not a
+trainer option; the first package cell silently ran at 500 because of that).
+
+- **Packages as packages LOSE.** Brush economy (opacityReg 0, decay
+  0.004, dead < 1/255, relocate all every 200 it, donors ∝ o·rendered):
+  25.32 / 25.37 = **−0.32**, in 4 min instead of 7. LichtFeld economy
+  (dead < 0.005, pool 0, ratio cap 51, all dead every 100 it, grow 5 %):
+  25.50 / 25.50 = **−0.17**. Their pieces: dead 1/255 + moveCap 1 −0.06;
+  dead 0.005 + pool 0 + moveCap 1 +0.06; ratio cap 51 −0.20; donors ∝
+  o·rendered +0.14 / −0.24 (seed-dependent, rejected); LF at 500 it −0.20.
+- **Outputs first** (`splat_stats.mjs`): decay-for-reg alone (opacityReg 0
+  + decay 0.004) turns the opacity distribution past Brush — p50 **0.39** /
+  p95 **0.995** vs combo 0.08 / 0.28 vs Brush 0.10 / 0.63 — and reads +0.13
+  (s1). But 5 % of its splats sit on the minScale wall on ALL axes (aniso
+  p5 = 1.00: opaque dots no pixel integrates), and the Brush package parks
+  **25 %** there (aniso p25 = 1.00, long-axis p25 = the wall) — that is why
+  it is fast and why it loses. Mechanism: with opacity high and no data
+  support, the Adam-normalised scaleReg (0.01, still on in the package —
+  Brush has NO scale reg) walks the scales to the floor at full lr.
+- **Decay strength peaks at Brush's 0.004**: 0.002 +0.06, 0.004 +0.13,
+  0.008 +0.04 (s1). Relocating the collapsed dots (`deadTiny`) −0.04 vs
+  decay alone: relocating them does not pay, removing the pressure does.
+- **Scale reg off = the fix.** Brush package with scaleReg 0: **+0.14 /
+  +0.04 / +0.25** (25.799 / 25.717 / 25.714), mean **+0.14**, 3 of 3
+  seeds up. Decay-for-reg alone: +0.13 / +0.02 / +0.21 = **+0.12**, 3/3.
+  Decay with both regs off: +0.16 / −0.16 / +0.27 = +0.09, one seed
+  lost. Decay + donors ∝ o·rendered (no package): −0.32 / −0.22 — opaque
+  donors under decay breed clones that collapse; only the whole package
+  (dead 1/255, relocate all, cadence 200) carries that donor rule.
+  Distributions of the two keepers: opacity p50 0.19–0.22 / p95 0.96,
+  aniso p50 12–15 (combo 151, Brush HEAD 4.5), ratio > 20 in 38–42 %
+  (combo 82 %), thin < 1e-3 in 29–33 % (combo 86 %): the first population
+  of ours that looks like Brush's instead of a needle field.
+- Garden confirm of both keepers (2 seeds each) running; keep rule +0.1
+  truck mean, no garden regression > 0.1. Cells: `gen_cells.mjs p1, p1c,
+  p1d, p1e, p1f, p1g, gp1`; the ab_cells chains run DETACHED (PowerShell
+  Start-Process) because a tool background task is capped at 10 min — and
+  their `*>>` logs are UTF-16 (decode with iconv before grepping).
+
 ## 2026-09-02 (placement ladder, docs/plan-placement-2026-09-02.md)
 
 All cells: truck, frozen COLMAP-identical poses (`scratch/truck_ab_recon.json`),
