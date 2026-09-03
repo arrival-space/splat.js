@@ -46,8 +46,17 @@ trainer option; the first package cell silently ran at 500 because of that).
   aniso p50 12–15 (combo 151, Brush HEAD 4.5), ratio > 20 in 38–42 %
   (combo 82 %), thin < 1e-3 in 29–33 % (combo 86 %): the first population
   of ours that looks like Brush's instead of a needle field.
-- Garden confirm of both keepers (2 seeds each) running; keep rule +0.1
-  truck mean, no garden regression > 0.1. Cells: `gen_cells.mjs p1, p1c,
+- **Garden confirm — both REJECTED as defaults** (combo garden 26.544 /
+  26.644): reg-free Brush package 26.515 / 26.478 = **−0.10**; decay-for-reg
+  26.434 / 26.540 = **−0.105**. Truck's +0.12…0.14 is given back on
+  garden. The 1/n argument (garden trains at 2M, truck at 1.05M → decay
+  0.002 on garden) does not hold: 26.551 / 26.467 = −0.09, seed 2 always
+  −0.18. Verdict: the opacity economy is scene-dependent at this stage —
+  what raises truck's opaque tail costs garden — and stays an opt-in arm
+  (`?econ=brush&scalereg=0`, `?opareg=0&opadecay=0.004`). Economy rung
+  CLOSED (two negatives on garden). The distribution finding stands: a
+  Brush-like population is reachable, but on garden it does not score.
+  Keep rule +0.1 truck mean, no garden regression > 0.1. Cells: `gen_cells.mjs p1, p1c,
   p1d, p1e, p1f, p1g, gp1`; the ab_cells chains run DETACHED (PowerShell
   Start-Process) because a tool background task is capped at 10 min — and
   their `*>>` logs are UTF-16 (decode with iconv before grepping).
