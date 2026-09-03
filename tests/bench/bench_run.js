@@ -228,6 +228,24 @@ try {
     await post(Q.get('postply'), blob);
     await say('ply-posted', { mb: +(blob.size / 1e6).toFixed(0) });
   }
+  if (Q.get('postview')) {
+    // the viewer's recon JSON (what the app's Share writes): camera path,
+    // frames, photo URLs at the deployment's data root, run stats — so a
+    // bench export can be published as ?model=<sog>&recon=<this> like the
+    // README's signature models. ?viewname= names it.
+    const { buildReconJson } = await import('../../app/js/session_io.js');
+    const dataRoot = `https://ugc.arrival.space/splatjs/data/${cfg.dir}/`;
+    const last = (ses.lossHistory || []).at(-1);
+    const S = {
+      session: ses, preset: { id: SET, name: Q.get('viewname') || SET },
+      loadedFiles: files.map((fl) => ({ name: fl.name, url: dataRoot + fl.name })),
+      minutes: Math.round(trainMin), psnrTrain: last ? last[1] : null, psnrHold: null,
+      psnrTest: (typeof test !== 'undefined' && test) ? { psnr: psnrTest, frames: test.frames } : null,
+      holdHist: [],
+    };
+    await post(Q.get('postview'), JSON.stringify(buildReconJson(S)));
+    await say('view-posted');
+  }
   const result = {
     set: SET, iters: ITERS,
     psnrTest,
