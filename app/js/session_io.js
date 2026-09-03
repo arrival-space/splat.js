@@ -25,6 +25,21 @@ const SH_C0 = 0.28209479177387814;
 // ---------------------------------------------------------------------------
 
 /** Presentation + resume metadata for the current run. */
+/** The trainer RECIPE: every option the session's trainer was created with
+ *  except the per-run sizing (maxSplats / capMult, recorded as the run's cap),
+ *  plus the session's refine cadence. Saved in the state header and the recon
+ *  JSON so a resume, a continue-from-share or a view-from-state rebuilds the
+ *  SAME trainer — mipComp, anisoReg, minScale, refineV2, growRate, the MCMC
+ *  set … Before this (2026-09-03) every resume fell back to bare defaults,
+ *  and a model trained without Mip compensation would have been un-baked and
+ *  re-rendered with it. Absent recipe (old records) = the legacy defaults. */
+export function trainRecipe(ses) {
+  const t = { ...((ses.opts && ses.opts.trainer) || {}) };
+  delete t.maxSplats; delete t.capMult;
+  if (ses.opts && ses.opts.refineEvery != null) t.refineEvery = ses.opts.refineEvery;
+  return t;
+}
+
 export function buildReconJson(S) {
   const ses = S.session;
   const recon = ses.recon;
@@ -41,6 +56,7 @@ export function buildReconJson(S) {
     version: 1,
     app: 'splat.js',
     name: S.preset && S.preset.name || 'splat',
+    recipe: trainRecipe(ses),
     iter: ses.trainer.iter,
     splats: ses.trainer.n,
     shK: ses.trainer.shK,
@@ -89,6 +105,7 @@ export async function packState(ses) {
     // convention tags (absent in old blobs = the v1 defaults): dc names the
     // color-slot encoding, engine picks the trainer a resume must rebuild
     dc: dc || 'sigmoid', engine: ses.trainer.v2 ? 'v2' : 'v1',
+    recipe: trainRecipe(ses),
   }));
   const params = new Uint8Array(data.buffer, data.byteOffset, n * STRIDE * 4);
   const shBytes = sh ? new Uint8Array(sh.buffer, sh.byteOffset, n * shK * 3 * 4) : new Uint8Array(0);
@@ -169,6 +186,7 @@ export function parseState(bytes) {
     gaussians: { data: params, n: head.n, sh, shK: head.shK, dc: head.dc === 'sh' ? 'sh' : 'sigmoid' },
     iter: head.iter,
     engine: head.engine === 'v2' ? 'v2' : 'v1',
+    recipe: head.recipe && typeof head.recipe === 'object' ? head.recipe : null,
   };
 }
 

@@ -2565,24 +2565,31 @@ async function continueLocalRun(viewOnly = false) {
     }
   }
   flash('Preparing to continue training …', 60000);
-  let g, engine, stateIter = null;
+  let g, engine, stateIter = null, recipe = null;
   if (lr.state) {
     // pause checkpoint: the trainer's raw floats — nothing baked, nothing
     // quantized, tagged with the engine that wrote them. Bit-exact resume.
     const { parseState } = await import('./session_io.js');
     const st = parseState(new Uint8Array(await lr.state.arrayBuffer()));
-    g = st.gaussians; engine = st.engine; stateIter = st.iter;
+    g = st.gaussians; engine = st.engine; stateIter = st.iter; recipe = st.recipe;
   } else {
     const { decodeModel } = await import('./session_io.js');
     ({ gaussians: g } = await decodeModel(new Uint8Array(await lr.sog.arrayBuffer()), null));
   }
+  // the trainer recipe the run was made with (state header, else the recon
+  // JSON); null = a record from before recipes = the legacy defaults
+  recipe = recipe || (recon && recon.recipe) || null;
   // un-bake opacity compensation (pure fn of position, mean scale, focal,
   // camera centres — recompute and divide out in logit space); only sog/ply
   // exports carry the baking, the raw checkpoint never does. Under the
   // placement set the trainer has no Mip compensation, so its exports were
   // never baked and there is nothing to divide out (a comp-trained share
   // continued under the set keeps its baked opacities — experimental).
-  if (!lr.state && !PLACEMENT_ON) {
+  // a model trained WITHOUT Mip compensation was exported unbaked — the
+  // recipe says so; records without one are legacy (baked) unless the
+  // placement set is on in this tab
+  const wasBaked = recipe ? recipe.mipComp !== false : !PLACEMENT_ON;
+  if (!lr.state && wasBaked) {
     const pos = [];
     for (const c of recon.cams) {
       const R = c.R, t = c.t;
@@ -2641,11 +2648,16 @@ async function continueLocalRun(viewOnly = false) {
     : baseIter + Math.max(10000, Math.round((lr.maxIters || 20000) / 2));
   const fr0 = recon.frames[0] || {};
   const cap = Math.max(g.n, lr.splats || 0, lr.status !== 'finished' ? lr.cap || 0 : 0);
+  // rebuild the SAME trainer the run was made with: the recipe carries the
+  // MCMC / needle / placement sets and the refine cadence; sizing is per run
+  const { refineEvery: recipeRefine, ...recipeTrainer } = recipe || {};
   const ses = createSession({
     maxIters: S.maxIters, holdout: -1,
+    ...(recipeRefine != null ? { refineEvery: recipeRefine } : {}),
     frames: { trainMaxDim: Math.max(fr0.tw || 0, fr0.th || 0) || undefined },
     trainer: {
-      maxSplats: cap, shDeg: 3,
+      ...recipeTrainer,
+      maxSplats: cap, shDeg: recipeTrainer.shDeg ?? 3,
       capMult: Math.max(2, Math.ceil(cap / Math.max(1, g.n))),
       ...(engine === 'v2' ? { engine: 'v2', refineEvery: 200 } : {}),
     },
