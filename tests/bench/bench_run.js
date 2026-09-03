@@ -28,7 +28,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('donor') ? `_dw${Q.get('donor')}` : '')
   + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
-  + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '')
+  + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '') + (Q.get('minutes') ? `_m${Q.get('minutes')}` : '')
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
 const logEl = document.getElementById('log');
@@ -200,8 +200,17 @@ try {
     say('train', { iter: ses.trainer.iter, splats: ses.trainer.n, psnr: lh ? +lh[1].toFixed(2) : null });
   }, 60000);
   ses.start();
+  // ?minutes=N: a wall-clock training budget — the run ends at N minutes
+  // wherever the iteration count is (the schedule still runs on ?iters, so
+  // size that to what fits: ~1 min per 1k at the 2M cap on the 5080)
+  let clock = null;
+  if (Q.get('minutes')) {
+    clock = setInterval(() => {
+      if ((Date.now() - trainT) / 60000 >= +Q.get('minutes')) { ses.opts.maxIters = ses.trainer.iter; clearInterval(clock); }
+    }, 5000);
+  }
   await done;
-  clearInterval(guard);
+  clearInterval(guard); if (clock) clearInterval(clock);
   const trainMin = +((Date.now() - trainT) / 60000).toFixed(1);
   // dead census at the horizon (opacity < 1/255: what the export purges)
   let deadPct = null;
@@ -247,7 +256,7 @@ try {
     await say('view-posted');
   }
   const result = {
-    set: SET, iters: ITERS,
+    set: SET, iters: ITERS, iterDone: ses.trainer.iter,
     psnrTest,
     heldOut,
     protocol: cfg.holdout1 ? 'holdout1' : 'eval8',
