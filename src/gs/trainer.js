@@ -1238,12 +1238,17 @@ export class GSTrainer {
     // (0 = the whole live population, as 3DGS-MCMC / Brush draw)
     const deadThr = this.opts.deadThr ?? 0.02;
     const poolMin = this.opts.poolMin ?? 0.05;
+    // opts.deadTiny: a splat whose mean log-scale sits on the minScale wall
+    // (all three axes collapsed — an opaque dot no pixel integrates) is dead
+    // capacity too; relocate it like an opacity death. Decay-for-reg runs
+    // (2026-09-02) parked 5–25 % of the population there.
+    const tinyAt = this.opts.deadTiny ? this.adamData[20] + 0.05 : -Infinity;
     let dead = [];
     const pool = [];      // donor candidates (alive enough to carry mass)
     let deadAll = 0;
     for (let i = 0; i < this.n; i++) {
       const o = sig(g[i * 4]);
-      if (o < deadThr) { deadAll++; if (canReloc) dead.push(i); }
+      if (o < deadThr || g[i * 4 + 3] <= tinyAt) { deadAll++; if (canReloc) dead.push(i); }
       else if (o >= poolMin) pool.push(i);
     }
     let survived = 0;

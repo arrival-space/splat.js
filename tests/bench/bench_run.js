@@ -28,7 +28,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('donor') ? `_dw${Q.get('donor')}` : '')
   + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
-  + (Q.get('econ') ? `_e${Q.get('econ')}` : '')
+  + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '')
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
 const logEl = document.getElementById('log');
@@ -108,6 +108,7 @@ try {
         ...(Q.get('poolmin') != null ? { poolMin: +Q.get('poolmin') } : {}),
         ...(Q.get('opadecay') ? { opaDecay: +Q.get('opadecay') } : {}),
         ...(Q.get('ratiocap') ? { ratioCap: +Q.get('ratiocap') } : {}),
+        ...(Q.get('deadtiny') ? { deadTiny: true } : {}),
         ...(Q.get('maxscale') ? { maxScale: +Q.get('maxscale') } : {}),
         // per-frame (key,id) entry budget (default maxSplats*24); rung 4 probe
         ...(Q.get('entriescap') ? { entriesCap: +Q.get('entriescap') } : {}),
