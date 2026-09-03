@@ -13,7 +13,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('dilate') ? `_dil${Q.get('dilate')}` : '')
   + (Q.get('aniso') != null ? `_ar${Q.get('aniso')}` : '')
   + (Q.get('ssim') ? `_ssim${Q.get('ssim')}` : '')
-  + (Q.get('maxsplats') ? `_cap${Q.get('maxsplats')}` : '')
+  + (Q.get('maxsplats') ? `_cap${Q.get('maxsplats')}` : '') + (Q.get('capmult') ? `_cm${Q.get('capmult')}` : '')
   + (Q.get('entriescap') ? `_ec${Q.get('entriescap')}` : '')
   + (Q.get('minscale') ? `_ms${Q.get('minscale')}` : '')
   + (Q.get('comp') != null ? `_c${Q.get('comp')}` : '')
@@ -88,7 +88,9 @@ try {
     trainer: Q.has('classic')
       ? { maxSplats: Math.min(600000, Math.round(ITERS * 15)), capMult: 8, shDeg: 3 }
       : {
-        maxSplats: +(Q.get('maxsplats') || Math.min(2000000, Math.round(ITERS * 35))), capMult: 8, shDeg: 3,
+        // cap = min(seed·capMult, maxSplats): truck's 25,141-point seed × 8 × 8
+        // is 1.61M, so a true 2M needs ?capmult=16 (what the app uses ≥ 1M)
+        maxSplats: +(Q.get('maxsplats') || Math.min(2000000, Math.round(ITERS * 35))), capMult: +(Q.get('capmult') || 8), shDeg: 3,
         growRate: 0.05, mcmcNoise: true, scaleReg: 0.01, moveCap: 0.25, shLr: 3e-4,
         // econ=brush: the Brush economy as ONE package (its pieces never
         // transplanted one at a time): no loss-side reg, decay 0.004/200it,
