@@ -60,6 +60,43 @@ trainer option; the first package cell silently ran at 500 because of that).
   p1d, p1e, p1f, p1g, gp1`; the ab_cells chains run DETACHED (PowerShell
   Start-Process) because a tool background task is capped at 10 min — and
   their `*>>` logs are UTF-16 (decode with iconv before grepping).
+- **Rung 8 gate: 16-cell matrix × {default, placement set}** (app pose solve,
+  unseeded, eval8; placement = `?aniso=0&minscale=1e-5&comp=0&refv2=1&growrate=0.1`,
+  the `?placement=1` set). Same code, interleaved per cell.
+
+  | set / iters | default | placement | Δ dB | train min | Δ time |
+  |---|---|---|---|---|---|
+  | synthetic 20k | 38.73 | 38.89 | +0.16 | 1.0→1.3 | +30 % |
+  | synthetic 40k | 38.66 | 39.21 | +0.55 | 2.9→2.9 | 0 |
+  | camping 20k | 25.19 | 25.49 | +0.31 | 4.1→6.6 | +61 % |
+  | camping 40k | 25.33 | 25.45 | +0.12 | 11.9→19.0 | +60 % |
+  | truck 20k | 24.51 | 25.16 | +0.64 | 3.1→4.6 | +48 % |
+  | truck 40k | 25.62 | 25.72 | +0.10 | 11.4→13.4 | +18 % |
+  | garden 20k | 25.95 | 26.23 | +0.28 | 3.5→4.2 | +20 % |
+  | garden 40k | 26.91 | 26.65 | **−0.26** | 10.0→12.8 | +28 % |
+  | bicycle 20k | (rerun) | 23.60 | | ?→4.1 | |
+  | bicycle 40k | (rerun) | 23.39 | | ?→10.2 | |
+  | playroom 20k | 26.66 | 26.93 | +0.27 | 3.2→3.5 | +9 % |
+  | playroom 40k | 26.77 | 26.67 | −0.09 | 10.2→9.3 | −9 % |
+  | train 20k | 21.20 | 21.20 | −0.01 | 3.4→4.0 | +18 % |
+  | train 40k | 21.90 | 21.35 | **−0.55** | 11.8→12.5 | +6 % |
+  | bar360 20k | 20.48 | 20.43 | −0.05 | 3.2→3.6 | +13 % |
+  | bar360 40k | 20.66 | 19.85 | **−0.80** | 10.1→11.3 | +12 % |
+
+  Reading: at the app's default 20k the set wins 5, ties 2, loses 0. At
+  40k it loses on 4 of 6 measured sets, on the outdoor / 360 ones by a lot.
+  Outputs first (placement PLYs 20k → 40k): garden thin-axis p50 1.1e-3 →
+  1.48e-4 (= the 1e-5·r wall), thin < 1e-3 **49 % → 83 %**, aniso p50 27 →
+  113, opacity p50 0.20 → 0.12, p95 0.60 → 0.35; truck the same drift.
+  The long-run loss is **needle degeneration** — with anisoReg 0 and the
+  scale floor at 1e-5·r, more iterations mean thinner, dimmer needles —
+  not relocation churn. The two bicycle default cells were lost to a rig
+  incident (a second chain merged into the matrix's browser; see memory)
+  and rerun seeded afterwards, with a seeded frozen-pose garden 40k A/B.
+  Probes queued on garden 40k (frozen poses, seed 1): minScale 1e-4,
+  anisoReg 0.001, relocUntil 36k (the churn control). Training time:
+  +10…60 % on the placement set (long splats touch more tiles), a second
+  cost the flip must answer.
 
 ## 2026-09-02 (placement ladder, docs/plan-placement-2026-09-02.md)
 
