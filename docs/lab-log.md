@@ -4,6 +4,66 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-04 (2×2: Brush vs ours × COLMAP vs our poses, matched 1.05M; the fx≠fy finding)
+
+User: the hour-signature truck is rounder than Brush's (text in Brush is
+needles, ours spheres) — compare the assemblies, train Brush at matched
+splats, compare dB at long budgets, and COLMAP poses vs ours. All cells
+truck, 979 px, eval8, 1.05M cap. Brush = HEAD 8b7f5c6 (`--max-splats
+1050000`), ours = default set, seed 1. Brush datasets: T&T COLMAP sparse and
+`scratch/truck_colmap_ours` (our solve as COLMAP text, 2026-08-29).
+
+| | COLMAP poses | our poses |
+|---|---|---|
+| Brush 30k (~10 min) | 26.00 | 25.81 |
+| Brush 150k (~50 min) | 26.15 | 25.75 |
+| ours 30k | 25.53 (square px) · 25.01 (mean f) | 25.18 |
+| ours 60 min / 170k | **26.60** (square px) · 25.88 (mean f) | 26.40 |
+
+- **The T&T truck camera has fx 1163.25 / fy 1156.28 (0.6 %)**: the
+  1920×1080 frames were resized non-uniformly to 1957×1091. Brush models
+  fx/fy; our trainer has ONE focal, so the COLMAP arm fed sqrt(fx·fy) was
+  misaligned by up to 1.4 px at the frame edges: 25.01 / 25.88, i.e.
+  −0.18 / −0.52 vs our own poses, growing with training. Resampling the
+  images to square pixels (979×549, `data/truck_sq`, f = fx) and the
+  same poses: **25.53 / 26.60** — COLMAP poses now beat our own by +0.35
+  (30k) / +0.20 (60 min). Our SfM assumes square pixels too, so our poses
+  carry that model error on this set; per-axis focal in solve + trainer
+  is worth ~0.2 dB here (and on any non-uniformly resized dataset).
+  (A "COLMAP poses + our cloud" cell was invalid — different frames.)
+- **Brush's pose penalty grows with training** (0.19 at 30k → 0.40 at
+  150k): its long run on our poses is BELOW its own 30k. Same mechanism
+  the other way round: each trainer does best on the reconstruction that
+  shares its intrinsics model.
+- **Matched splats, long budget: ours wins.** Brush gains 0.15 from 5×
+  the iterations (26.00 → 26.15 on COLMAP); ours in the same wall-clock
+  26.60 (COLMAP, square) / 26.40 (our poses). Brush wins the short budget
+  on COLMAP poses (26.00 vs 25.53 at 30k). Brush at 1.05M loses 0.14 vs
+  its 2M run (26.14).
+- **Assembly** (splat_stats, 1.05M unless noted):
+
+  | run | aniso p50 / p95 | long axis p50 / p95 | opacity p50 / p95 | ratio > 20 |
+  |---|---|---|---|---|
+  | Brush HEAD 2M 30k | 4.5 / 22.6 | 0.045 / 0.61 | 0.099 / 0.63 | 6.3 % |
+  | Brush 1.05M 30k (COLMAP) | 5.3 / 25.4 | 0.039 / 0.46 | 0.107 / 0.60 | 7.9 % |
+  | Brush 1.05M 30k (ours) | 5.2 / 25.7 | 0.036 / 0.62 | 0.114 / 0.63 | 8.1 % |
+  | Brush 1.05M 150k (COLMAP) | 8.5 / 89 | 0.071 / 1.22 | 0.182 / 0.92 | 25.5 % |
+  | Brush 1.05M 150k (ours) | 8.1 / 84 | 0.067 / 1.19 | 0.189 / 0.93 | 24.3 % |
+  | ours 60 min (our poses, 26.40) | 1.7 / 10.6 | 0.015 / 0.16 | 0.050 / 0.66 | 2.0 % |
+  | ours 60 min (COLMAP sq, 26.60) | 1.9 / 11.4 | 0.023 / 0.23 | 0.052 / 0.66 | 2.2 % |
+  | ours placement 2M 138k (26.05) | 109 / 846 | 0.023 / 0.17 | 0.069 / 0.30 | 83.5 % |
+
+  Brush's splats are 3× larger, 3–5× more elongated and 2× more opaque at
+  the median — the needles in the text — and its long runs go further that
+  way (aniso p50 8.5, a quarter of splats > 20:1). Ours (default set) is
+  small, round and dim at the median with a bright tail, and scores higher
+  at the hour; the placement set is the needle extreme and scores lowest.
+  The score does not follow the shape; the two trainers reach different
+  optima with opposite populations.
+- Published (reference, README untouched): `truck_1h_colmap_2026-09-04`
+  (26.60, COLMAP poses, square pixels). Signature stays `truck_1h_2026-09-04`
+  (26.40, our poses — the product pipeline).
+
 ## 2026-09-04 (truck 60-minute signature)
 
 User's ask: a truck that shows what one HOUR of training gives, iterations
