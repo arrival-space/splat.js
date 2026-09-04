@@ -1310,7 +1310,15 @@ async function startPrep() {
         // fine on-device, and fenceRing/gpuChunkMs (library opts) would tax
         // throughput for nothing.
         sfm: { workers: 3, uiYield: true },
-      } : {}),
+      } : {
+        // desktop solver default since 2026-09-04: 8000 SIFT features from the
+        // upsampled first octave (COLMAP's default). Feature localisation is
+        // the pose-precision ceiling: truck +0.38 dB, garden +0.26, camping ±0
+        // at 30k; the hour-long truck 26.40 → 26.55. The solve takes ~3x
+        // longer (truck 4 → 12 min). Phones keep the lean settings: the
+        // upsampled octave is 4x the SIFT work on a thermally limited chip.
+        sfm: { siftFeats: 8000, siftFirstOctave: -1 },
+      }),
       // phones solve at the desktop feature resolution again: 720 was part
       // of the OOM firefight, but the real culprit was the UI bitmap cache —
       // and feature res is the measured pose-precision ceiling

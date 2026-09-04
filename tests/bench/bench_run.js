@@ -29,7 +29,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
   + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '') + (Q.get('minutes') ? `_m${Q.get('minutes')}` : '')
-  + (Q.get('featres') ? `_fr${Q.get('featres')}` : '') + (Q.get('feats') ? `_nf${Q.get('feats')}` : '') + (Q.get('octave') ? `_oc${Q.get('octave')}` : '') + (Q.get('peak') ? `_pk${Q.get('peak')}` : '')
+  + (Q.has('classicsolve') ? '_cs' : '') + (Q.get('featres') ? `_fr${Q.get('featres')}` : '') + (Q.get('feats') ? `_nf${Q.get('feats')}` : '') + (Q.get('octave') ? `_oc${Q.get('octave')}` : '') + (Q.get('peak') ? `_pk${Q.get('peak')}` : '')
   + (Q.get('aspect') ? '_asp' : '') + (Q.get('asplr') ? `_al${Q.get('asplr')}` : '') + (Q.get('sfmaspect') ? '_sa' : '')
   + (Q.get('dir') ? `_d${Q.get('dir')}` : '') + (Q.get('tag') ? `_${Q.get('tag')}` : '')   // free suffix: e.g. the recon source, which no flag names
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
@@ -89,12 +89,16 @@ try {
     // refine cadence is a SESSION option: the economy packages carry their
     // own (Brush 200, LichtFeld 100); ?refevery overrides either
     // solver probes: feature-frame resolution, SIFT budget, first octave (-1 = 2x upsampled)
-    ...((Q.get('sfmaspect') || Q.get('feats') || Q.get('octave') || Q.get('peak')) ? { sfm: {
+    // desktop solver default since 2026-09-04: 8000 SIFT features from the upsampled
+    // first octave (COLMAP's default) — truck +0.38, garden +0.26, camping ±0 at 30k;
+    // pose residual vs COLMAP halved. ?feats= / ?octave= override; ?classicsolve restores 3900 / octave 0
+    sfm: {
+      ...(Q.has('classicsolve') ? {} : { siftFeats: 8000, siftFirstOctave: -1 }),
       ...(Q.get('sfmaspect') ? { refineAspect: true } : {}),
       ...(Q.get('feats') ? { siftFeats: +Q.get('feats') } : {}),
       ...(Q.get('octave') ? { siftFirstOctave: +Q.get('octave') } : {}),
       ...(Q.get('peak') ? { siftPeak: +Q.get('peak') } : {}),   // SIFT contrast threshold scale (<1 = more, fainter keypoints)
-    } } : {}),
+    },
     ...(Q.has('classic') ? {} : { refineEvery: +(Q.get('refevery') || (Q.get('econ') === 'brush' ? 200 : Q.get('econ') === 'lf' ? 100 : 500)) }),
     trainer: Q.has('classic')
       ? { maxSplats: Math.min(600000, Math.round(ITERS * 15)), capMult: 8, shDeg: 3 }
