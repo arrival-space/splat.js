@@ -38,8 +38,15 @@ after raising MAXF 8192 → 16384 (two orientations per keypoint at an 8000
 budget overflowed the feature-id stride: "too many features per image").
 **Shipped as the desktop default** (app + bench; `?classicsolve` restores
 3900 / octave 0); phones keep the lean settings (4× SIFT work). A second
-hour run on the stock defaults (in-browser solve, aspect OFF) is running
-so the README row describes the default pipeline and nothing else.
+hour run on the stock defaults (in-browser solve, aspect OFF): **25.925**
+(solve 12.2 min, ATE 0.033 %, rot 0.052°) — BELOW the flagged 26.55 (octave
++ 8000 + BA aspect, ATE 0.021 %) and below the old default's 26.40. Two
+things tangled: the BA aspect was part of the 26.55 recipe (truck's 30k
+octave cell had it on; the garden/camping safety cells did not), and the
+solve varies run to run at these settings by more than the effect (ATE
+0.021 vs 0.033 % between two solves). Desktop default NOT deployed until
+untangled; cells running: stock truck 30k ×2 (solve variance), camping
+octave + aspect (the combination where the aspect alone failed).
 
 ## 2026-09-04 (per-axis focal + pixel aspect: build, validate, measure)
 
