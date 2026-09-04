@@ -44,9 +44,23 @@ hour run on the stock defaults (in-browser solve, aspect OFF): **25.925**
 things tangled: the BA aspect was part of the 26.55 recipe (truck's 30k
 octave cell had it on; the garden/camping safety cells did not), and the
 solve varies run to run at these settings by more than the effect (ATE
-0.021 vs 0.033 % between two solves). Desktop default NOT deployed until
-untangled; cells running: stock truck 30k ×2 (solve variance), camping
-octave + aspect (the combination where the aspect alone failed).
+0.021 vs 0.033 % between two solves). Untangled: the solve is DETERMINISTIC (two stock truck solves identical to
+the digit) — no variance; the difference is the camera model. Finer
+features WITHOUT the aspect fit a slightly wrong model with precise
+keypoints and the bias grows with training (30k +0.36, hour −0.47).
+**The pair is the recipe** (30k, seed 1; old default / finer / aspect /
+both): truck 25.18 / 25.54 / 25.33 / **25.71**; garden 26.48 / 26.74 /
+26.60 / **26.77**; camping 25.46 / 25.39 / 24.85 / **27.15** (aspect
+1.0195 both times — the video frames really are 2 % non-square; the
+aspect-alone collapse was BA convergence with 20k points, not the value;
+with 58k points it is the best camping solve ever measured here). Pixel
+RMS is NOT a valid acceptance test (camping octave-only 0.53 < pair 0.59
+yet 1.8 dB worse — different surviving point sets), so no two-pass gate:
+the aspect ships WITH the finer features or not at all. Desktop default =
+siftFeats 8000 + firstOctave −1 + refineAspect (app + bench;
+`?classicsolve` restores the old solve). The 26.55 hour run used exactly
+these settings → it IS the stock-pipeline number; README sentence updated.
+Deploy pending the user's call on the 3× solve time.
 
 ## 2026-09-04 (per-axis focal + pixel aspect: build, validate, measure)
 

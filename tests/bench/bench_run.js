@@ -93,7 +93,7 @@ try {
     // first octave (COLMAP's default) — truck +0.38, garden +0.26, camping ±0 at 30k;
     // pose residual vs COLMAP halved. ?feats= / ?octave= override; ?classicsolve restores 3900 / octave 0
     sfm: {
-      ...(Q.has('classicsolve') ? {} : { siftFeats: 8000, siftFirstOctave: -1 }),
+      ...(Q.has('classicsolve') ? {} : { siftFeats: 8000, siftFirstOctave: -1, refineAspect: true }),
       ...(Q.get('sfmaspect') ? { refineAspect: true } : {}),
       ...(Q.get('feats') ? { siftFeats: +Q.get('feats') } : {}),
       ...(Q.get('octave') ? { siftFirstOctave: +Q.get('octave') } : {}),

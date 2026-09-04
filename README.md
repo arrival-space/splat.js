@@ -99,11 +99,11 @@ degree-3 spherical harmonics on native CUDA. The 40 k Splat.js row is a
 ten-minute browser run at 1.4 M Gaussians; the 170 k row is the same
 system given an hour — a 1.05 M cap fits more cycles into the hour than
 2 M does and scores higher (2 M at 114 k cycles: 26.19 dB). Its poses come
-from the in-browser solve with the finer feature settings (8000 SIFT
-features from the upsampled first octave, pixel-aspect refinement in
-bundle adjustment; a 12-minute solve instead of 4) — the same poses that
-were within 0.05° of COLMAP's at the default settings now train 0.15 dB
-higher, because at an hour the model is sharp enough to feel half a pixel. (Benchmark mode pins the native
+from the in-browser solve at its desktop defaults: 8000 SIFT features from
+the upsampled first octave and a pixel-aspect term in bundle adjustment
+(the Truck release images are 0.6 % non-square) — a 12-minute solve
+instead of 4, and poses that train 0.15 dB higher than the earlier 4-minute
+solve, because at an hour the model is sharp enough to feel half a pixel. (Benchmark mode pins the native
 resolution: on big sets the app otherwise trades resolution for memory, and
 PSNR at reduced resolution is not comparable.)
 
