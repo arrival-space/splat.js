@@ -4,6 +4,37 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-04 (solver: feature resolution → pose precision → the hour; 26.55 with our poses)
+
+User's hypothesis: fewer images register at lower solve resolution, so
+feature resolution may drive the pose residual too. Probes on truck (30k,
+1.05M, seed 1, app solve with BA aspect; residuals = sim(3)-aligned to
+COLMAP, `scratch/pose_resid.mjs`; baseline 25.33, rot 0.043°, ATE 0.032 %):
+
+| solve | rot median | ATE median | 30k dB | solve |
+|---|---|---|---|---|
+| features at 640 | 0.078° | 0.096 % | 24.61 | 2.4 min |
+| 960 (baseline) | 0.043° | 0.032 % | 25.33 | 4 min |
+| 960, siftFeats 8000 | 0.043° | 0.032 % | 24.99 | 4 min (poses identical — the contrast threshold, not the cap, limits the count) |
+| 960, 8000, peak 0.5 | 0.051° | 0.035 % | 25.28 | 4.4 min |
+| **960, 8000, firstOctave −1** | 0.053° | **0.021 %** | **25.71** | 12.4 min |
+
+Hour on the octave poses (1.05M, 170k in 55.6 min): **26.547** (our poses
+26.40 → +0.15; COLMAP exact fx/fy 26.48; COLMAP square resample 26.60).
+Published truck_1h_v2_2026-09-04; README signature + row updated (top of
+the table, above SSS 26.41). Population: aniso p50 1.74, opacity p50
+0.051 / p95 0.66, ratio > 20 2.4 % — same family as the 26.40 model.
+
+Readings: the hypothesis holds — 640 px features nearly double the angular
+residual and cost 0.7 dB. More keypoints at the same scale do nothing
+(8000 cap not binding; lower threshold −0.05); FINER localisation does:
+the upsampled first octave (COLMAP's default; ours was off since the
+2026-08 flood at 1800 feats) halves the position residual and is worth
++0.38 at 30k, +0.15 at the hour, at 3× the solve time. The COLMAP rotation
+residual is no longer the yardstick past ~0.04° (COLMAP has its own).
+Default candidacy: garden/camping safety cells running (camping is the
+one that punished the aspect DOF).
+
 ## 2026-09-04 (per-axis focal + pixel aspect: build, validate, measure)
 
 Built from the fx≠fy finding: fy in the camera uniform (misc3.z), per-axis
