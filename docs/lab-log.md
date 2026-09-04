@@ -4,6 +4,52 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-04 (per-axis focal + pixel aspect: build, validate, measure)
+
+Built from the fx≠fy finding: fy in the camera uniform (misc3.z), per-axis
+projection in computeGeom / scan / backward, the shared-focal camera
+gradient split into dL/dlog f and dL/dlog fy (aspect), `opts.aspectOpt`
+(train-time shared log-aspect, Adam, ±3 %), `opts.aspectLr`; BA's existing
+`refineAspect` now lands in the recon as `cams[].fy` (+ `recon.aspect`);
+recon JSON carries fy; bench `?aspect= ?asplr= ?sfmaspect=`. Gradcheck rig
+camera at aspect 0.95: pose check ok (logfy relErr 0.25 %), splat check
+unchanged. Commit 50e003a.
+
+Hour cells (truck, 1.05M, 170k, 60 min, seed 1; refs: our poses 26.40,
+COLMAP square-pixel resample 26.60, COLMAP mean-f 25.88):
+
+| cell | aspect found | dB |
+|---|---|---|
+| our frozen poses + training aspect | 0.99982 | 26.43 |
+| fresh solve, BA aspect (0.9955) + training aspect | 0.99973 | 26.37 |
+| COLMAP poses, exact fx/fy via the kernel (no resample) | — | **26.48** |
+
+30k probes (1.05M; refs our poses 25.18, COLMAP square 25.53): training
+aspect at 10× lr 25.24 (aspect 0.9998 — does not move); BA-aspect poses
+**25.33** (+0.15); both 25.33.
+
+Readings:
+- The kernel path is right: exact fx/fy recovers 0.60 of the 0.72 the mean
+  focal cost (26.48 vs 25.88; the resampled 26.60 keeps ~0.1 from its 549-
+  row frames / resample noise).
+- **Train-time aspect refinement is useless once poses are fixed**: the
+  poses solved under square pixels already absorbed the error, so the
+  aspect optimum given those poses is ≈1.000 (stays there even at 10× lr).
+  The estimate belongs in BA — COLMAP 0.9940, our BA 0.9955 — where it is
+  worth +0.15 at 30k on this camera; at the hour the fresh solve gave
+  26.37 vs 26.40 (solve-to-solve noise ±0.1 swamps it). aspectOpt stays
+  opt-in; sfm refineAspect is the candidate default (safety cells on
+  garden/camping running: square-pixel cameras must estimate ≈1).
+- **The rest is the poses.** Sim(3)-aligned to COLMAP: frozen solve ATE
+  median 0.042 % of extent, rotation error median 0.058° (p90 0.080°);
+  fresh BA-aspect solve 0.032 % / 0.043°. At f = 571 px, 0.05° ≈ 0.5 px of
+  pointing error — invisible at 30k, worth 0.1–0.2 dB at the hour. COLMAP
+  poses with a matched camera model are the better poses by that much.
+- Candidates for the pose gap (not started): more BA (iterations, outlier
+  rounds, principal point), or train-time pose refinement with a gauge
+  lock + test-time pose alignment for the held-out views (camOpt is off
+  because refining train poses while eval poses stay fixed costs ~1 dB).
+
 ## 2026-09-04 (2×2: Brush vs ours × COLMAP vs our poses, matched 1.05M; the fx≠fy finding)
 
 User: the hour-signature truck is rounder than Brush's (text in Brush is
