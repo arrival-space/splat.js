@@ -29,7 +29,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
   + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '') + (Q.get('minutes') ? `_m${Q.get('minutes')}` : '')
-  + (Q.get('tag') ? `_${Q.get('tag')}` : '')   // free suffix: e.g. the recon source, which no flag names
+  + (Q.get('dir') ? `_d${Q.get('dir')}` : '') + (Q.get('tag') ? `_${Q.get('tag')}` : '')   // free suffix: e.g. the recon source, which no flag names
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
 const logEl = document.getElementById('log');
@@ -62,6 +62,7 @@ const SETS = {
 
 try {
   const cfg = SETS[SET];
+  if (Q.get('dir')) cfg.dir = Q.get('dir');   // a resampled copy of the set (e.g. truck_sq: square pixels for the COLMAP camera)
   if (!cfg) throw new Error(`unknown set ${SET}`);
   let names;
   if (cfg.list) names = await (await fetch(`/data/${cfg.dir}/files.json`)).json();
