@@ -38,8 +38,16 @@ Readings:
   The estimate belongs in BA — COLMAP 0.9940, our BA 0.9955 — where it is
   worth +0.15 at 30k on this camera; at the hour the fresh solve gave
   26.37 vs 26.40 (solve-to-solve noise ±0.1 swamps it). aspectOpt stays
-  opt-in; sfm refineAspect is the candidate default (safety cells on
-  garden/camping running: square-pixel cameras must estimate ≈1).
+  opt-in. **sfm refineAspect is NOT a default either**: garden estimates
+  1.0020 and gains +0.11 (26.48 → 26.60, the Mip-NeRF frames are slightly
+  non-square too), but camping (phone video, square pixels) estimates
+  **1.0195**, its own BA RMS worsens 0.61 → 0.79 px and the score drops
+  **−0.61** (25.46 → 24.85): on a walk with little roll variety the aspect
+  is ill-conditioned and drifts into a worse local optimum. A prior cannot
+  hold it (1e5 observations swamp any σ) — a two-pass RMS gate (plain BA,
+  then aspect from that solution, keep the lower RMS) is the fix to build
+  before it can be on. Until then: `?sfmaspect=1` / `sfm.refineAspect`
+  opt-in; the README row stays the plain in-browser solve (26.40).
 - **The rest is the poses.** Sim(3)-aligned to COLMAP: frozen solve ATE
   median 0.042 % of extent, rotation error median 0.058° (p90 0.080°);
   fresh BA-aspect solve 0.032 % / 0.043°. At f = 571 px, 0.05° ≈ 0.5 px of
