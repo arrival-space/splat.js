@@ -32,8 +32,14 @@ the upsampled first octave (COLMAP's default; ours was off since the
 2026-08 flood at 1800 feats) halves the position residual and is worth
 +0.38 at 30k, +0.15 at the hour, at 3× the solve time. The COLMAP rotation
 residual is no longer the yardstick past ~0.04° (COLMAP has its own).
-Default candidacy: garden/camping safety cells running (camping is the
-one that punished the aspect DOF).
+Safety (30k, seed 1, no aspect): camping 25.39 vs 25.46 (−0.07, noise; RMS
+0.61 → 0.53), garden **26.74 vs 26.48 (+0.26)**, all cameras, RMS 0.52 —
+after raising MAXF 8192 → 16384 (two orientations per keypoint at an 8000
+budget overflowed the feature-id stride: "too many features per image").
+**Shipped as the desktop default** (app + bench; `?classicsolve` restores
+3900 / octave 0); phones keep the lean settings (4× SIFT work). A second
+hour run on the stock defaults (in-browser solve, aspect OFF) is running
+so the README row describes the default pipeline and nothing else.
 
 ## 2026-09-04 (per-axis focal + pixel aspect: build, validate, measure)
 
