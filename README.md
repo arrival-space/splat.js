@@ -33,7 +33,10 @@ loads it back into the viewer, capture-path tour included:
 — the benchmark model from the table below: 251 photographs at native
 979 px, 1,050,000 Gaussians, degree-3 spherical harmonics, 170 k cycles:
 **26.40 dB on the photographs it never saw** — above 3DGS-MCMC, 53 min of
-training in one tab.
+training in one tab. The same trainer started from the dataset's COLMAP
+poses instead of its own solve reaches
+**[26.60 dB](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/truck_1h_colmap_2026-09-04.sog&recon=https://ugc.arrival.space/splatjs/models/truck_1h_colmap_2026-09-04_recon.json)**
+in the same hour — the top of the table below.
 
 **[The Bar — a real bar from 102 handheld 360° panoramas](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/bar360_v5test.sog&recon=https://ugc.arrival.space/splatjs/models/bar360_v5test_recon.json)**
 — each panorama sliced into cube faces and solved as one camera rig
@@ -85,6 +88,7 @@ its native 979 px, on a desktop NVIDIA GPU, in one tab:
 | LichtFeld Studio v0.5.3 — measured (~5½ min train) | 26.14 dB |
 | **Splat.js — 170 k cycles (53 min train, 1.05 M)** | **26.40 dB** |
 | Student Splatting & Scooping (CVPR 2025) | 26.41 dB |
+| **Splat.js — 170 k cycles (56 min train, 1.05 M, from the COLMAP poses)** | **26.60 dB** |
 
 Same images, same resolution, same held-out-every-8th protocol; all times
 are training only — the Splat.js in-browser camera solve adds ~4 minutes.
@@ -96,9 +100,15 @@ same way: same machine, byte-identical images, the same every-8th holdout,
 SH degree 3, 2 M splat cap, from the COLMAP poses and sparse cloud.
 The published methods train 30 k iterations of 2–2.6 M Gaussians with
 degree-3 spherical harmonics on native CUDA. The 40 k Splat.js row is a
-ten-minute browser run at 1.4 M Gaussians; the 170 k row is the same
+ten-minute browser run at 1.4 M Gaussians; the 170 k rows are the same
 system given an hour — a 1.05 M cap fits more cycles into the hour than
-2 M does and scores higher (2 M at 114 k cycles: 26.19 dB). (Benchmark mode pins the native
+2 M does and scores higher (2 M at 114 k cycles: 26.19 dB). The 26.40 row
+is the whole in-browser pipeline, poses included; the 26.60 row starts
+from the dataset's COLMAP poses and sparse cloud like the published
+methods do. One difference to state: the Truck camera has fx ≠ fy (the
+frames were resized non-uniformly, 0.6 %), which Splat.js's single-focal
+camera cannot express, so for that row the images were resampled to
+square pixels (979 × 549) before training and evaluation. (Benchmark mode pins the native
 resolution: on big sets the app otherwise trades resolution for memory, and
 PSNR at reduced resolution is not comparable.)
 
