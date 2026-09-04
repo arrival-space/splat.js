@@ -1619,6 +1619,8 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
         imgIdx: img,
         R: poses[img].R, t: poses[img].t,
         f: K[img].f, cx: K[img].cx, cy: K[img].cy,
+        // non-square pixels (refineAspect): fy = f · aspect, consumed by the trainer's per-axis focal
+        ...(baResult && baResult.aspect && baResult.aspect !== 1 ? { fy: K[img].f * baResult.aspect } : {}),
       });
     }
     cams.sort((a, b) => a.imgIdx - b.imgIdx);
@@ -1630,6 +1632,7 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
       cams, points, medErr, fScale,
       k1: baResult ? baResult.k1 : 0,
       k2: baResult ? baResult.k2 : 0,
+      aspect: baResult ? (baResult.aspect ?? 1) : 1,
       fFeat: K[0].f,
       rmsBA: baResult ? baResult.rmsAfter : null,
       rigStats: rigOf ? rigStats : undefined,

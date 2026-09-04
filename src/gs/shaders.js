@@ -152,7 +152,8 @@ struct Cam {
   size: vec4f,    // x = width, y = height, z = tilesX, w = numGaussians
   misc: vec4f,    // xyz = background color, w = target offset (u32 bits)
   misc2: vec4f,   // x = trainMode (1/0), y = camera index, z = numCams, w = exposure bias
-  misc3: vec4f,   // x = active SH degree
+  misc3: vec4f,   // x = active SH degree, z = fy (0 = fx; cameras with
+                  //     fx != fy: non-uniformly resized datasets, COLMAP PINHOLE)
 };
 @group(0) @binding(0) var<uniform> cam: Cam;
 const TILEF = ${TILE}.0;
@@ -218,18 +219,19 @@ fn computeGeom(pbase: u32) -> Geom {
   // point runs away and the 2D covariance explodes into screen-sized
   // quads that leak back into frame — in the interactive view AND in
   // every training render whose frustum the splat sits just outside of.
-  let f = cam.proj.x;
+  let fx = cam.proj.x;
+  let fy = select(fx, cam.misc3.z, cam.misc3.z > 0.0);
   let iz = 1.0 / g.pc.z;
-  let limx = 1.3 * 0.5 * cam.size.x / f;
-  let limy = 1.3 * 0.5 * cam.size.y / f;
+  let limx = 1.3 * 0.5 * cam.size.x / fx;
+  let limy = 1.3 * 0.5 * cam.size.y / fy;
   let txz = g.pc.x * iz;
   let tyz = g.pc.y * iz;
   g.cx = clamp(txz, -limx, limx) * g.pc.z;
   g.cy = clamp(tyz, -limy, limy) * g.pc.z;
   g.inx = select(0.0, 1.0, abs(txz) <= limx);
   g.iny = select(0.0, 1.0, abs(tyz) <= limy);
-  g.t0 = (f * iz) * cam.R0.xyz + (-f * g.cx * iz * iz) * cam.R2.xyz;
-  g.t1 = (f * iz) * cam.R1.xyz + (-f * g.cy * iz * iz) * cam.R2.xyz;
+  g.t0 = (fx * iz) * cam.R0.xyz + (-fx * g.cx * iz * iz) * cam.R2.xyz;
+  g.t1 = (fy * iz) * cam.R1.xyz + (-fy * g.cy * iz * iz) * cam.R2.xyz;
 
   // V = T Sigma T^T
   let st0 = vec3f(
@@ -278,9 +280,10 @@ fn main(@builtin(global_invocation_id) gid: vec3u) {
   let opa = 1.0 / (1.0 + exp(-clamp(params[b + 13u], -9.0, 9.0)));
   if (opa * comp < A_MIN) { return; }
 
-  let f = cam.proj.x;
-  let mx = f * g.pc.x / g.pc.z + cam.proj.y;
-  let my = f * g.pc.y / g.pc.z + cam.proj.z;
+  let fx = cam.proj.x;
+  let fy = select(fx, cam.misc3.z, cam.misc3.z > 0.0);
+  let mx = fx * g.pc.x / g.pc.z + cam.proj.y;
+  let my = fy * g.pc.y / g.pc.z + cam.proj.z;
   // bounding radius from the largest eigenvalue of the dilated covariance,
   // shrunk opacity-aware: bin only where alpha can still exceed A_MIN
   let mid = 0.5 * (ad + cd);
@@ -948,7 +951,8 @@ ${shDeg > 0 ? /* wgsl */ `
   let g = computeGeom(b);
   if (g.ok < 0.5) { return; }
 
-  let f = cam.proj.x;
+  let fx = cam.proj.x;
+  let fy = select(fx, cam.misc3.z, cam.misc3.z > 0.0);
   let z = g.pc.z;
   let iz = 1.0 / z;
 
@@ -1014,16 +1018,16 @@ ${shDeg > 0 ? /* wgsl */ `
   // clamped splats: J was built from the clamped x/y, so no gradient flows
   // to position through that entry (reference-rasterizer convention)
   var dpc = vec3f(0.0);
-  dpc.x += dJ02 * (-f * iz * iz) * g.inx;
-  dpc.y += dJ12 * (-f * iz * iz) * g.iny;
-  dpc.z += (dJ00 + dJ11) * (-f * iz * iz)
-         + dJ02 * (2.0 * f * g.cx * iz * iz * iz)
-         + dJ12 * (2.0 * f * g.cy * iz * iz * iz);
+  dpc.x += dJ02 * (-fx * iz * iz) * g.inx;
+  dpc.y += dJ12 * (-fy * iz * iz) * g.iny;
+  dpc.z += dJ00 * (-fx * iz * iz) + dJ11 * (-fy * iz * iz)
+         + dJ02 * (2.0 * fx * g.cx * iz * iz * iz)
+         + dJ12 * (2.0 * fy * g.cy * iz * iz * iz);
 
   // ---- mean path ----
-  dpc.x += gp[0] * f * iz;
-  dpc.y += gp[1] * f * iz;
-  dpc.z += -f * (gp[0] * g.pc.x + gp[1] * g.pc.y) * iz * iz;
+  dpc.x += gp[0] * fx * iz;
+  dpc.y += gp[1] * fy * iz;
+  dpc.z += -(fx * gp[0] * g.pc.x + fy * gp[1] * g.pc.y) * iz * iz;
 
   // dL/dp_world = W^T dpc
   gradF[b]      = cam.R0.x * dpc.x + cam.R1.x * dpc.y + cam.R2.x * dpc.z;
@@ -1037,9 +1041,9 @@ ${shDeg > 0 ? /* wgsl */ `
     camAdd(ci + 4u, dpc.y);
     camAdd(ci + 5u, dpc.z);
     var dw = cross(g.pc - cam.t.xyz, dpc);
-    let dW0 = (f * iz) * dT0;
-    let dW1 = (f * iz) * dT1;
-    let dW2 = (-f * g.cx * iz * iz) * dT0 + (-f * g.cy * iz * iz) * dT1;
+    let dW0 = (fx * iz) * dT0;
+    let dW1 = (fy * iz) * dT1;
+    let dW2 = (-fx * g.cx * iz * iz) * dT0 + (-fy * g.cy * iz * iz) * dT1;
     let wc0 = vec3f(cam.R0.x, cam.R1.x, cam.R2.x);
     let wc1 = vec3f(cam.R0.y, cam.R1.y, cam.R2.y);
     let wc2 = vec3f(cam.R0.z, cam.R1.z, cam.R2.z);
@@ -1051,11 +1055,15 @@ ${shDeg > 0 ? /* wgsl */ `
     camAdd(ci + 2u, dw.z);
     // shared focal: dL/dlogf = f dL/df (mean path + J path, J entries all
     // ~f — except a clamped J02/J12, where the limit is itself 1/f and the
-    // f-dependence cancels, so those terms gate out)
-    let dlogf = gp[0] * f * g.pc.x * iz + gp[1] * f * g.pc.y * iz
-      + (dJ00 + dJ11) * (f * iz)
-      + dJ02 * (-f * g.cx * iz * iz) * g.inx + dJ12 * (-f * g.cy * iz * iz) * g.iny;
-    camAdd(u32(cam.misc2.z) * 8u, dlogf);
+    // f-dependence cancels, so those terms gate out). Split per axis: slot 0
+    // = dL/dlog(f) with both axes scaling together, slot 1 = dL/dlog(fy)
+    // alone = the pixel-ASPECT gradient (fy = f·a; non-square pixels)
+    let dlogfx = gp[0] * fx * g.pc.x * iz + dJ00 * (fx * iz)
+      + dJ02 * (-fx * g.cx * iz * iz) * g.inx;
+    let dlogfy = gp[1] * fy * g.pc.y * iz + dJ11 * (fy * iz)
+      + dJ12 * (-fy * g.cy * iz * iz) * g.iny;
+    camAdd(u32(cam.misc2.z) * 8u, dlogfx + dlogfy);
+    camAdd(u32(cam.misc2.z) * 8u + 1u, dlogfy);
   }
 
   // ---- Sigma = M M^T backward: dL/dM = 2 dLdSigma M, M = R diag(s) ----

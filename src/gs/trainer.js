@@ -549,7 +549,8 @@ export class GSTrainer {
       ]);
     }
 
-    for (const m of this.camMeta) m.f0 = m.f; // original focal (shared scale is optimized)
+    for (const m of this.camMeta) { m.f0 = m.f; m.fy0 = m.fy ?? m.f; } // original focals (shared scale + aspect are optimized)
+    this.logAspect = 0; // log(fy/fx) refinement (opts.aspectOpt)
     this.camUniforms = this.camMeta.map((m, i) => this._camUniform(m, 1, m.offset, i));
     // camera-pose optimizer state (opts.camOpt enables it)
     this.holdout = -1;
@@ -629,7 +630,7 @@ export class GSTrainer {
     ];
   }
 
-  _camUniform({ R, t, f, cx, cy, w, h, g = 0, b = 0 }, trainMode, offset, camIdx = 0) {
+  _camUniform({ R, t, f, fy, cx, cy, w, h, g = 0, b = 0 }, trainMode, offset, camIdx = 0) {
     const u = new Float32Array(36);
     u.set([R[0], R[1], R[2], 0], 0);
     u.set([R[3], R[4], R[5], 0], 4);
@@ -640,6 +641,11 @@ export class GSTrainer {
     u.set([0, 0, 0, 0], 24);                      // black background
     u.set([trainMode, camIdx, this.camMeta ? this.camMeta.length : 0, b], 28); // .w = exposure bias
     u[32] = this.shDeg; // active SH degree (stepOnce ramps this during training)
+    // per-axis focal: fy (0 = same as f). Cameras from a non-uniformly
+    // resized dataset (T&T truck: fx/fy = 1.006) or COLMAP PINHOLE carry it;
+    // one shared focal fed sqrt(fx·fy) misaligned targets by 1.4 px at the
+    // edges and cost 0.5 dB at the hour (lab log 2026-09-04)
+    u[34] = fy != null && fy !== f ? fy : 0;
     // target offset as raw u32 bits (f32 is exact only to 2^24; full-res
     // target buffers exceed that) — shader reads it via bitcast
     new Uint32Array(u.buffer)[27] = offset >>> 0;
@@ -655,6 +661,7 @@ export class GSTrainer {
       const s = this.ssaa;
       const u2 = new Float32Array(u);
       u2[16] *= s; u2[17] *= s; u2[18] *= s;              // f, cx, cy
+      u2[34] *= s;                                         // fy
       u2[20] *= s; u2[21] *= s;                            // w, h
       u2[22] = Math.ceil(u2[20] / TILE);                   // tilesX
       u2[28] = 0; // fwd pass: render + walk-end only
@@ -837,7 +844,11 @@ export class GSTrainer {
     // photometric pose gradients only drift the global frame and cost the
     // holdout ~1dB raw. Re-enable via trainerOpts { camOpt: true } for
     // captures where SfM quality is in doubt.
-    if ((this.opts.camOpt ?? false) && this.iter > 1500 && this.iter % 25 === 0) {
+    // opts.aspectOpt: refine only the shared pixel aspect (log fy/fx) — one
+    // global parameter, well posed from hundreds of views, cannot drift the
+    // frame the way per-camera pose gradients do. For datasets whose pixels
+    // are not square (non-uniform resizes) and whose SfM assumed they were.
+    if (((this.opts.camOpt ?? false) || (this.opts.aspectOpt ?? false)) && this.iter > 1500 && this.iter % 25 === 0) {
       this._applyCamGrads();
     }
   }
@@ -866,6 +877,8 @@ export class GSTrainer {
       const rotLr = 2e-4 * decay;
       const trnLr = 2e-4 * this.sceneRadius * decay;
       const focLr = 1e-4 * decay;
+      const aspLr = 1e-4 * decay;
+      const full = this.opts.camOpt ?? false;
       const b1 = 0.9, b2 = 0.99, eps = 1e-15;
       const step = (row, slot, lr) => {
         const j = row * 8 + slot;
@@ -881,7 +894,7 @@ export class GSTrainer {
       // captures with real auto-exposure drift via opts.expComp.
       const expLr = 5e-3;
       const doExp = this.opts.expComp ?? false;
-      for (let r = 1; r < this.camMeta.length; r++) { // cam 0 pinned (gauge + exposure anchor)
+      for (let r = 1; full && r < this.camMeta.length; r++) { // cam 0 pinned (gauge + exposure anchor)
         if (r === this.holdout) continue;
         const meta = this.camMeta[r];
         const dw = [-step(r, 0, rotLr), -step(r, 1, rotLr), -step(r, 2, rotLr)];
@@ -900,8 +913,15 @@ export class GSTrainer {
         }
       }
       const nr = this.camMeta.length;
-      this.logfScale = Math.max(-0.3, Math.min(0.3, this.logfScale - step(nr, 0, focLr)));
-      for (const m of this.camMeta) m.f = m.f0 * Math.exp(this.logfScale);
+      if (full) this.logfScale = Math.max(-0.3, Math.min(0.3, this.logfScale - step(nr, 0, focLr)));
+      if (this.opts.aspectOpt ?? false) {
+        // ±3 %: real non-square pixels are well under 1 %; more is error absorption
+        this.logAspect = Math.max(-0.03, Math.min(0.03, this.logAspect - step(nr, 1, aspLr)));
+      }
+      for (const m of this.camMeta) {
+        m.f = m.f0 * Math.exp(this.logfScale);
+        m.fy = m.fy0 * Math.exp(this.logfScale + this.logAspect);
+      }
       this.camUniforms = this.camMeta.map((m, i) => this._camUniform(m, 1, m.offset, i));
     } finally {
       this._camApplying = false;

@@ -29,6 +29,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
   + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '') + (Q.get('minutes') ? `_m${Q.get('minutes')}` : '')
+  + (Q.get('aspect') ? '_asp' : '') + (Q.get('sfmaspect') ? '_sa' : '')
   + (Q.get('dir') ? `_d${Q.get('dir')}` : '') + (Q.get('tag') ? `_${Q.get('tag')}` : '')   // free suffix: e.g. the recon source, which no flag names
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
@@ -86,6 +87,7 @@ try {
     // ?classic=1: pre-MCMC defaults (A/B for small-set anomalies)
     // refine cadence is a SESSION option: the economy packages carry their
     // own (Brush 200, LichtFeld 100); ?refevery overrides either
+    ...(Q.get('sfmaspect') ? { sfm: { refineAspect: true } } : {}),
     ...(Q.has('classic') ? {} : { refineEvery: +(Q.get('refevery') || (Q.get('econ') === 'brush' ? 200 : Q.get('econ') === 'lf' ? 100 : 500)) }),
     trainer: Q.has('classic')
       ? { maxSplats: Math.min(600000, Math.round(ITERS * 15)), capMult: 8, shDeg: 3 }
@@ -113,6 +115,8 @@ try {
         ...(Q.get('opadecay') ? { opaDecay: +Q.get('opadecay') } : {}),
         ...(Q.get('ratiocap') ? { ratioCap: +Q.get('ratiocap') } : {}),
         ...(Q.get('deadtiny') ? { deadTiny: true } : {}),
+        // shared pixel-aspect refinement (log fy/fx) during training
+        ...(Q.get('aspect') ? { aspectOpt: true } : {}),
         ...(Q.get('maxscale') ? { maxScale: +Q.get('maxscale') } : {}),
         // per-frame (key,id) entry budget (default maxSplats*24); rung 4 probe
         ...(Q.get('entriescap') ? { entriesCap: +Q.get('entriescap') } : {}),
@@ -172,7 +176,7 @@ try {
     await post(Q.get('postrecon'), JSON.stringify({
       cams: recon.cams.map((c) => ({
         imgIdx: c.imgIdx, name: ses.frames[c.imgIdx].name,
-        R: c.R, t: c.t, f: c.f, cx: c.cx, cy: c.cy,
+        R: c.R, t: c.t, f: c.f, ...(c.fy != null ? { fy: c.fy } : {}), cx: c.cx, cy: c.cy,
       })),
       points: recon.points.map((p) => ({ X: p.X, rgb: p.rgb })),
       k1: recon.k1, k2: recon.k2,
@@ -261,6 +265,7 @@ try {
   }
   const result = {
     set: SET, iters: ITERS, iterDone: ses.trainer.iter,
+    aspect: +Math.exp(ses.trainer.logAspect || 0).toFixed(5),   // refined fy/fx (1 = untouched)
     psnrTest,
     heldOut,
     protocol: cfg.holdout1 ? 'holdout1' : 'eval8',

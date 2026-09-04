@@ -22,9 +22,10 @@ export async function gradCheckPose(opts = {}) {
     const nr = trainer.camMeta.length;
     const analytic = [];
     for (let k = 0; k < 6; k++) analytic.push(a0.camGrad[k] / 64);
-    analytic.push(a0.camGrad[nr * 8] / 64); // dlogf
+    analytic.push(a0.camGrad[nr * 8] / 64); // dlogf (both axes)
     analytic.push(a0.camGrad[6] / 64);      // d(log gain)
     analytic.push(a0.camGrad[7] / 64);      // d(bias)
+    analytic.push(a0.camGrad[nr * 8 + 1] / 64); // dlog(fy) alone = pixel-aspect gradient
 
     // FD via loss (stats[1], fixed x32768)
     const d = trainer.device;
@@ -56,9 +57,10 @@ export async function gradCheckPose(opts = {}) {
     };
 
     const results = [];
-    const names = ['rot.x', 'rot.y', 'rot.z', 't.x', 't.y', 't.z', 'logf', 'expGain', 'expBias'];
-    for (let k = 0; k < 9; k++) {
-      const h = k < 3 ? 1e-3 : (k < 6 ? 2e-3 : (k === 6 ? 1e-3 : 5e-3));
+    const names = ['rot.x', 'rot.y', 'rot.z', 't.x', 't.y', 't.z', 'logf', 'expGain', 'expBias', 'logfy'];
+    const fy0 = meta.fy ?? meta.f;
+    for (let k = 0; k < 10; k++) {
+      const h = k < 3 ? 1e-3 : (k < 6 ? 2e-3 : (k === 6 || k === 9 ? 1e-3 : 5e-3));
       const pose = (sign) => {
         if (k < 3) {
           const w = [0, 0, 0]; w[k] = sign * h;
@@ -68,8 +70,9 @@ export async function gradCheckPose(opts = {}) {
           const t = meta.t.slice(); t[k - 3] += sign * h;
           return { t };
         }
-        if (k === 6) return { f: meta.f * Math.exp(sign * h) };
+        if (k === 6) return { f: meta.f * Math.exp(sign * h), fy: fy0 * Math.exp(sign * h) };
         if (k === 7) return { g: sign * h };
+        if (k === 9) return { fy: fy0 * Math.exp(sign * h) };
         return { b: sign * h };
       };
       const lp = await lossOf(pose(1));
@@ -125,7 +128,8 @@ async function makeRig(extraOpts = {}) {
       rgb[i + 2] = 0.5 + 0.4 * Math.sin((x + y) * 0.19);
     }
   const images = [{ tw: W, th: H, rgb }];
-  const cams = [{ imgIdx: 0, R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], f: 60, cx: W / 2, cy: H / 2, w: W, h: H }];
+  // fy != f on purpose: exercises the per-axis focal paths (aspect 0.95)
+  const cams = [{ imgIdx: 0, R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], f: 60, fy: 57, cx: W / 2, cy: H / 2, w: W, h: H }];
   trainer.setup({ data, n }, cams, images, W, H, 1.5);
   return { trainer, destroy: () => trainer.device.destroy() };
 }
@@ -177,7 +181,8 @@ export async function gradCheckSmall(opts = {}) {
       rgb[i + 2] = 0.5 + 0.4 * Math.sin((x + y) * 0.19);
     }
   const images = [{ tw: W, th: H, rgb }];
-  const cams = [{ imgIdx: 0, R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], f: 60, cx: W / 2, cy: H / 2, w: W, h: H }];
+  // fy != f on purpose: exercises the per-axis focal paths (aspect 0.95)
+  const cams = [{ imgIdx: 0, R: [1, 0, 0, 0, 1, 0, 0, 0, 1], t: [0, 0, 0], f: 60, fy: 57, cx: W / 2, cy: H / 2, w: W, h: H }];
   trainer.setup({ data, n }, cams, images, W, H, 1.5);
   const res = await gradCheck(trainer, { samples: 80, tol: 0.05, ...opts });
   trainer.device.destroy();

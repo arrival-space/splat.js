@@ -288,7 +288,7 @@ export class Session {
     const cams = this.recon.cams.map((c) => {
       const im = this.frames[c.imgIdx];
       const s = im.tw / im.fw;
-      return { ...c, f: c.f * s, cx: im.tw / 2, cy: im.th / 2, w: im.tw, h: im.th };
+      return { ...c, f: c.f * s, ...(c.fy != null ? { fy: c.fy * s } : {}), cx: im.tw / 2, cy: im.th / 2, w: im.tw, h: im.th };
     });
     // output buffers must fit the largest view the host will ever render —
     // interactive canvases are usually LARGER than the training resolution
@@ -385,7 +385,7 @@ export class Session {
       cams = this.recon.cams.map((c) => {
         const im = this.frames[c.imgIdx];
         const s = im.tw / im.fw;
-        return { ...c, f: c.f * s, cx: im.tw / 2, cy: im.th / 2, w: im.tw, h: im.th };
+        return { ...c, f: c.f * s, ...(c.fy != null ? { fy: c.fy * s } : {}), cx: im.tw / 2, cy: im.th / 2, w: im.tw, h: im.th };
       });
     }
     const maxW = Math.max(this.opts.maxViewW ?? 2560, ...cams.map((c) => c.w));

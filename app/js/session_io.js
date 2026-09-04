@@ -66,6 +66,7 @@ export function buildReconJson(S) {
     cams: recon.cams.map((c) => ({
       imgIdx: c.imgIdx, name: ses.frames[c.imgIdx].name,
       R: r6(c.R), t: r6(c.t), f: +c.f.toPrecision(7),
+      ...(c.fy != null && c.fy !== c.f ? { fy: +c.fy.toPrecision(7) } : {}),
       cx: c.cx, cy: c.cy,
     })),
     frames: ses.frames.map((f) => ({ name: f.name, fw: f.fw, fh: f.fh, tw: f.tw, th: f.th })),
