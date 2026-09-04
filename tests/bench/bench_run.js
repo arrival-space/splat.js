@@ -29,6 +29,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('deadthr') ? `_dt${Q.get('deadthr')}` : '') + (Q.get('poolmin') != null ? `_pm${Q.get('poolmin')}` : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
   + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '') + (Q.get('minutes') ? `_m${Q.get('minutes')}` : '')
+  + (Q.get('featres') ? `_fr${Q.get('featres')}` : '') + (Q.get('feats') ? `_nf${Q.get('feats')}` : '') + (Q.get('octave') ? `_oc${Q.get('octave')}` : '')
   + (Q.get('aspect') ? '_asp' : '') + (Q.get('asplr') ? `_al${Q.get('asplr')}` : '') + (Q.get('sfmaspect') ? '_sa' : '')
   + (Q.get('dir') ? `_d${Q.get('dir')}` : '') + (Q.get('tag') ? `_${Q.get('tag')}` : '')   // free suffix: e.g. the recon source, which no flag names
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
@@ -83,11 +84,16 @@ try {
     ...(cfg.holdout1 ? { holdout: 'auto' } : {}),
     // benchmark mode pins resolution like ?eval (adaptive budget otherwise
     // shrinks big sets and PSNR at reduced res is not comparable run-to-run)
-    frames: { trainMaxDim: cfg.res || 1600 },
+    frames: { trainMaxDim: cfg.res || 1600, ...(Q.get('featres') ? { featMaxDim: +Q.get('featres') } : {}) },
     // ?classic=1: pre-MCMC defaults (A/B for small-set anomalies)
     // refine cadence is a SESSION option: the economy packages carry their
     // own (Brush 200, LichtFeld 100); ?refevery overrides either
-    ...(Q.get('sfmaspect') ? { sfm: { refineAspect: true } } : {}),
+    // solver probes: feature-frame resolution, SIFT budget, first octave (-1 = 2x upsampled)
+    ...((Q.get('sfmaspect') || Q.get('feats') || Q.get('octave')) ? { sfm: {
+      ...(Q.get('sfmaspect') ? { refineAspect: true } : {}),
+      ...(Q.get('feats') ? { siftFeats: +Q.get('feats') } : {}),
+      ...(Q.get('octave') ? { siftFirstOctave: +Q.get('octave') } : {}),
+    } } : {}),
     ...(Q.has('classic') ? {} : { refineEvery: +(Q.get('refevery') || (Q.get('econ') === 'brush' ? 200 : Q.get('econ') === 'lf' ? 100 : 500)) }),
     trainer: Q.has('classic')
       ? { maxSplats: Math.min(600000, Math.round(ITERS * 15)), capMult: 8, shDeg: 3 }
