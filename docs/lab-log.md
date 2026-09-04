@@ -18,10 +18,12 @@ true 2M cap (capMult 8 stops at 1.61M on truck's 25k-point seed),
 | **default (MCMC set), horizon 130k** | **1.61M** | **130k (57 min)** | **26.20** | dead 1.5 %, 1.57M live |
 | placement + relocUntil 0.9·H (horizon 140k) | 2M | 138k (60 min) | 26.05 | dead 33.8 % |
 | default, horizon 140k | 2M | 114k (60 min) | 26.19 | dead 2.2 % |
+| **default, horizon 170k (lean cap)** | **1.05M** | **170k (53 min)** | **26.397** | dead 1.1 %, 1.03M live |
 
-Published (new key, README untouched — it does NOT beat 26.37):
-`?model=…/truck_60min_2026-09-04.sog&recon=…/truck_60min_2026-09-04_recon.json`
-(21 MB SOG, splat-transform from the bench PLY).
+Published: **truck_1h_2026-09-04** (15 MB SOG, 26.397 — the new README
+signature: above the old 250k row's 26.37 with 170k cycles in 53 min at a
+1.05M cap); the 1.61M/130k run is up as truck_60min_2026-09-04 (26.20).
+README link, table row and the 2M paragraph updated (commit, not pushed).
 
 Readings:
 - **The hour buys 26.20, not 26.37.** The README row is 250k iterations;
@@ -29,8 +31,13 @@ Readings:
   every iteration pays for it — the 2026-08-31 refresh needed 116 min for
   250k). Per-iteration speed, not the optimizer, is what separates a
   60-minute run from the published number.
-- **2M does not pay within the hour**: 114k iterations at 2M = 26.19 vs
-  130k at 1.61M = 26.20 — capacity trades 1:1 against iterations here.
+- **Capacity trades against iterations inside the hour — and the lean end
+  wins**: 2M/114k 26.19, 1.61M/130k 26.20, **1.05M/170k 26.40**. The 2026-08
+  250k signature (26.37 @ 65 min) is beaten with 32 % fewer cycles because
+  each one costs half at 1.05M. Population (splat_stats): opacity p50 0.05
+  / p95 0.66 / p99 0.98, aniso p50 1.7, ratio > 20 in 2 %, nothing under
+  1e-3 — a dim-but-solid isotropic population, the opposite shape to the
+  placement set's needle field.
 - **The placement set loses at long horizons on truck too** (−0.21 / −0.14
   vs default at the same budget), and the PLY says why: 97 % of splats
   thinner than 1e-3, aniso p50 109, a third dead at export — the needle
