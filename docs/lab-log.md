@@ -4,6 +4,46 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-04 (truck 60-minute signature)
+
+User's ask: a truck that shows what one HOUR of training gives, iterations
+wherever they land, hopefully above the README's 250k row (26.37 @ ~65 min
+on the 2026-08 code). Bench: `?minutes=60` hard stop, `?capmult=16` for a
+true 2M cap (capMult 8 stops at 1.61M on truck's 25k-point seed),
+`?postview=` viewer recon. Frozen poses, seed 1, eval8, 979 px, SH3.
+
+| candidate | cap | iters in the hour | test PSNR | export |
+|---|---|---|---|---|
+| placement + relocUntil 0.9·H (horizon 120k) | 1.61M | 120k (46 min — horizon ended first) | 25.99 | dead 22.5 % |
+| **default (MCMC set), horizon 130k** | **1.61M** | **130k (57 min)** | **26.20** | dead 1.5 %, 1.57M live |
+| placement + relocUntil 0.9·H (horizon 140k) | 2M | 138k (60 min) | 26.05 | dead 33.8 % |
+| default, horizon 140k | 2M | 114k (60 min) | 26.19 | dead 2.2 % |
+
+Published (new key, README untouched — it does NOT beat 26.37):
+`?model=…/truck_60min_2026-09-04.sog&recon=…/truck_60min_2026-09-04_recon.json`
+(21 MB SOG, splat-transform from the bench PLY).
+
+Readings:
+- **The hour buys 26.20, not 26.37.** The README row is 250k iterations;
+  today's code does ~130k/h at 1.61M (the MCMC set fills the cap early and
+  every iteration pays for it — the 2026-08-31 refresh needed 116 min for
+  250k). Per-iteration speed, not the optimizer, is what separates a
+  60-minute run from the published number.
+- **2M does not pay within the hour**: 114k iterations at 2M = 26.19 vs
+  130k at 1.61M = 26.20 — capacity trades 1:1 against iterations here.
+- **The placement set loses at long horizons on truck too** (−0.21 / −0.14
+  vs default at the same budget), and the PLY says why: 97 % of splats
+  thinner than 1e-3, aniso p50 109, a third dead at export — the needle
+  wall in full, even with relocation stopped at 0.9·H. The default's hour
+  population is the opposite failure: isotropic (aniso p50 1.8) and DIM
+  (opacity p50 0.04, p95 0.40). Neither is Brush's population (opacity
+  p50 0.10 / p95 0.63, aniso p50 4.5 at 30k).
+- Consequence for the flip: placement stays a 20k-budget win (matrix: 6
+  up, 2 flat, 0 down); at 40k+ it must not be the default without the
+  long-horizon fix (relocUntil 0.9·H recovers garden; minScale 1e-4
+  empties the wall; combination unmeasured). Signature/long runs stay on
+  the default set for now.
+
 ## 2026-09-03 (opacity economy: packages P1/P2 → the scale reg was the wall)
 
 Truck, frozen poses, 30k / 1.05M, on the rung-3 combo (base A + refineV2 +
