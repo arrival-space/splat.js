@@ -877,7 +877,7 @@ export class GSTrainer {
       const rotLr = 2e-4 * decay;
       const trnLr = 2e-4 * this.sceneRadius * decay;
       const focLr = 1e-4 * decay;
-      const aspLr = 1e-4 * decay;
+      const aspLr = (this.opts.aspectLr ?? 1e-4) * decay;
       const full = this.opts.camOpt ?? false;
       const b1 = 0.9, b2 = 0.99, eps = 1e-15;
       const step = (row, slot, lr) => {
