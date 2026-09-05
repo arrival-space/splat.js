@@ -257,6 +257,11 @@ try {
     await post(Q.get('postply'), blob);
     await say('ply-posted', { mb: +(blob.size / 1e6).toFixed(0) });
   }
+  if (Q.get('postperf')) {
+    // the session's per-frame perf rows [t_ms, iter, batch, splats, enc, view, fence, met, total]
+    // — ms per iteration vs splat count over the run (where the time goes as n grows)
+    await post(Q.get('postperf'), JSON.stringify({ frames: (ses.perf && ses.perf.frames) || [], marks: (ses.perf && ses.perf.marks) || [] }));
+  }
   if (Q.get('postview')) {
     // the viewer's recon JSON (what the app's Share writes): camera path,
     // frames, photo URLs at the deployment's data root, run stats — so a
