@@ -736,6 +736,66 @@ export class GSTrainer {
     p.dispatchWorkgroups(gx, gy);
   }
 
+  /** Profiling-only training steps: the same kernel sequence as stepOnce
+   *  (non-ssaa, non-ssim path), one compute pass per kernel with GPU
+   *  timestamps at the pass boundaries — WebGPU times passes, not
+   *  dispatches, so the production step (one pass) cannot be broken down.
+   *  Returns per-kernel mean ms over k steps (also trains the model k steps).
+   *  Needs the 'timestamp-query' device feature (requested when available). */
+  async profileSteps(k = 100) {
+    const d = this.device;
+    if (!d.features.has('timestamp-query')) return { error: 'timestamp-query not available' };
+    const names = ['project', 'scan', 'scatter', 'sort', 'render', 'chain', 'adam', 'shAdam'];
+    const nq = names.length * 2;
+    const qs = d.createQuerySet({ type: 'timestamp', count: nq });
+    const qbuf = d.createBuffer({ size: nq * 8, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
+    const rb = d.createBuffer({ size: nq * 8, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+    const sum = new Float64Array(names.length);
+    let steps = 0;
+    for (let s = 0; s < k; s++) {
+      let ci = (this.rand() * this.camMeta.length) | 0;
+      for (let tries = 0; tries < 16 && (ci === this.holdout || (this.excluded && this.excluded.has(ci))); tries++) ci = (ci + 1) % this.camMeta.length;
+      const meta = this.camMeta[ci];
+      this._writeTrainUniforms(this.camUniforms[ci]);
+      d.queue.writeBuffer(this.bufTileCnt, 0, this.tileZero);
+      this.adamData[19] = (this.iter + 1) - (this.adamT0 || 0);
+      d.queue.writeBuffer(this.uniAdam, 0, this.adamData);
+      if (this.shK) { this.shAdamData[3] = this.iter + 1; this.shAdamData[5] = this.n * this.shK * 3; d.queue.writeBuffer(this.uniSHAdam, 0, this.shAdamData); }
+      const gx = Math.ceil(meta.w / TILE), gy = Math.ceil(meta.h / TILE);
+      const nGroups = Math.ceil(this.n / 256);
+      const d1 = (pass, total) => { const g = Math.ceil(total / 256); if (g <= 65535) pass.dispatchWorkgroups(g); else pass.dispatchWorkgroups(65535, Math.ceil(g / 65535)); };
+      const seq = [
+        ['project', this.pipeProject, this.bgProjectTrain, (p) => p.dispatchWorkgroups(nGroups)],
+        ['scan', this.pipeScan, this.bgScanTrain, (p) => p.dispatchWorkgroups(1)],
+        ['scatter', this.pipeScatter, this.bgScatterTrain, (p) => p.dispatchWorkgroups(nGroups)],
+        ['sort', this.pipeSort, this.bgSort, (p) => p.dispatchWorkgroups(gx * gy)],
+        ['render', this.pipeRender, this.bgRenderTrain, (p) => p.dispatchWorkgroups(gx, gy)],
+        ['chain', this.pipeChain, this.bgChain, (p) => p.dispatchWorkgroups(nGroups)],
+        ['adam', this.pipeAdam, this.bgAdam, (p) => d1(p, this.n * STRIDE)],
+        ...(this.shK ? [['shAdam', this.pipeSHAdam, this.bgSHAdam, (p) => d1(p, this.n * this.shK * 3)]] : []),
+      ];
+      const enc = d.createCommandEncoder();
+      seq.forEach(([name, pipe, bg, disp], i) => {
+        const p = enc.beginComputePass({ timestampWrites: { querySet: qs, beginningOfPassWriteIndex: 2 * i, endOfPassWriteIndex: 2 * i + 1 } });
+        p.setPipeline(pipe); p.setBindGroup(0, bg); disp(p); p.end();
+      });
+      enc.resolveQuerySet(qs, 0, seq.length * 2, qbuf, 0);
+      enc.copyBufferToBuffer(qbuf, 0, rb, 0, seq.length * 16);
+      d.queue.submit([enc.finish()]);
+      this.iter++;
+      await rb.mapAsync(GPUMapMode.READ);
+      const t = new BigUint64Array(rb.getMappedRange().slice(0));
+      rb.unmap();
+      for (let i = 0; i < seq.length; i++) sum[names.indexOf(seq[i][0])] += Number(t[2 * i + 1] - t[2 * i]) / 1e6;
+      steps++;
+    }
+    qs.destroy(); qbuf.destroy(); rb.destroy();
+    const out = { steps, n: this.n, msPerStep: 0 };
+    names.forEach((nm, i) => { if (sum[i] > 0) { out[nm] = +(sum[i] / steps).toFixed(3); out.msPerStep += sum[i] / steps; } });
+    out.msPerStep = +out.msPerStep.toFixed(3);
+    return out;
+  }
+
   /** Run one training iteration (own submit; queue-ordered).
    *  Set trainer.holdout = <camIdx> to exclude a camera from training
    *  (evaluate it with evalCamPsnr for an honest novel-view metric). */

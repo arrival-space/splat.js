@@ -257,6 +257,14 @@ try {
     await post(Q.get('postply'), blob);
     await say('ply-posted', { mb: +(blob.size / 1e6).toFixed(0) });
   }
+  if (Q.get('gputime')) {
+    // per-kernel GPU time at the final splat count (timestamp queries, one
+    // pass per kernel, +N profiling steps of training)
+    await say('gputime');
+    const prof = await ses.trainer.profileSteps(+Q.get('gputime') || 100);
+    await post(`bench_${TAG}_gputime.json`, JSON.stringify(prof));
+    console.log('[GPUTIME]', JSON.stringify(prof));
+  }
   if (Q.get('postperf')) {
     // the session's per-frame perf rows [t_ms, iter, batch, splats, enc, view, fence, met, total]
     // — ms per iteration vs splat count over the run (where the time goes as n grows)

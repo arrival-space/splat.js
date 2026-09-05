@@ -37,7 +37,11 @@ export async function createGpu(opts = {}) {
       // subgroups (when the adapter has them) let the render backward
       // aggregate its workgroup-shared gradient atomics per-subgroup —
       // optional: shaders compile a fallback without it
-      requiredFeatures: adapter.features.has('subgroups') ? ['subgroups'] : [],
+      requiredFeatures: [
+        ...(adapter.features.has('subgroups') ? ['subgroups'] : []),
+        // per-pass GPU timestamps for the profiling step (trainer.profileSteps)
+        ...(adapter.features.has('timestamp-query') ? ['timestamp-query'] : []),
+      ],
       requiredLimits: {
         maxStorageBufferBindingSize: Math.min(adapter.limits.maxStorageBufferBindingSize, want),
         maxBufferSize: Math.min(adapter.limits.maxBufferSize, want),
