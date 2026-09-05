@@ -61,6 +61,16 @@ siftFeats 8000 + firstOctave −1 + refineAspect (app + bench;
 `?classicsolve` restores the old solve). The 26.55 hour run used exactly
 these settings → it IS the stock-pipeline number; README sentence updated.
 Deploy pending the user's call on the 3× solve time.
+- **Camping's tail drift — root cause found.** Sim(3)-aligned to the server
+  COLMAP reference (`camping_gtfull_recon.json`), rotation error head (first
+  60 %) vs tail (last 20 %): old default 0.22° / **2.07°** (max 2.5°);
+  finer features alone 0.43° / **3.47°**; finer features + aspect **0.13° /
+  0.28°** (max 0.36°), position 0.27 % / 0.44 %. The video frames are 2 %
+  non-square; a square-pixel solver absorbs that into the poses and the
+  error accumulates along the walk — COLMAP (fx, fy) never had the tail.
+  Sharper keypoints fit the wrong model MORE precisely (tail worse). The
+  2026-08-27 verdict ("our video-tail drift is real error") stands; its
+  cause was the camera model, not the tracking.
 
 ## 2026-09-04 (per-axis focal + pixel aspect: build, validate, measure)
 
