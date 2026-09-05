@@ -87,7 +87,9 @@ its native 979 px, on a desktop NVIDIA GPU, in one tab:
 | **Splat.js — 170 k cycles (56 min train, 1.05 M)** | **26.55 dB** |
 
 Same images, same resolution, same held-out-every-8th protocol; all times
-are training only — the Splat.js in-browser camera solve adds ~4 minutes.
+are training only — the Splat.js in-browser camera solve adds ~12 minutes
+on Truck at the desktop defaults (about 4 with the previous, coarser
+feature settings).
 The [LichtFeld Studio](https://github.com/MrNeRF/LichtFeld-Studio) row is
 not a paper citation — it was measured on the same desktop (RTX 5080, MCMC
 strategy, 2 M Gaussians, 30 k iterations) from precomputed COLMAP poses.
