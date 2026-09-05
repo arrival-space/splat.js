@@ -30,7 +30,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
   + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '') + (Q.get('minutes') ? `_m${Q.get('minutes')}` : '')
   + (Q.has('classicsolve') ? '_cs' : '') + (Q.get('featres') ? `_fr${Q.get('featres')}` : '') + (Q.get('feats') ? `_nf${Q.get('feats')}` : '') + (Q.get('octave') ? `_oc${Q.get('octave')}` : '') + (Q.get('peak') ? `_pk${Q.get('peak')}` : '')
-  + (Q.get('aspect') ? '_asp' : '') + (Q.get('asplr') ? `_al${Q.get('asplr')}` : '') + (Q.get('sfmaspect') ? '_sa' : '')
+  + (Q.get('frommodel') ? '_fm' : '') + (Q.get('aspect') ? '_asp' : '') + (Q.get('asplr') ? `_al${Q.get('asplr')}` : '') + (Q.get('sfmaspect') ? '_sa' : '')
   + (Q.get('dir') ? `_d${Q.get('dir')}` : '') + (Q.get('tag') ? `_${Q.get('tag')}` : '')   // free suffix: e.g. the recon source, which no flag names
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
@@ -195,7 +195,18 @@ try {
     }));
   }
 
-  await ses.seed();
+  if (Q.get('frommodel')) {
+    // start from an existing model (.ply / .sog / session zip) instead of the
+    // SfM seed — speed cells profile at a realistic splat count in ~1 min
+    // (with ?iters=1&gputime=N) instead of growing there for 7 minutes
+    const { decodeModel } = await import('../../app/js/session_io.js');
+    const bytes = new Uint8Array(await (await fetch(Q.get('frommodel'))).arrayBuffer());
+    const { gaussians } = await decodeModel(bytes, null);
+    await ses.seedFrom(gaussians, { iter: 0 });
+    await say('seeded-from-model', { splats: gaussians.n });
+  } else {
+    await ses.seed();
+  }
   if (cfg.pano) {
     // rig-aware split (see omni_run.js): all six faces of every 8th pano
     // held out, only the four yaw faces scored
