@@ -873,21 +873,19 @@ ${tileGrad ? (subgroups ? /* wgsl */ `    q2 = -ga * 0.5 * d.x * d.x * cnorm;
     }
     }
 ${tileGrad ? (subgroups ? /* wgsl */ `
-    // UNIFORM flush: subgroup-aggregate each slot, one sg atomic per subgroup.
-    // Gate on ONE subgroupAny first — most entries touch few pixels of the
-    // tile. The branch condition is subgroup-uniform, so the inner subgroup
-    // calls stay valid. Color slots are the sufficient test: gC == 0 forces
-    // every other slot to 0.
-    // (w/e mass rides the same gate: gC == 0 zeroes the error slot anyway,
-    // and a perfectly-fit pixel under-counting slot 10 only softens a
-    // SAMPLING weight)
-    if (subgroupAny(q7 != 0.0 || q8 != 0.0 || q9 != 0.0)) {
-      atomAdd(0u, q0); atomAdd(1u, q1);
-      atomAddC(2u, q2); atomAddC(3u, q3); atomAddC(4u, q4);
-      atomAdd(5u, q5); atomAdd(6u, q6);
-      atomAdd(7u, q7); atomAdd(8u, q8); atomAdd(9u, q9);
-      atomAddW(10u, q10); atomAddW(11u, q11); atomAddW(12u, q12);
-    }
+    // UNIFORM flush: subgroup-aggregate each slot, one sg atomic per subgroup
+    // (the LichtFeld #1675 move). Called unconditionally — Tint's uniformity
+    // analysis does not track subgroup-uniform conditions, so a subgroupAny
+    // gate here failed validation (2026-08-25). MEASURED 2026-09-06 (truck
+    // 1.04M, 979 px): render 9.8 -> 42.4 ms — 13 subgroup reductions per
+    // splat for every lane cost far more than the sparse shared atomics they
+    // replace (most splats touch a few pixels of a tile). Stays opt-in
+    // (opts.subgroupAgg); pays only for big-splat scenes, if at all.
+    atomAdd(0u, q0); atomAdd(1u, q1);
+    atomAddC(2u, q2); atomAddC(3u, q3); atomAddC(4u, q4);
+    atomAdd(5u, q5); atomAdd(6u, q6);
+    atomAdd(7u, q7); atomAdd(8u, q8); atomAdd(9u, q9);
+    atomAddW(10u, q10); atomAddW(11u, q11); atomAddW(12u, q12);
 ` : '') + /* wgsl */ `
     workgroupBarrier();
     if (li < 13u) {
