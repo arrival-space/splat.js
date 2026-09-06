@@ -210,6 +210,11 @@ export class Session {
     if (this.rigInfo && !opts.rigs) {
       opts.rigs = this.rigInfo;
       opts.focalPx = opts.focalPx ?? this.rigFocalPx;
+      // sliced faces are bilinear resamples of the pano: the upsampled SIFT octave
+      // (desktop default -1 since 2026-09-04) finds "features" in the interpolation.
+      // MEASURED bar360 30k 2026-09-06: octave -1 19.90-19.95 vs octave 0 20.64-20.69
+      // (aspect and the 8000 budget are neutral) — rigs never search below octave 0.
+      if ((opts.siftFirstOctave ?? 0) < 0) opts.siftFirstOctave = 0;
     }
     // the GPU matcher shares the session device (created here rather than at
     // seed) — it carries the raised buffer limits big feature sets need
