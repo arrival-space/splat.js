@@ -38,6 +38,24 @@ about ±0.1 dB.
   compact) vs 25.70, garden 26.72 vs 26.48, and 30k runs take 5.9-6.2 min
   instead of 6.7-7.0. **Both are now defaults** (gradBatch 16, compact on);
   bench `?compact=0` / `?gbatch=1` restore the old paths.
+- **Bicycle, LichtFeld's speed reference scene** (frozen 966 k sample model, its
+  published poses, one-minute profile cells, ms per kernel):
+
+  | | render fwd | render (fwd+bwd) | chain | adam (+invis) | shAdam | step |
+  |---|---|---|---|---|---|---|
+  | both off | 1.66 | 5.85 | 0.92 | 0.53 | 0.85 | 12.47 |
+  | batched flush only | 1.65 | 4.78 | 0.92 | 0.54 | 0.83 | 11.41 |
+  | compaction only | 1.64 | 5.82 | 0.34 | 0.16 + 0.48 | 0.26 | 11.57 |
+  | both (default) | 1.66 | 4.76 | 0.34 | 0.15 + 0.45 | 0.26 | **10.51** |
+
+  Compaction pays where it should: the chain shed 63 % (≈ 37 % of the splats
+  visible per view on the wide scene vs 85 % on truck) → −0.9 ms; batched
+  flush −1.1 ms; together −16 %. The 'invis' Adam pass (0.45) is now the
+  largest per-splat kernel — it launches n·16 threads for 7 working slots;
+  a trimmed launch is the next cheap cell. Bench: `?gtrecon` now accepts an
+  app-published recon (name remap, focal rescale, cloud → points).
+- **Zero-skip atomics** flat (8.29 → 8.38 render), **K = 19** noise (8.16);
+  defaults stay at K = 16.
 - **Remaining-sets check of the 09-05 solver default** (old solve `?classicsolve`
   vs new default, 30k, seed 1, held-out PSNR; solve minutes in brackets):
 
