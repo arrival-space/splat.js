@@ -38,6 +38,24 @@ about ±0.1 dB.
   compact) vs 25.70, garden 26.72 vs 26.48, and 30k runs take 5.9-6.2 min
   instead of 6.7-7.0. **Both are now defaults** (gradBatch 16, compact on);
   bench `?compact=0` / `?gbatch=1` restore the old paths.
+- **Remaining-sets check of the 09-05 solver default** (old solve `?classicsolve`
+  vs new default, 30k, seed 1, held-out PSNR; solve minutes in brackets):
+
+  | set | old solve | new default | Δ |
+  |---|---|---|---|
+  | bar360 (102 panos → 612 faces) | 20.69 (7.3) | 19.95 (10.7) | **−0.74** |
+  | bicycle | 23.56 (2.0) | 23.82 (6.3) | +0.26 |
+  | playroom | 26.89 (3.8) | 27.65 (4.7) | +0.76 |
+  | train (301 imgs) | 21.20 (7.2) | 21.51 (22.5) | +0.31 |
+  | synthetic (exact cams) | 38.99 | 40.47 | +1.47 |
+
+  With truck +0.15 (hour), garden +0.26, camping ±0: 7 of 8 up, the one loss
+  is the 360 rig set. Solve cost is real on big sets (train 7 → 22 min).
+  **360 suspect**: sliced faces know f, k1 = k2 = 0 and a square pixel exactly,
+  yet BA refines all of them (the known focal only skips the search); the new
+  default adds a free aspect on top. Queued: octave-vs-aspect split
+  (`_cs_nf8000_oc-1`, `_cs_nf8000_sa`) and an intrinsics lock for rigs
+  (`sfm.lockIntrinsics`, bench `?lockk=1`, `_lk`) on both solves.
 - **Rig incident** (night 09-05 → 06): a combined wrapper (gputime → newdef)
   was killed to fix its first stage and took the second with it; five
   background waiters watched an idle rig for ~9 h. Rules now in memory:
