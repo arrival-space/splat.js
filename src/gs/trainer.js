@@ -3,6 +3,7 @@
 import {
   STRIDE, TILE, ENTRIES_CAP, makeProjectSrc, makeRenderSrc, makeChainSrc,
   SCAN_SRC, SCATTER_SRC, SORT_SRC, ADAM_SRC, SH_ADAM_SRC, BLIT_SRC, shRestCoefs,
+  VIS_COUNT_SRC, VIS_SCAN_SRC, VIS_SCATTER_SRC, makeAdamSrc, makeSHAdamSrc,
   GATHER_SRC, REFINE_APPLY_SRC, SSIM_SRC, makeSsaaLossSrc,
 } from './shaders.js';
 import { rodrigues, m3mul, makeRng } from '../sfm/geometry.js';
@@ -25,6 +26,10 @@ export class GSTrainer {
     // FASTER on desktop NVIDIA too (+11% synthetic it/s) — default ON
     // everywhere; opts.tileGrad = false restores the direct path.
     this.tileGrad = opts.tileGrad ?? true;
+    // opts.compact: chain / Adam / SH-Adam over VISIBLE splats only (indirect
+    // dispatch from a GPU-built list); invisible rows keep regs + noise via a
+    // slot-limited pass. Per-splat kernels are ~1/3 of a 1M-splat step.
+    this.compact = opts.compact ?? false;
     this.iter = 0;
     this.pixelsSeen = 0;
     this.stride = STRIDE;
@@ -146,6 +151,16 @@ export class GSTrainer {
         compute: { module: mk(SH_ADAM_SRC, 'sh-adam'), entryPoint: 'main' },
       });
     }
+    if (this.compact) {
+      const cp = (label, src, constants) => d.createComputePipeline({ label, layout: 'auto', compute: { module: mk(src, label), entryPoint: 'main', ...(constants ? { constants } : {}) } });
+      this.pipeVisCount = cp('vis-count', VIS_COUNT_SRC);
+      this.pipeVisScan = cp('vis-scan', VIS_SCAN_SRC);
+      this.pipeVisScatter = cp('vis-scatter', VIS_SCATTER_SRC);
+      this.pipeChainC = cp('chain-compact', makeChainSrc(this.opts.anisoReg ?? (this.v2 ? 0 : 0.005), this.shDeg, this.dcMode, this.opts.statMax ?? false, this.dilate, this.mipComp, true), { FIXED: this.gradFixed });
+      this.pipeAdamC = cp('adam-compact', makeAdamSrc('compact'));
+      this.pipeAdamI = cp('adam-invisible', makeAdamSrc('invis'));
+      if (this.shK) this.pipeSHAdamC = cp('sh-adam-compact', makeSHAdamSrc('compact'));
+    }
     this.pipeGather = d.createComputePipeline({
       label: 'refine-gather', layout: 'auto',
       compute: { module: mk(GATHER_SRC, 'refine-gather'), entryPoint: 'main' },
@@ -255,7 +270,15 @@ export class GSTrainer {
     this.bufParams = buf(nb, B.STORAGE | B.COPY_DST | B.COPY_SRC, 'params');
     d.queue.writeBuffer(this.bufParams, 0, gaussians.data.buffer, gaussians.data.byteOffset,
       this.n * STRIDE * 4);
-    this.bufProj = buf(nb, B.STORAGE | B.COPY_SRC, 'proj');
+    // proj carries a TAIL for the compaction list: [cap*16] = visible count,
+    // [cap*16+1 ..] = visible splat ids (u32 bits) — the chain has no spare binding
+    this.bufProj = buf(nb + (this.cap + 16) * 4, B.STORAGE | B.COPY_SRC, 'proj');
+    if (this.compact) {
+      this.bufVisBlocks = buf(Math.ceil(this.cap / 256) * 4 + 16, B.STORAGE, 'vis-blocks');
+      this.bufVisDisp = buf(48, B.STORAGE | B.INDIRECT, 'vis-dispatch');
+      this.uniVisScan = buf(16, B.UNIFORM | B.COPY_DST, 'uniVisScan');
+      d.queue.writeBuffer(this.uniVisScan, 0, new Uint32Array([this.shK * 3, 0, 0, 0]));
+    }
     this.bufGradP = buf(nb, B.STORAGE | B.COPY_SRC, 'gradP'); // COPY_SRC: precision diagnostics
     this.bufGradF = buf(nb, B.STORAGE | B.COPY_SRC, 'gradF');
     this.bufM = buf(nb, B.STORAGE | B.COPY_DST | B.COPY_SRC, 'adam-m');
@@ -545,8 +568,30 @@ export class GSTrainer {
       // directly applicable since our bands also add in color space
       this.shAdamData = new Float32Array([
         0.9, 0.999, 1e-15, 1,
-        this.opts.shLr ?? 1.25e-4, this.n * this.shK * 3, 0, 0,
+        this.opts.shLr ?? 1.25e-4, this.n * this.shK * 3, this.shK * 3, 0,
       ]);
+      new Uint32Array(this.shAdamData.buffer)[7] = this.cap * 16; // proj tail (compact list)
+    }
+    if (this.compact) {
+      const bg = (pipe, entries) => d.createBindGroup({ layout: pipe.getBindGroupLayout(0), entries: entries.map((buffer, binding) => ({ binding, resource: { buffer } })) });
+      this.bgVisCount = bg(this.pipeVisCount, [this.uniTrain, this.bufProj, this.bufVisBlocks]);
+      this.bgVisScan = bg(this.pipeVisScan, [this.uniTrain, this.bufVisBlocks, this.bufProj, this.bufVisDisp, this.uniVisScan]);
+      this.bgVisScatter = bg(this.pipeVisScatter, [this.uniTrain, this.bufProj, this.bufVisBlocks]);
+      this.bgChainC = d.createBindGroup({
+        layout: this.pipeChainC.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: { buffer: this.uniTrain } },
+          { binding: 1, resource: { buffer: this.bufParams } },
+          { binding: 2, resource: { buffer: this.bufProj } },
+          { binding: 3, resource: { buffer: this.bufGradP } },
+          { binding: 4, resource: { buffer: this.bufGradF } },
+          { binding: 5, resource: { buffer: this.bufCamGrad } },
+          ...(this.shK ? [{ binding: 6, resource: { buffer: this.bufSH } }, { binding: 7, resource: { buffer: this.bufSHGrad } }] : []),
+        ],
+      });
+      this.bgAdamC = bg(this.pipeAdamC, [this.uniAdam, this.bufParams, this.bufGradF, this.bufM, this.bufV, this.bufProj]);
+      this.bgAdamI = bg(this.pipeAdamI, [this.uniAdam, this.bufParams, this.bufGradF, this.bufM, this.bufV, this.bufProj]);
+      if (this.shK) this.bgSHAdamC = bg(this.pipeSHAdamC, [this.uniSHAdam, this.bufSH, this.bufSHGrad, this.bufSHM, this.bufSHV, this.bufProj]);
     }
 
     for (const m of this.camMeta) { m.f0 = m.f; m.fy0 = m.fy ?? m.f; } // original focals (shared scale + aspect are optimized)
@@ -612,6 +657,7 @@ export class GSTrainer {
     // 2026-09-02, rung 4: 59 % dead at the cap, −0.6 dB; the same weight
     // ×0.65 recovers it — scaleReg must NOT scale along, that costs 0.12).
     this.opaRegBase = this.adamData[24];
+    new Uint32Array(this.adamData.buffer)[31] = this.cap * 16; // proj tail (compact list), flg.w as u32 bits
     this.lastRefine = 0;
     // opts.seed: deterministic camera schedule + refine draws (bench A/B —
     // unseeded, the same cell spreads ~0.37 dB run to run on truck 30k).
@@ -649,6 +695,7 @@ export class GSTrainer {
     // target offset as raw u32 bits (f32 is exact only to 2^24; full-res
     // target buffers exceed that) — shader reads it via bitcast
     new Uint32Array(u.buffer)[27] = offset >>> 0;
+    new Uint32Array(u.buffer)[35] = (this.cap * 16) >>> 0; // misc3.w: proj tail index (compaction list)
     return u;
   }
 
@@ -745,7 +792,7 @@ export class GSTrainer {
   async profileSteps(k = 100) {
     const d = this.device;
     if (!d.features.has('timestamp-query')) return { error: 'timestamp-query not available' };
-    const names = ['project', 'scan', 'scatter', 'sort', 'renderFwd', 'render', 'chain', 'adam', 'shAdam'];
+    const names = ['project', 'scan', 'scatter', 'sort', 'renderFwd', 'render', 'visCount', 'visScan', 'visScatter', 'chain', 'adam', 'adamInvis', 'shAdam'];
     const nq = names.length * 2;
     const qs = d.createQuerySet({ type: 'timestamp', count: nq });
     const qbuf = d.createBuffer({ size: nq * 8, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
@@ -775,9 +822,19 @@ export class GSTrainer {
         ['sort', this.pipeSort, this.bgSort, (p) => p.dispatchWorkgroups(gx * gy)],
         ['renderFwd', this.pipeRender, this.bgRenderTrain, (p) => p.dispatchWorkgroups(gx, gy), uFwd],
         ['render', this.pipeRender, this.bgRenderTrain, (p) => p.dispatchWorkgroups(gx, gy), this.camUniforms[ci]],
-        ['chain', this.pipeChain, this.bgChain, (p) => p.dispatchWorkgroups(nGroups)],
-        ['adam', this.pipeAdam, this.bgAdam, (p) => d1(p, this.n * STRIDE)],
-        ...(this.shK ? [['shAdam', this.pipeSHAdam, this.bgSHAdam, (p) => d1(p, this.n * this.shK * 3)]] : []),
+        ...(this.compact ? [
+          ['visCount', this.pipeVisCount, this.bgVisCount, (p) => d1(p, this.n)],
+          ['visScan', this.pipeVisScan, this.bgVisScan, (p) => p.dispatchWorkgroups(1)],
+          ['visScatter', this.pipeVisScatter, this.bgVisScatter, (p) => d1(p, this.n)],
+          ['chain', this.pipeChainC, this.bgChainC, (p) => p.dispatchWorkgroupsIndirect(this.bufVisDisp, 0)],
+          ['adam', this.pipeAdamC, this.bgAdamC, (p) => p.dispatchWorkgroupsIndirect(this.bufVisDisp, 16)],
+          ['adamInvis', this.pipeAdamI, this.bgAdamI, (p) => d1(p, this.n * STRIDE)],
+          ...(this.shK ? [['shAdam', this.pipeSHAdamC, this.bgSHAdamC, (p) => p.dispatchWorkgroupsIndirect(this.bufVisDisp, 32)]] : []),
+        ] : [
+          ['chain', this.pipeChain, this.bgChain, (p) => p.dispatchWorkgroups(nGroups)],
+          ['adam', this.pipeAdam, this.bgAdam, (p) => d1(p, this.n * STRIDE)],
+          ...(this.shK ? [['shAdam', this.pipeSHAdam, this.bgSHAdam, (p) => d1(p, this.n * this.shK * 3)]] : []),
+        ]),
       ];
       const enc = d.createCommandEncoder();
       seq.forEach(([name, pipe, bg, disp, uni], i) => {
@@ -878,9 +935,6 @@ export class GSTrainer {
     const enc = d.createCommandEncoder();
     const p = enc.beginComputePass();
     this.encodeRaster(p, meta, true);
-    p.setPipeline(this.pipeChain);
-    p.setBindGroup(0, this.bgChain);
-    p.dispatchWorkgroups(Math.ceil(this.n / 256));
     // 2D-safe dispatch: at high splat counts these linear passes exceed the
     // 65535 workgroups-per-dimension limit (SH-Adam broke first: n*24/256 >
     // 65535 above ~620k splats — invalid command buffers, whole frames
@@ -893,13 +947,28 @@ export class GSTrainer {
         pass.dispatchWorkgroups(x, Math.ceil(groups / x));
       }
     };
-    p.setPipeline(this.pipeAdam);
-    p.setBindGroup(0, this.bgAdam);
-    dispatch1D(p, this.n * STRIDE);
-    if (this.shK) {
-      p.setPipeline(this.pipeSHAdam);
-      p.setBindGroup(0, this.bgSHAdam);
-      dispatch1D(p, this.n * this.shK * 3);
+    if (this.compact) {
+      // visible list -> indirect dispatches over visible splats only
+      const run = (pipe, bg) => { p.setPipeline(pipe); p.setBindGroup(0, bg); };
+      run(this.pipeVisCount, this.bgVisCount); dispatch1D(p, this.n);
+      run(this.pipeVisScan, this.bgVisScan); p.dispatchWorkgroups(1);
+      run(this.pipeVisScatter, this.bgVisScatter); dispatch1D(p, this.n);
+      run(this.pipeChainC, this.bgChainC); p.dispatchWorkgroupsIndirect(this.bufVisDisp, 0);
+      run(this.pipeAdamC, this.bgAdamC); p.dispatchWorkgroupsIndirect(this.bufVisDisp, 16);
+      run(this.pipeAdamI, this.bgAdamI); dispatch1D(p, this.n * STRIDE);
+      if (this.shK) { run(this.pipeSHAdamC, this.bgSHAdamC); p.dispatchWorkgroupsIndirect(this.bufVisDisp, 32); }
+    } else {
+      p.setPipeline(this.pipeChain);
+      p.setBindGroup(0, this.bgChain);
+      p.dispatchWorkgroups(Math.ceil(this.n / 256));
+      p.setPipeline(this.pipeAdam);
+      p.setBindGroup(0, this.bgAdam);
+      dispatch1D(p, this.n * STRIDE);
+      if (this.shK) {
+        p.setPipeline(this.pipeSHAdam);
+        p.setBindGroup(0, this.bgSHAdam);
+        dispatch1D(p, this.n * this.shK * 3);
+      }
     }
     p.end();
     d.queue.submit([enc.finish()]);

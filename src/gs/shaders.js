@@ -906,7 +906,7 @@ ${tileGrad ? (subgroups ? /* wgsl */ `
 }
 `);
 
-export const makeChainSrc = (AREG = 0.02, shDeg = 0, dc = 'sigmoid', statMax = false, D = 0.3, C = true) => CAM_STRUCT + /* wgsl */ `
+export const makeChainSrc = (AREG = 0.02, shDeg = 0, dc = 'sigmoid', statMax = false, D = 0.3, C = true, compact = false) => CAM_STRUCT + /* wgsl */ `
 const AREG = ${AREG.toExponential()};
 const DILATE = ${D.toExponential()};
 const MIPCOMP = ${C ? 'true' : 'false'};
@@ -927,8 +927,14 @@ fn camAdd(idx: u32, v: f32) {
 ` + GEOM_FNS + (shDeg > 0 ? shFns(shDeg) : '') + /* wgsl */ `
 @compute @workgroup_size(256)
 fn main(@builtin(global_invocation_id) gid: vec3u) {
+${compact ? /* wgsl */ `
+  // COMPACT: one thread per VISIBLE splat, via the list the vis-scatter pass
+  // wrote into the proj tail ([tail] = count, [tail+1+j] = splat id)
+  let tail = bitcast<u32>(cam.misc3.w);
+  if (gid.x >= bitcast<u32>(proj[tail])) { return; }
+  let i = bitcast<u32>(proj[tail + 1u + gid.x]);` : /* wgsl */ `
   let i = gid.x;
-  if (i >= u32(cam.size.w)) { return; }
+  if (i >= u32(cam.size.w)) { return; }`}
   let b = i * 16u;
 
   var gp: array<f32, 10>;
@@ -1683,3 +1689,129 @@ fn main(@builtin(global_invocation_id) g: vec3u) {
   gloss[gb] = gC.r; gloss[gb + 1u] = gC.g; gloss[gb + 2u] = gC.b; gloss[gb + 3u] = lossv;
 }
 `;
+
+// ---- visibility compaction (LichtFeld #1917 in WebGPU terms) ----
+// project marks proj[b+11] = 1 for splats that survive culling. These three
+// passes build a STABLE compact list of visible splat ids in the proj tail
+// ([tail] = count, [tail+1..] = ids in original order) and fill the indirect
+// dispatch arguments for the chain / Adam / SH-Adam passes, which then run
+// over visible splats only. Invisible rows keep their unconditional regs and
+// Langevin noise through a separate cheap pass (adam mode 'invis').
+export const VIS_COUNT_SRC = CAM_STRUCT + /* wgsl */ `
+@group(0) @binding(1) var<storage, read> proj: array<f32>;
+@group(0) @binding(2) var<storage, read_write> blocks: array<u32>;
+var<workgroup> cnt: atomic<u32>;
+@compute @workgroup_size(256)
+fn main(@builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wg: vec3u,
+        @builtin(num_workgroups) nw: vec3u) {
+  if (li == 0u) { atomicStore(&cnt, 0u); }
+  workgroupBarrier();
+  let blk = wg.x + wg.y * nw.x;
+  let i = blk * 256u + li;
+  if (i < u32(cam.size.w) && proj[i * 16u + 11u] > 0.5) { atomicAdd(&cnt, 1u); }
+  workgroupBarrier();
+  if (li == 0u) { blocks[blk] = atomicLoad(&cnt); }
+}
+`;
+
+// single workgroup: exclusive scan of the block counts (in place), total ->
+// proj tail, dispatch args -> disp (chain @0, adam @4, sh-adam @8; x,y,z each)
+export const VIS_SCAN_SRC = CAM_STRUCT + /* wgsl */ `
+@group(0) @binding(1) var<storage, read_write> blocks: array<u32>;
+@group(0) @binding(2) var<storage, read_write> proj: array<f32>;
+@group(0) @binding(3) var<storage, read_write> disp: array<u32>;
+@group(0) @binding(4) var<uniform> vu: vec4u; // x = 3K (SH rest coeffs per splat)
+const CHUNK = 64u; // 256 x 64 blocks = 16384 blocks = 4.2M splats
+var<workgroup> sums: array<u32, 256>;
+fn groups2d(total: u32, at: u32) {
+  let g = (total + 255u) / 256u;
+  if (g <= 65535u) { disp[at] = max(g, 1u); disp[at + 1u] = 1u; }
+  else { disp[at] = 65535u; disp[at + 1u] = (g + 65534u) / 65535u; }
+  disp[at + 2u] = 1u;
+}
+@compute @workgroup_size(256)
+fn main(@builtin(local_invocation_index) li: u32) {
+  let n = u32(cam.size.w);
+  let nb = (n + 255u) / 256u;
+  var local = 0u;
+  for (var k = 0u; k < CHUNK; k++) { let t = li * CHUNK + k; if (t < nb) { local += blocks[t]; } }
+  sums[li] = local;
+  workgroupBarrier();
+  if (li == 0u) { var acc = 0u; for (var k = 0u; k < 256u; k++) { let v = sums[k]; sums[k] = acc; acc += v; } }
+  workgroupBarrier();
+  var acc = sums[li];
+  for (var k = 0u; k < CHUNK; k++) {
+    let t = li * CHUNK + k;
+    if (t >= nb) { break; }
+    let v = blocks[t]; blocks[t] = acc; acc += v;
+  }
+  if (li == 255u) {
+    let total = acc;
+    let tail = bitcast<u32>(cam.misc3.w);
+    proj[tail] = bitcast<f32>(total);
+    groups2d(total, 0u);          // chain: one thread per visible splat
+    groups2d(total * 16u, 4u);    // adam: 16 params per visible splat
+    groups2d(total * vu.x, 8u);   // sh-adam: 3K coeffs per visible splat
+  }
+}
+`;
+
+// per block of 256 splats: rank the visible ones (shared prefix, stable) and
+// write ids at blockOffset + rank
+export const VIS_SCATTER_SRC = CAM_STRUCT + /* wgsl */ `
+@group(0) @binding(1) var<storage, read_write> proj: array<f32>;
+@group(0) @binding(2) var<storage, read> blocks: array<u32>;
+var<workgroup> pre: array<u32, 256>;
+@compute @workgroup_size(256)
+fn main(@builtin(local_invocation_index) li: u32, @builtin(workgroup_id) wg: vec3u,
+        @builtin(num_workgroups) nw: vec3u) {
+  let blk = wg.x + wg.y * nw.x;
+  let i = blk * 256u + li;
+  let vis = i < u32(cam.size.w) && proj[i * 16u + 11u] > 0.5;
+  pre[li] = select(0u, 1u, vis);
+  workgroupBarrier();
+  for (var o = 1u; o < 256u; o = o << 1u) {
+    var v = 0u;
+    if (li >= o) { v = pre[li - o]; }
+    workgroupBarrier();
+    pre[li] += v;
+    workgroupBarrier();
+  }
+  if (vis) {
+    let tail = bitcast<u32>(cam.misc3.w);
+    proj[tail + 1u + blocks[blk] + pre[li] - 1u] = bitcast<f32>(i);
+  }
+}
+`;
+
+// Adam / SH-Adam variants: 'all' = every param (the classic pass); 'compact'
+// = params of visible splats through the proj-tail list (indirect dispatch);
+// 'invis' = invisible splats only, the reg + noise slots (pos 0-2 for the
+// Langevin noise, scales 3-5 for scaleReg, opacity 13 for opacityReg) with a
+// zero data gradient — keeps the MCMC death signal the compaction would
+// otherwise silence (rung 2: regVisOnly cost −0.02 / −0.15)
+export const makeAdamSrc = (mode = 'all') => {
+  let s = ADAM_SRC;
+  if (mode === 'all') return s;
+  s = s.replace('@group(0) @binding(4) var<storage, read_write> vBuf: array<f32>;',
+    '@group(0) @binding(4) var<storage, read_write> vBuf: array<f32>;\n@group(0) @binding(5) var<storage, read> proj: array<f32>;');
+  const head = '  let j = gid.x + gid.y * nw.x * 256u;\n  if (j >= u32(au.cl.w)) { return; }';
+  if (!s.includes(head)) throw new Error('adam head anchor');
+  if (mode === 'compact') {
+    s = s.replace(head, '  let jw = gid.x + gid.y * nw.x * 256u;\n  let tail = bitcast<u32>(au.flg.w);\n  if (jw >= bitcast<u32>(proj[tail]) * 16u) { return; }\n  let j = bitcast<u32>(proj[tail + 1u + jw / 16u]) * 16u + (jw % 16u);');
+  } else if (mode === 'invis') {
+    s = s.replace(head, '  let j = gid.x + gid.y * nw.x * 256u;\n  if (j >= u32(au.cl.w)) { return; }\n  if (proj[(j / 16u) * 16u + 11u] > 0.5) { return; }\n  let sl = j % 16u;\n  if (!(sl <= 5u || sl == 13u)) { return; }');
+    s = s.replace('  var g = gradF[j];', '  var g = 0.0; // invisible: no data gradient, regs + noise only');
+  }
+  return s;
+};
+export const makeSHAdamSrc = (mode = 'all') => {
+  let s = SH_ADAM_SRC;
+  if (mode === 'all') return s;
+  s = s.replace('@group(0) @binding(4) var<storage, read_write> vBuf: array<f32>;',
+    '@group(0) @binding(4) var<storage, read_write> vBuf: array<f32>;\n@group(0) @binding(5) var<storage, read> proj: array<f32>;');
+  const head = '  let j = gid.x + gid.y * nw.x * 256u;\n  if (j >= u32(au.cfg.y)) { return; }';
+  if (!s.includes(head)) throw new Error('sh-adam head anchor');
+  s = s.replace(head, '  let jw = gid.x + gid.y * nw.x * 256u;\n  let tail = bitcast<u32>(au.cfg.w);\n  let k3 = u32(au.cfg.z);\n  if (jw >= bitcast<u32>(proj[tail]) * k3) { return; }\n  let j = bitcast<u32>(proj[tail + 1u + jw / k3]) * k3 + (jw % k3);');
+  return s;
+};
