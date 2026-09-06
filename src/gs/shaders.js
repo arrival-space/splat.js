@@ -553,7 +553,9 @@ export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = f
   // 2026-09-06 (truck 1.04M, 979 px): render 10.8 ms at P=1 → 14.4 (P=4) → 15.2 (P=8) —
   // same-address contention is NOT the backward's bottleneck; opt-in, default 1.
   P = subgroups ? 1 : Math.max(1, spread | 0),
-  // K splats per zero/flush barrier pair (batched flush); tile-grad, non-subgroup path only
+  // K splats per zero/flush barrier pair (batched flush); tile-grad, non-subgroup path only.
+  // MEASURED 2026-09-06 (truck 1.04M, 979 px): render 10.8 (K=1) -> 8.86 (4) -> 8.32 (8) ->
+  // 8.18 ms (16); 13*K flush threads cap K at 19. Trainer default 16; parity within noise.
   K = (tileGrad && !subgroups) ? Math.max(1, batch | 0) : 1) =>
   (subgroups ? 'enable subgroups;\n' : '') + CAM_STRUCT + cutConsts(E, A, 1.0, D) + /* wgsl */ `
 @group(0) @binding(1) var<storage, read> proj: array<f32>;

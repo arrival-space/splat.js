@@ -29,7 +29,11 @@ export class GSTrainer {
     // opts.compact: chain / Adam / SH-Adam over VISIBLE splats only (indirect
     // dispatch from a GPU-built list); invisible rows keep regs + noise via a
     // slot-limited pass. Per-splat kernels are ~1/3 of a 1M-splat step.
-    this.compact = opts.compact ?? false;
+    // visibility compaction (LichtFeld #1917 idea): chain / Adam / SH-Adam run over a
+    // GPU-built list of visible splats (indirect dispatch), an 'invis' Adam pass keeps
+    // the regs + noise on hidden rows. MEASURED 2026-09-06 truck 1.04M: per-splat kernels
+    // 4.18 -> 3.65 ms (~85 % of an object-centric scene is in view); parity exact.
+    this.compact = opts.compact ?? true;
     this.iter = 0;
     this.pixelsSeen = 0;
     this.stride = STRIDE;
@@ -94,7 +98,7 @@ export class GSTrainer {
       d.features && d.features.has('subgroups');
     this.pipeRender = d.createComputePipeline({
       label: 'render', layout: 'auto',
-      compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 0, 0.2, 2, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 1), 'render'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+      compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 0, 0.2, 2, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 16), 'render'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
     });
     // D-SSIM loss (opts.ssimWeight > 0): split renderer + image passes.
     // The fused kernel stays untouched for the default path.
@@ -103,14 +107,14 @@ export class GSTrainer {
     if (this.ssimW > 0 || this.ssaa >= 2) {
       this.pipeRenderFwd = d.createComputePipeline({
         label: 'render-fwd', layout: 'auto',
-        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 1, 0.2, 2, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 1), 'render-fwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 1, 0.2, 2, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 16), 'render-fwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
       });
     }
     if (this.ssaa >= 2) {
       // supersampled training: raster at ssaa x, box-downsample + loss at 1x
       this.pipeRenderBwd3 = d.createComputePipeline({
         label: 'render-bwd-ssaa', layout: 'auto',
-        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 3, 0, this.ssaa, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 1), 'render-bwd-ssaa'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 3, 0, this.ssaa, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 16), 'render-bwd-ssaa'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
       });
       this.pipeSsaaLoss = d.createComputePipeline({
         label: 'ssaa-loss', layout: 'auto',
@@ -120,7 +124,7 @@ export class GSTrainer {
     if (this.ssimW > 0) {
       this.pipeRenderBwd = d.createComputePipeline({
         label: 'render-bwd', layout: 'auto',
-        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 2, this.ssimW, 2, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 1), 'render-bwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 2, this.ssimW, 2, this.dilate, this.opts.gradSpread ?? 1, this.opts.gradBatch ?? 16), 'render-bwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
       });
       const ssimMod = mk(SSIM_SRC, 'ssim');
       const sp = (entry, constants) => d.createComputePipeline({

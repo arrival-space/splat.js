@@ -34,8 +34,10 @@ about ±0.1 dB.
   sg grows to 13·K ints, 13·K flush threads, u32-safe stride): render
   10.8 → 8.86 (K=4) → 8.32 (K=8) → 8.18 ms (K=16), the backward ≈ 7.4 →
   4.9 ms, the step ≈ −15 %. Fixed-point integer atomics make the sums
-  order-independent, so gradients are bit-identical — parity cells (K=16,
-  K=16 + compact, garden) queued before the default flip.
+  order-independent; parity truck 30k 25.667 (K=16) / 25.717 (K=16 +
+  compact) vs 25.70, garden 26.72 vs 26.48, and 30k runs take 5.9-6.2 min
+  instead of 6.7-7.0. **Both are now defaults** (gradBatch 16, compact on);
+  bench `?compact=0` / `?gbatch=1` restore the old paths.
 - **Rig incident** (night 09-05 → 06): a combined wrapper (gputime → newdef)
   was killed to fix its first stage and took the second with it; five
   background waiters watched an idle rig for ~9 h. Rules now in memory:
