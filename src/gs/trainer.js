@@ -745,7 +745,7 @@ export class GSTrainer {
   async profileSteps(k = 100) {
     const d = this.device;
     if (!d.features.has('timestamp-query')) return { error: 'timestamp-query not available' };
-    const names = ['project', 'scan', 'scatter', 'sort', 'render', 'chain', 'adam', 'shAdam'];
+    const names = ['project', 'scan', 'scatter', 'sort', 'renderFwd', 'render', 'chain', 'adam', 'shAdam'];
     const nq = names.length * 2;
     const qs = d.createQuerySet({ type: 'timestamp', count: nq });
     const qbuf = d.createBuffer({ size: nq * 8, usage: GPUBufferUsage.QUERY_RESOLVE | GPUBufferUsage.COPY_SRC });
@@ -764,18 +764,26 @@ export class GSTrainer {
       const gx = Math.ceil(meta.w / TILE), gy = Math.ceil(meta.h / TILE);
       const nGroups = Math.ceil(this.n / 256);
       const d1 = (pass, total) => { const g = Math.ceil(total / 256); if (g <= 65535) pass.dispatchWorkgroups(g); else pass.dispatchWorkgroups(65535, Math.ceil(g / 65535)); };
+      // forward-only estimate: the fused kernel with trainMode 0 (misc2.x)
+      // walks the same tile lists and blends but skips the backward, so
+      // render − renderFwd ≈ the backward's share
+      const uFwd = new Float32Array(this.camUniforms[ci]); uFwd[28] = 0;
       const seq = [
         ['project', this.pipeProject, this.bgProjectTrain, (p) => p.dispatchWorkgroups(nGroups)],
         ['scan', this.pipeScan, this.bgScanTrain, (p) => p.dispatchWorkgroups(1)],
         ['scatter', this.pipeScatter, this.bgScatterTrain, (p) => p.dispatchWorkgroups(nGroups)],
         ['sort', this.pipeSort, this.bgSort, (p) => p.dispatchWorkgroups(gx * gy)],
-        ['render', this.pipeRender, this.bgRenderTrain, (p) => p.dispatchWorkgroups(gx, gy)],
+        ['renderFwd', this.pipeRender, this.bgRenderTrain, (p) => p.dispatchWorkgroups(gx, gy), uFwd],
+        ['render', this.pipeRender, this.bgRenderTrain, (p) => p.dispatchWorkgroups(gx, gy), this.camUniforms[ci]],
         ['chain', this.pipeChain, this.bgChain, (p) => p.dispatchWorkgroups(nGroups)],
         ['adam', this.pipeAdam, this.bgAdam, (p) => d1(p, this.n * STRIDE)],
         ...(this.shK ? [['shAdam', this.pipeSHAdam, this.bgSHAdam, (p) => d1(p, this.n * this.shK * 3)]] : []),
       ];
       const enc = d.createCommandEncoder();
-      seq.forEach(([name, pipe, bg, disp], i) => {
+      seq.forEach(([name, pipe, bg, disp, uni], i) => {
+        // a per-kernel uniform swap (renderFwd) rides the same encoder: the
+        // queue-ordered writeBuffer is not possible mid-encoder, so stage it
+        if (uni) { const st = d.createBuffer({ size: uni.byteLength, usage: GPUBufferUsage.COPY_SRC, mappedAtCreation: true }); new Float32Array(st.getMappedRange()).set(uni); st.unmap(); enc.copyBufferToBuffer(st, 0, this.uniTrain, 0, uni.byteLength); }
         const p = enc.beginComputePass({ timestampWrites: { querySet: qs, beginningOfPassWriteIndex: 2 * i, endOfPassWriteIndex: 2 * i + 1 } });
         p.setPipeline(pipe); p.setBindGroup(0, bg); disp(p); p.end();
       });
