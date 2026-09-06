@@ -57,6 +57,12 @@ about ±0.1 dB.
   app-published recon (name remap, focal rescale, cloud → points).
 - **Zero-skip atomics** flat (8.29 → 8.38 render), **K = 19** noise (8.16);
   defaults stay at K = 16.
+- **vec4 proj reads** (`opts.projVec`, bench `?pvec=1`): four vec4 loads per splat
+  instead of 11-15 scalars — truck render 8.29 → 8.19, bicycle 4.76 → 4.81,
+  the forward slower (eager loads for culled splats). Load count is not the
+  bottleneck; broadcast reads live in L1. Opt-in. **Day total**: 17.3 → ≈14.7
+  ms/step on truck (−15 %), 12.5 → 10.5 on bicycle (−16 %); the remaining
+  backward cost is the per-pixel-splat math and the sequential walk itself.
 - **Remaining-sets check of the 09-05 solver default** (old solve `?classicsolve`
   vs new default, 30k, seed 1, held-out PSNR; solve minutes in brackets):
 

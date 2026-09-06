@@ -546,7 +546,7 @@ fn main(@builtin(workgroup_id) wg: vec3u,
 // 2 = backward only (restores C/T/end, mixes the SSIM gradient into gC);
 // 3 = backward only for SSAA (this kernel runs at ssaa x the loss res; gC
 //     comes from the downsample-loss pass's per-1x-pixel gradient buffer).
-export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false, mode = 0, ssimW = 0.2, ssaa = 2, D = 0.3, spread = 1, batch = 1, zskip = false,
+const makeRenderSrcRaw = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false, mode = 0, ssimW = 0.2, ssaa = 2, D = 0.3, spread = 1, batch = 1, zskip = false,
   // P partial shared accumulators per gradient slot, lane-interleaved (li % P): 256 threads
   // adding to the SAME 13 shared addresses serialize; partials cut same-address collisions
   // P-fold and are summed at the flush. Non-subgroup tile-grad path only. MEASURED
@@ -953,6 +953,27 @@ ${K > 1 ? /* wgsl */ `
   }
 }
 `);
+
+/** projVec (opts.projVec, opt-in, 2026-09-06): the render kernel reads a splat's 16
+ *  projected floats as four vec4 loads instead of 11-15 scalar loads. Pure text
+ *  transform of the assembled kernel: proj[b + k] -> p(k/4).(k%4), the four
+ *  vec4s loaded right after 'let b = i * 16u;'. Same buffer, re-declared as
+ *  array<vec4f> (16-byte rows, stride 16 floats = 4 rows). MEASURED 2026-09-06: truck
+ *  render 8.29 -> 8.19, fwd 3.41 -> 3.64; bicycle 4.76 -> 4.81, fwd 1.66 -> 1.82 — load
+ *  instruction count is not the bottleneck (broadcast reads hit L1); the eager p2/p3
+ *  loads cost the forward. Stays opt-in. */
+const projVec = (src) => {
+  const comp = ['x', 'y', 'z', 'w'];
+  let s = src.replace('var<storage, read> proj: array<f32>;', 'var<storage, read> proj: array<vec4f>;');
+  s = s.split('let b = i * 16u;').join('let b = i * 16u;\n    let p0 = proj[i * 4u]; let p1 = proj[i * 4u + 1u]; let p2 = proj[i * 4u + 2u]; let p3 = proj[i * 4u + 3u];');
+  s = s.replace(/proj\[b \+ (\d+)u\]/g, (m, k) => `p${Math.floor(k / 4)}.${comp[k % 4]}`).replace(/proj\[b\]/g, 'p0.x');
+  if (/proj\[b/.test(s)) throw new Error('projVec: unconverted proj[b access');
+  return s;
+};
+export const makeRenderSrc = (E, A, tileGrad, subgroups, mode, ssimW, ssaa, D, spread, batch, zskip, pvec = false) => {
+  const s = makeRenderSrcRaw(E, A, tileGrad, subgroups, mode, ssimW, ssaa, D, spread, batch, zskip);
+  return pvec ? projVec(s) : s;
+};
 
 export const makeChainSrc = (AREG = 0.02, shDeg = 0, dc = 'sigmoid', statMax = false, D = 0.3, C = true, compact = false) => CAM_STRUCT + /* wgsl */ `
 const AREG = ${AREG.toExponential()};
