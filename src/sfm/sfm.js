@@ -1159,9 +1159,9 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
         { cams: baCams, points: baPoints, obs: baObs, camRig: baRig,
           f: K[regList[0]].f, cx: K[regList[0]].cx, cy: K[regList[0]].cy },
         { maxIters: o.maxIters ?? 30, huberPx: 1.5,
-          // lockIntrinsics (opt-in, 2026-09-06): sliced cubemap faces know f, k1 = k2 = 0
-          // and a square pixel EXACTLY by construction — refining them can only fit noise.
-          // A/B on bar360 before it becomes the rig default (bench ?lockk=1).
+          // lockIntrinsics (2026-09-06, the rig default via session.solve): sliced cubemap
+          // faces know f, k1 = k2 = 0 and a square pixel EXACTLY by construction — refining
+          // them only fits noise (bar360 30k: +0.29 dB locked). bench ?lockk=1 forces it on.
           refineF: !sfmOpts.lockIntrinsics,
           refineDistortion: sfmOpts.lockIntrinsics ? false : (o.refineDistortion ?? (sfmOpts.refineDistortion ?? true)),
           refineAspect: sfmOpts.lockIntrinsics ? false : (sfmOpts.refineAspect ?? false),

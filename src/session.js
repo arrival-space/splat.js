@@ -215,6 +215,10 @@ export class Session {
       // MEASURED bar360 30k 2026-09-06: octave -1 19.90-19.95 vs octave 0 20.64-20.69
       // (aspect and the 8000 budget are neutral) — rigs never search below octave 0.
       if ((opts.siftFirstOctave ?? 0) < 0) opts.siftFirstOctave = 0;
+      // and their f, k1 = k2 = 0, square pixel are exact by construction: BA refining
+      // them only fits noise. MEASURED bar360 30k: lock +0.29 (old solve 20.69 -> 20.98),
+      // +0.22 on the octave -1 solve. sfm.lockIntrinsics: false opts out.
+      opts.lockIntrinsics = opts.lockIntrinsics ?? true;
     }
     // the GPU matcher shares the session device (created here rather than at
     // seed) — it carries the raised buffer limits big feature sets need
