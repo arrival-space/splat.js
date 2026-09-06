@@ -100,6 +100,12 @@ about ±0.1 dB.
   +0.29). Rigs now clamp `siftFirstOctave ≥ 0` and set `lockIntrinsics`
   (session.solve; `sfm.lockIntrinsics: false` opts out). Net vs the old
   solve: +0.30, and 7 of 7 pinhole sets keep their gains.
+- **Hour signature with the faster trainer**: truck, our poses (the 8000 /
+  octave −1 / aspect solve), 1.05 M cap, seed 1, 200k schedule → **26.645 dB**
+  at 200 015 iterations in 56.1 min (was 26.55 at 170k / 55.6 min; the COLMAP
+  square-pixel reference sat at 26.60). The 15 % step speedup bought 30k
+  more iterations inside the hour and +0.10 dB. Published as
+  `truck_1h_v3_2026-09-06` (new CDN key); README row + deploy await the go.
 - **Rig incident** (night 09-05 → 06): a combined wrapper (gputime → newdef)
   was killed to fix its first stage and took the second with it; five
   background waiters watched an idle rig for ~9 h. Rules now in memory:
