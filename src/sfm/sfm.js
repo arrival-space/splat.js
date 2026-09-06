@@ -1159,8 +1159,12 @@ export async function runSfM(images, log, sampleColor, opts = {}) {
         { cams: baCams, points: baPoints, obs: baObs, camRig: baRig,
           f: K[regList[0]].f, cx: K[regList[0]].cx, cy: K[regList[0]].cy },
         { maxIters: o.maxIters ?? 30, huberPx: 1.5,
-          refineDistortion: o.refineDistortion ?? (sfmOpts.refineDistortion ?? true),
-          refineAspect: sfmOpts.refineAspect ?? false,
+          // lockIntrinsics (opt-in, 2026-09-06): sliced cubemap faces know f, k1 = k2 = 0
+          // and a square pixel EXACTLY by construction — refining them can only fit noise.
+          // A/B on bar360 before it becomes the rig default (bench ?lockk=1).
+          refineF: !sfmOpts.lockIntrinsics,
+          refineDistortion: sfmOpts.lockIntrinsics ? false : (o.refineDistortion ?? (sfmOpts.refineDistortion ?? true)),
+          refineAspect: sfmOpts.lockIntrinsics ? false : (sfmOpts.refineAspect ?? false),
           // phones: yield the main thread between LM iterations (uiYield);
           // desktop stays a straight synchronous burn
           yieldFn: sfmOpts.uiYield ? tick : undefined,

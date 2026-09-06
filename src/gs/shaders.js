@@ -546,7 +546,7 @@ fn main(@builtin(workgroup_id) wg: vec3u,
 // 2 = backward only (restores C/T/end, mixes the SSIM gradient into gC);
 // 3 = backward only for SSAA (this kernel runs at ssaa x the loss res; gC
 //     comes from the downsample-loss pass's per-1x-pixel gradient buffer).
-export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false, mode = 0, ssimW = 0.2, ssaa = 2, D = 0.3, spread = 1, batch = 1,
+export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false, mode = 0, ssimW = 0.2, ssaa = 2, D = 0.3, spread = 1, batch = 1, zskip = false,
   // P partial shared accumulators per gradient slot, lane-interleaved (li % P): 256 threads
   // adding to the SAME 13 shared addresses serialize; partials cut same-address collisions
   // P-fold and are summed at the flush. Non-subgroup tile-grad path only. MEASURED
@@ -613,6 +613,24 @@ fn atomAddW(slot: u32, v: f32) {
   }
 }
 ` : /* wgsl */ `
+${zskip ? /* wgsl */ `
+// zero-skip variant (opts.gradZeroSkip): a contribution that quantizes to 0 skips the
+// serialized shared atomic — a branch per (pixel, splat, slot) against 13 atomics.
+// MEASURED 2026-09-06 (truck 1.04M, K=16 defaults): render 8.29 -> 8.38 ms — nothing to
+// skip that the hardware does not already coalesce; stays opt-in. (K=19: 8.16, noise.)
+fn atomAdd(slot: u32, v: f32) {
+  let q = i32(round(clamp(v * FIXED, -1.0e9, 1.0e9)));
+  if (q != 0) { atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], q); }
+}
+fn atomAddC(slot: u32, v: f32) {
+  let q = i32(round(clamp(v * FIXEDC, -1.0e9, 1.0e9)));
+  if (q != 0) { atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], q); }
+}
+fn atomAddW(slot: u32, v: f32) {
+  let q = i32(round(clamp(v * WFIX, 0.0, 1.0e9)));
+  if (q != 0) { atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], q); }
+}
+` : /* wgsl */ `
 fn atomAdd(slot: u32, v: f32) {
   atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], i32(round(clamp(v * FIXED, -1.0e9, 1.0e9))));
 }
@@ -622,6 +640,7 @@ fn atomAddC(slot: u32, v: f32) {
 fn atomAddW(slot: u32, v: f32) {
   atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], i32(round(clamp(v * WFIX, 0.0, 1.0e9))));
 }
+`}
 `) : /* wgsl */ `
 fn atomAdd(idx: u32, v: f32) {
   atomicAdd(&gradP[idx], i32(round(clamp(v * FIXED, -1.0e9, 1.0e9))));
