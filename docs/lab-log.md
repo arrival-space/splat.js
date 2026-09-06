@@ -74,6 +74,25 @@ about ±0.1 dB.
   default adds a free aspect on top. Queued: octave-vs-aspect split
   (`_cs_nf8000_oc-1`, `_cs_nf8000_sa`) and an intrinsics lock for rigs
   (`sfm.lockIntrinsics`, bench `?lockk=1`, `_lk`) on both solves.
+- **360 rig solve, resolved** (bar360 30k, seed 1, held-out; the 09-05 default
+  had lost 0.74 here):
+
+  | solve | PSNR | solve min |
+  |---|---|---|
+  | old (3900 feats, octave 0, BA refines f/k/aspect) | 20.69 | 7.3 |
+  | 09-05 default (8000, octave −1, aspect) | 19.95 | 10.7 |
+  | … minus aspect | 19.90 | 10.8 |
+  | 8000 + aspect, octave 0 | 20.64 | 7.3 |
+  | 09-05 default + intrinsics lock | 20.17 | 10.6 |
+  | old + intrinsics lock | 20.98 | 7.1 |
+  | **new rig default: octave clamp 0 + lock (8000 feats)** | **20.99** | 7.2 |
+
+  Two facts: the upsampled octave finds features inside the bilinear
+  resample that a sliced face is (the whole −0.74), and BA had been refining
+  f, k1/k2 and aspect on faces whose values are exact by construction (lock
+  +0.29). Rigs now clamp `siftFirstOctave ≥ 0` and set `lockIntrinsics`
+  (session.solve; `sfm.lockIntrinsics: false` opts out). Net vs the old
+  solve: +0.30, and 7 of 7 pinhole sets keep their gains.
 - **Rig incident** (night 09-05 → 06): a combined wrapper (gputime → newdef)
   was killed to fix its first stage and took the second with it; five
   background waiters watched an idle rig for ~9 h. Rules now in memory:
