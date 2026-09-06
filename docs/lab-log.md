@@ -4,6 +4,60 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-06 (speed day 1: per-kernel profile, three negatives, visibility compaction = 3 %)
+
+- **Per-kernel timestamps** (`opts.profile` / bench `?gputime=N`, one pass per
+  kernel on a frozen 1.04 M truck model, 979 px): render 10.7 ms
+  (fwd 3.3, bwd ≈ 7.4), sort 1.9, chain 1.9, shAdam 1.65, scatter 0.75,
+  adam 0.6, project 0.5, scan 0.02 → 17.3 ms/step; metrics are not a lever.
+  Iteration time fits 3.2 ms + 13 ms per 1 M splats.
+- **Three negatives, all kept opt-in with the numbers in comments**:
+  subgroup-aggregated flush (the LichtFeld #1675 move) render 9.8 → 42 ms —
+  13 subgroup reductions per splat for every lane cost more than the
+  sparse shared atomics they replace; lane-spread partials (`?gspread=4/8`)
+  14.4 / 15.2 ms — same-address contention is not the bottleneck; no
+  tile-grad (global atomics) 19.8 ms.
+- **Visibility compaction** (LichtFeld #1917 idea; `opts.compact`, bench
+  `?compact=1`): GPU-built visible list (count → single-workgroup scan →
+  stable scatter) + indirect dispatch for chain / Adam / SH-Adam; an
+  'invis' Adam pass keeps regs + Langevin noise on hidden rows. Validates,
+  runs: per-splat kernels 4.18 → 3.65 ms incl. the three new passes
+  (chain 1.93 → 1.68, adam 0.60 → 0.40 + 0.40 invis, shAdam 1.65 → 1.03)
+  = **3 % of the step**. The chain only shed 13 %: on an object-centric
+  capture ≈ 85 % of the splats are in view from a typical camera, so
+  there is little to skip. **Parity** truck 30k, frozen new-solve poses:
+  25.699 vs 25.697 / 25.712 (perf, nf8000_oc-1 cells) — exact; 6.7 vs
+  7.0 min. Stays opt-in (a default flip needs a wide-scene win).
+- **Where the time is**: the backward walk pays two workgroup barriers per
+  splat per tile (zero → accumulate → flush); the original 3DGS backward
+  pays one per 256. **Batched flush** (`opts.gradBatch`, bench `?gbatch=K`;
+  sg grows to 13·K ints, 13·K flush threads, u32-safe stride): render
+  10.8 → 8.86 (K=4) → 8.32 (K=8) → 8.18 ms (K=16), the backward ≈ 7.4 →
+  4.9 ms, the step ≈ −15 %. Fixed-point integer atomics make the sums
+  order-independent, so gradients are bit-identical — parity cells (K=16,
+  K=16 + compact, garden) queued before the default flip.
+- **Rig incident** (night 09-05 → 06): a combined wrapper (gputime → newdef)
+  was killed to fix its first stage and took the second with it; five
+  background waiters watched an idle rig for ~9 h. Rules now in memory:
+  one run per wrapper, list before killing, verify a fresh status
+  timestamp after launch, watchdog Monitor (v2 excludes its own process
+  listings). Remaining-sets check (`cells_newdef.json`) still to re-queue.
+
+## 2026-09-05 (solver default ships: finer SIFT + BA aspect; camping tail explained)
+
+- **Desktop solver default** → siftFeats 8000, siftFirstOctave −1
+  (upsampled octave), refineAspect (BA solves fx/fy). User hypothesis
+  confirmed: the feature resolution of the solve is what moves pose error
+  angles, not the number of registered images. Truck (our poses) 26.40 →
+  26.55 at the hour; camping 27.15 @30k (`camping_v2_2026-09-05`); garden
+  26.77. Pushed + deployed live. MAXF 8192 → 16384 (garden with 8000
+  feats + octave −1 hit "too many features per image").
+- **Camping tail drift root cause**: 2 % non-square pixels in the video
+  frames; with fx ≠ fy in BA the tail poses line up with the server COLMAP.
+- **The pair ships together**: aspect alone collapsed camping (BA drift,
+  −0.61), finer features alone regress at the hour (25.93); pixel RMS is
+  not a valid gate for either.
+
 ## 2026-09-04 (solver: feature resolution → pose precision → the hour; 26.55 with our poses)
 
 User's hypothesis: fewer images register at lower solve resolution, so

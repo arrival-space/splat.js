@@ -546,13 +546,15 @@ fn main(@builtin(workgroup_id) wg: vec3u,
 // 2 = backward only (restores C/T/end, mixes the SSIM gradient into gC);
 // 3 = backward only for SSAA (this kernel runs at ssaa x the loss res; gC
 //     comes from the downsample-loss pass's per-1x-pixel gradient buffer).
-export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false, mode = 0, ssimW = 0.2, ssaa = 2, D = 0.3, spread = 1,
+export const makeRenderSrc = (E = DEFAULT_E_CUT, A = DEFAULT_A_MIN, tileGrad = false, subgroups = false, mode = 0, ssimW = 0.2, ssaa = 2, D = 0.3, spread = 1, batch = 1,
   // P partial shared accumulators per gradient slot, lane-interleaved (li % P): 256 threads
   // adding to the SAME 13 shared addresses serialize; partials cut same-address collisions
   // P-fold and are summed at the flush. Non-subgroup tile-grad path only. MEASURED
   // 2026-09-06 (truck 1.04M, 979 px): render 10.8 ms at P=1 → 14.4 (P=4) → 15.2 (P=8) —
   // same-address contention is NOT the backward's bottleneck; opt-in, default 1.
-  P = subgroups ? 1 : Math.max(1, spread | 0)) =>
+  P = subgroups ? 1 : Math.max(1, spread | 0),
+  // K splats per zero/flush barrier pair (batched flush); tile-grad, non-subgroup path only
+  K = (tileGrad && !subgroups) ? Math.max(1, batch | 0) : 1) =>
   (subgroups ? 'enable subgroups;\n' : '') + CAM_STRUCT + cutConsts(E, A, 1.0, D) + /* wgsl */ `
 @group(0) @binding(1) var<storage, read> proj: array<f32>;
 @group(0) @binding(2) var<storage, read> tileStart: array<u32>;
@@ -576,8 +578,9 @@ fn camAdd(idx: u32, v: f32) {
 ` + (tileGrad ? /* wgsl */ `
 var<workgroup> wgEnd: atomic<u32>;
 var<workgroup> wgEndU: u32;
-var<workgroup> sg: array<atomic<i32>, ${13 * P}>; // 0-9 grads, 10-11 error mass, 12 grad-stat (x P partials)
+var<workgroup> sg: array<atomic<i32>, ${13 * P * K}>; // 0-9 grads, 10-11 error mass, 12 grad-stat (x P partials, x K batched splats)
 var<private> sgPart: u32;
+${K > 1 ? 'var<private> sgBase: u32; // batched flush: the current splat’s 13*P block in sg' : ''}
 ` + (mode === 0 ? /* wgsl */ `
 var<workgroup> wgErr: atomic<u32>;   // robust-loss tile vote: residual sum (x4096)
 var<workgroup> wgValid: atomic<u32>; // and its valid-pixel count
@@ -609,13 +612,13 @@ fn atomAddW(slot: u32, v: f32) {
 }
 ` : /* wgsl */ `
 fn atomAdd(slot: u32, v: f32) {
-  atomicAdd(&sg[slot * ${P}u + sgPart], i32(round(clamp(v * FIXED, -1.0e9, 1.0e9))));
+  atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], i32(round(clamp(v * FIXED, -1.0e9, 1.0e9))));
 }
 fn atomAddC(slot: u32, v: f32) {
-  atomicAdd(&sg[slot * ${P}u + sgPart], i32(round(clamp(v * FIXEDC, -1.0e9, 1.0e9))));
+  atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], i32(round(clamp(v * FIXEDC, -1.0e9, 1.0e9))));
 }
 fn atomAddW(slot: u32, v: f32) {
-  atomicAdd(&sg[slot * ${P}u + sgPart], i32(round(clamp(v * WFIX, 0.0, 1.0e9))));
+  atomicAdd(&sg[${K > 1 ? 'sgBase + ' : ''}slot * ${P}u + sgPart], i32(round(clamp(v * WFIX, 0.0, 1.0e9))));
 }
 `) : /* wgsl */ `
 fn atomAdd(idx: u32, v: f32) {
@@ -636,7 +639,7 @@ fn atomAddW(idx: u32, v: f32) {
 fn main(@builtin(global_invocation_id) g: vec3u,
         @builtin(workgroup_id) wid: vec3u,
         @builtin(local_invocation_index) li: u32) {
-${tileGrad ? `  sgPart = li % ${P}u;` : ''}
+${tileGrad ? `  sgPart = li % ${P}u;` : ''}${K > 1 ? '  sgBase = 0u;' : ''}
   let W = u32(cam.size.x);
   let H = u32(cam.size.y);
 ${tileGrad ? '  let pxOk = g.x < W && g.y < H;' : '  if (g.x >= W || g.y >= H) { return; }'}
@@ -787,11 +790,24 @@ ${tileGrad ? /* wgsl */ `
 ` : '  let endMax = end;'}
   var S = bg * T;
   var Ta = T;
+${K > 1 ? /* wgsl */ `
+  // batched flush: K splats share one zero/flush barrier pair (the original
+  // 3DGS backward pays one barrier per 256 splats; ours paid two per splat).
+  // Each splat k accumulates into its own 13*P block of sg; the flush maps
+  // 13*K threads onto (splat, slot). Underflow-safe stride on u32.
+  for (var kk0 = endMax; kk0 > segS; kk0 = select(segS, kk0 - ${K}u, kk0 >= segS + ${K}u)) {
+    if (li < ${13 * P * K}u) { atomicStore(&sg[li], 0); }
+    workgroupBarrier();
+    for (var k = 0u; k < ${K}u; k++) {
+    if (kk0 > segS + k) {
+    let kk = kk0 - k;
+    sgBase = k * ${13 * P}u;
+` : /* wgsl */ `
   for (var kk = endMax; kk > segS; kk--) {
 ${tileGrad ? /* wgsl */ `
     if (li < ${13 * P}u) { atomicStore(&sg[li], 0); }
     workgroupBarrier();
-` : ''}${tileGrad && subgroups ? /* wgsl */ `
+` : ''}`}${tileGrad && subgroups ? /* wgsl */ `
     // subgroup variant only: contributions land in locals so the aggregated
     // flush below runs in UNIFORM control flow (WGSL rejects subgroup
     // builtins in divergent flow — a lesson bought with a dead pipeline)
@@ -880,7 +896,7 @@ ${tileGrad ? (subgroups ? /* wgsl */ `    q2 = -ga * 0.5 * d.x * d.x * cnorm;
     }
     }
     }
-${tileGrad ? (subgroups ? /* wgsl */ `
+${K > 1 ? '    }\n    }\n' : ''}${tileGrad ? (subgroups ? /* wgsl */ `
     // UNIFORM flush: subgroup-aggregate each slot, one sg atomic per subgroup
     // (the LichtFeld #1675 move). Called unconditionally — Tint's uniformity
     // analysis does not track subgroup-uniform conditions, so a subgroupAny
@@ -896,12 +912,23 @@ ${tileGrad ? (subgroups ? /* wgsl */ `
     atomAddW(10u, q10); atomAddW(11u, q11); atomAddW(12u, q12);
 ` : '') + /* wgsl */ `
     workgroupBarrier();
+${K > 1 ? /* wgsl */ `
+    if (li < ${13 * K}u) {
+      let k = li / 13u;
+      let slot = li - k * 13u;
+      if (kk0 > segS + k) {
+        var v = 0;
+        for (var pp = 0u; pp < ${P}u; pp++) { v += atomicLoad(&sg[k * ${13 * P}u + slot * ${P}u + pp]); }
+        if (v != 0) { atomicAdd(&gradP[entries[2u * (kk0 - k - 1u) + 1u] * 16u + slot], v); }
+      }
+    }
+` : /* wgsl */ `
     if (li < 13u) {
       var v = 0;
       for (var pp = 0u; pp < ${P}u; pp++) { v += atomicLoad(&sg[li * ${P}u + pp]); }
       if (v != 0) { atomicAdd(&gradP[b + li], v); }
     }
-` : ''}
+`}` : ''}
   }
 }
 `);

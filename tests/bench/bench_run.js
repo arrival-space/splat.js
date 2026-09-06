@@ -30,7 +30,7 @@ const TAG = `${SET}_${ITERS}` + (Q.has('classic') ? '_classic' : '')
   + (Q.get('opadecay') ? `_od${Q.get('opadecay')}` : '') + (Q.get('ratiocap') ? `_rc${Q.get('ratiocap')}` : '')
   + (Q.get('econ') ? `_e${Q.get('econ')}` : '') + (Q.get('deadtiny') ? '_dtn' : '') + (Q.get('minutes') ? `_m${Q.get('minutes')}` : '')
   + (Q.has('classicsolve') ? '_cs' : '') + (Q.get('featres') ? `_fr${Q.get('featres')}` : '') + (Q.get('feats') ? `_nf${Q.get('feats')}` : '') + (Q.get('octave') ? `_oc${Q.get('octave')}` : '') + (Q.get('peak') ? `_pk${Q.get('peak')}` : '')
-  + (Q.get('compact') ? '_cp' : '') + (Q.get('gspread') ? `_gs${Q.get('gspread')}` : '') + (Q.get('sgagg') ? '_sg' : '') + (Q.get('tilegrad') === '0' ? '_ntg' : '') + (Q.get('frommodel') ? '_fm' : '') + (Q.get('aspect') ? '_asp' : '') + (Q.get('asplr') ? `_al${Q.get('asplr')}` : '') + (Q.get('sfmaspect') ? '_sa' : '')
+  + (Q.get('compact') ? '_cp' : '') + (Q.get('gspread') ? `_gs${Q.get('gspread')}` : '') + (Q.get('gbatch') ? `_gb${Q.get('gbatch')}` : '') + (Q.get('sgagg') ? '_sg' : '') + (Q.get('tilegrad') === '0' ? '_ntg' : '') + (Q.get('frommodel') ? '_fm' : '') + (Q.get('aspect') ? '_asp' : '') + (Q.get('asplr') ? `_al${Q.get('asplr')}` : '') + (Q.get('sfmaspect') ? '_sa' : '')
   + (Q.get('dir') ? `_d${Q.get('dir')}` : '') + (Q.get('tag') ? `_${Q.get('tag')}` : '')   // free suffix: e.g. the recon source, which no flag names
   + (Q.get('seed') ? `_s${Q.get('seed')}` : '');
 const t0 = Date.now();
@@ -131,6 +131,7 @@ try {
         // subgroup-aggregated gradient atomics in the render backward (speed probe)
         ...(Q.get('sgagg') ? { subgroupAgg: true } : {}),
         ...(Q.get('gspread') ? { gradSpread: +Q.get('gspread') } : {}),
+        ...(Q.get('gbatch') ? { gradBatch: +Q.get('gbatch') } : {}),
         // visibility compaction: chain/Adam/SH-Adam over visible splats only
         ...(Q.get('compact') ? { compact: true } : {}),
         // tileGrad=0: per-pixel global atomics, no per-splat workgroup barriers (speed probe)
