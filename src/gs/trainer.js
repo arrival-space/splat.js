@@ -89,7 +89,7 @@ export class GSTrainer {
       d.features && d.features.has('subgroups');
     this.pipeRender = d.createComputePipeline({
       label: 'render', layout: 'auto',
-      compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 0, 0.2, 2, this.dilate), 'render'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+      compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 0, 0.2, 2, this.dilate, this.opts.gradSpread ?? 1), 'render'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
     });
     // D-SSIM loss (opts.ssimWeight > 0): split renderer + image passes.
     // The fused kernel stays untouched for the default path.
@@ -98,14 +98,14 @@ export class GSTrainer {
     if (this.ssimW > 0 || this.ssaa >= 2) {
       this.pipeRenderFwd = d.createComputePipeline({
         label: 'render-fwd', layout: 'auto',
-        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 1, 0.2, 2, this.dilate), 'render-fwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 1, 0.2, 2, this.dilate, this.opts.gradSpread ?? 1), 'render-fwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
       });
     }
     if (this.ssaa >= 2) {
       // supersampled training: raster at ssaa x, box-downsample + loss at 1x
       this.pipeRenderBwd3 = d.createComputePipeline({
         label: 'render-bwd-ssaa', layout: 'auto',
-        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 3, 0, this.ssaa, this.dilate), 'render-bwd-ssaa'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 3, 0, this.ssaa, this.dilate, this.opts.gradSpread ?? 1), 'render-bwd-ssaa'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
       });
       this.pipeSsaaLoss = d.createComputePipeline({
         label: 'ssaa-loss', layout: 'auto',
@@ -115,7 +115,7 @@ export class GSTrainer {
     if (this.ssimW > 0) {
       this.pipeRenderBwd = d.createComputePipeline({
         label: 'render-bwd', layout: 'auto',
-        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 2, this.ssimW, 2, this.dilate), 'render-bwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
+        compute: { module: mk(makeRenderSrc(this.opts.eCut, this.opts.aMin, this.tileGrad, this.subgroupAgg, 2, this.ssimW, 2, this.dilate, this.opts.gradSpread ?? 1), 'render-bwd'), entryPoint: 'main', constants: { FIXED: this.gradFixed } },
       });
       const ssimMod = mk(SSIM_SRC, 'ssim');
       const sp = (entry, constants) => d.createComputePipeline({
