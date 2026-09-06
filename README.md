@@ -77,9 +77,10 @@ its native 979 px, on a desktop NVIDIA GPU, in one tab:
 | method | Truck test PSNR |
 |---|---|
 | 3DGS (SIGGRAPH 2023) | 25.18 dB |
-| **Splat.js — 40 k cycles (~10 min train)** | **25.49 dB** |
+| **Splat.js — 30 k cycles (~6 min train, 1.05 M)** | **25.70 dB** |
 | Mip-Splatting (CVPR 2024) | 25.74 dB |
 | Scaffold-GS (CVPR 2024) | 25.77 dB |
+| **Splat.js — 40 k cycles (~10½ min train, 1.4 M)** | **25.93 dB** |
 | Brush v0.3 — measured (30 k cycles, ~30 min train) | 26.10 dB |
 | 3DGS-MCMC (NeurIPS 2024) | 26.11 dB |
 | LichtFeld Studio v0.5.3 — measured (~5½ min train) | 26.14 dB |
@@ -97,8 +98,9 @@ The [Brush](https://github.com/ArthurBrussee/brush) row was measured the
 same way: same machine, byte-identical images, the same every-8th holdout,
 SH degree 3, 2 M splat cap, from the COLMAP poses and sparse cloud.
 The published methods train 30 k iterations of 2–2.6 M Gaussians with
-degree-3 spherical harmonics on native CUDA. The 40 k Splat.js row is a
-ten-minute browser run at 1.4 M Gaussians; the 200 k row is the same
+degree-3 spherical harmonics on native CUDA. The 30 k and 40 k Splat.js
+rows are six- and ten-minute browser runs (mean of two seeds, 2026-09-06);
+the 200 k row is the same
 system given an hour — a 1.05 M cap fits more cycles into the hour than
 2 M does and scores higher (2 M at 114 k cycles: 26.19 dB). Its poses come
 from the in-browser solve at its desktop defaults: 8000 SIFT features from

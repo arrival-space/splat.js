@@ -106,6 +106,10 @@ about ±0.1 dB.
   square-pixel reference sat at 26.60). The 15 % step speedup bought 30k
   more iterations inside the hour and +0.10 dB. Published as
   `truck_1h_v3_2026-09-06` (new CDN key); README row + deploy await the go.
+- **README short rows re-measured** (frozen new-solve poses, seeds 1/2, train
+  minutes): 30k / 1.05 M → 25.68 / 25.71 in 5.9 min; 40k / 1.4 M → 25.89 / 25.97
+  in 10.5 min. The old 40k row (25.49, ~10 min) predates the solver default
+  and the faster trainer; table now carries 25.70 (30k) and 25.93 (40k).
 - **Rig incident** (night 09-05 → 06): a combined wrapper (gputime → newdef)
   was killed to fix its first stage and took the second with it; five
   background waiters watched an idle rig for ~9 h. Rules now in memory:
