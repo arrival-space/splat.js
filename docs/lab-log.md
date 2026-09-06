@@ -51,8 +51,9 @@ about ±0.1 dB.
   Compaction pays where it should: the chain shed 63 % (≈ 37 % of the splats
   visible per view on the wide scene vs 85 % on truck) → −0.9 ms; batched
   flush −1.1 ms; together −16 %. The 'invis' Adam pass (0.45) is now the
-  largest per-splat kernel — it launches n·16 threads for 7 working slots;
-  a trimmed launch is the next cheap cell. Bench: `?gtrecon` now accepts an
+  largest per-splat kernel; a trimmed launch (8 lanes per splat) measured flat
+  (0.451 → 0.445) — not launch-bound, kept for the idle lanes; the cost per
+  working slot is ~3× the compact pass, cause open. Bench: `?gtrecon` now accepts an
   app-published recon (name remap, focal rescale, cloud → points).
 - **Zero-skip atomics** flat (8.29 → 8.38 render), **K = 19** noise (8.16);
   defaults stay at K = 16.

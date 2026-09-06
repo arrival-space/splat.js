@@ -832,7 +832,7 @@ export class GSTrainer {
           ['visScatter', this.pipeVisScatter, this.bgVisScatter, (p) => d1(p, this.n)],
           ['chain', this.pipeChainC, this.bgChainC, (p) => p.dispatchWorkgroupsIndirect(this.bufVisDisp, 0)],
           ['adam', this.pipeAdamC, this.bgAdamC, (p) => p.dispatchWorkgroupsIndirect(this.bufVisDisp, 16)],
-          ['adamInvis', this.pipeAdamI, this.bgAdamI, (p) => d1(p, this.n * STRIDE)],
+          ['adamInvis', this.pipeAdamI, this.bgAdamI, (p) => d1(p, this.n * 8)],
           ...(this.shK ? [['shAdam', this.pipeSHAdamC, this.bgSHAdamC, (p) => p.dispatchWorkgroupsIndirect(this.bufVisDisp, 32)]] : []),
         ] : [
           ['chain', this.pipeChain, this.bgChain, (p) => p.dispatchWorkgroups(nGroups)],
@@ -959,7 +959,7 @@ export class GSTrainer {
       run(this.pipeVisScatter, this.bgVisScatter); dispatch1D(p, this.n);
       run(this.pipeChainC, this.bgChainC); p.dispatchWorkgroupsIndirect(this.bufVisDisp, 0);
       run(this.pipeAdamC, this.bgAdamC); p.dispatchWorkgroupsIndirect(this.bufVisDisp, 16);
-      run(this.pipeAdamI, this.bgAdamI); dispatch1D(p, this.n * STRIDE);
+      run(this.pipeAdamI, this.bgAdamI); dispatch1D(p, this.n * 8); // 8 lanes per splat (slots 0-5, 13)
       if (this.shK) { run(this.pipeSHAdamC, this.bgSHAdamC); p.dispatchWorkgroupsIndirect(this.bufVisDisp, 32); }
     } else {
       p.setPipeline(this.pipeChain);

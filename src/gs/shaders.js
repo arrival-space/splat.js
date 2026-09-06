@@ -1848,7 +1848,11 @@ export const makeAdamSrc = (mode = 'all') => {
   if (mode === 'compact') {
     s = s.replace(head, '  let jw = gid.x + gid.y * nw.x * 256u;\n  let tail = bitcast<u32>(au.flg.w);\n  if (jw >= bitcast<u32>(proj[tail]) * 16u) { return; }\n  let j = bitcast<u32>(proj[tail + 1u + jw / 16u]) * 16u + (jw % 16u);');
   } else if (mode === 'invis') {
-    s = s.replace(head, '  let j = gid.x + gid.y * nw.x * 256u;\n  if (j >= u32(au.cl.w)) { return; }\n  if (proj[(j / 16u) * 16u + 11u] > 0.5) { return; }\n  let sl = j % 16u;\n  if (!(sl <= 5u || sl == 13u)) { return; }');
+    // trimmed launch (2026-09-06): 8 threads per splat, not 16 — slots 0-5 and 13 work, the
+    // 8th lane returns. Dispatch n*8 (see trainer). MEASURED bicycle 966k: 0.451 -> 0.445 ms —
+    // the pass is not launch-bound (kept: half the idle lanes for free); its cost per working
+    // slot is ~3x the compact pass, cause unknown (regs + Langevin hash per slot?).
+    s = s.replace(head, '  let jw = gid.x + gid.y * nw.x * 256u;\n  if (jw >= u32(au.cl.w) / 2u) { return; }\n  let row = jw / 8u;\n  let k = jw % 8u;\n  if (k == 7u) { return; }\n  if (proj[row * 16u + 11u] > 0.5) { return; }\n  let sl = select(13u, k, k < 6u);\n  let j = row * 16u + sl;');
     s = s.replace('  var g = gradF[j];', '  var g = 0.0; // invisible: no data gradient, regs + noise only');
   }
   return s;
