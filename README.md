@@ -29,10 +29,10 @@ Or open a finished result straight away — every trained run can be saved and
 shared, and `?model=<url>` (+ `&recon=<url>` for the solved camera path)
 loads it back into the viewer, capture-path tour included:
 
-**[The Truck — Tanks & Temples](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/truck_1h_v2_2026-09-04.sog&recon=https://ugc.arrival.space/splatjs/models/truck_1h_v2_2026-09-04_recon.json)**
+**[The Truck — Tanks & Temples](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/truck_1h_v3_2026-09-06.sog&recon=https://ugc.arrival.space/splatjs/models/truck_1h_v3_2026-09-06_recon.json)**
 — the benchmark model from the table below: 251 photographs at native
 979 px, poses solved in the browser, 1,050,000 Gaussians, degree-3
-spherical harmonics, 170 k cycles: **26.55 dB on the photographs it never
+spherical harmonics, 200 k cycles: **26.65 dB on the photographs it never
 saw** — the top of the table, 56 min of training in one tab.
 
 **[The Bar — a real bar from 102 handheld 360° panoramas](https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/bar360_v5test.sog&recon=https://ugc.arrival.space/splatjs/models/bar360_v5test_recon.json)**
@@ -84,7 +84,7 @@ its native 979 px, on a desktop NVIDIA GPU, in one tab:
 | 3DGS-MCMC (NeurIPS 2024) | 26.11 dB |
 | LichtFeld Studio v0.5.3 — measured (~5½ min train) | 26.14 dB |
 | Student Splatting & Scooping (CVPR 2025) | 26.41 dB |
-| **Splat.js — 170 k cycles (56 min train, 1.05 M)** | **26.55 dB** |
+| **Splat.js — 200 k cycles (56 min train, 1.05 M)** | **26.65 dB** |
 
 Same images, same resolution, same held-out-every-8th protocol; all times
 are training only — the Splat.js in-browser camera solve adds ~12 minutes
@@ -98,7 +98,7 @@ same way: same machine, byte-identical images, the same every-8th holdout,
 SH degree 3, 2 M splat cap, from the COLMAP poses and sparse cloud.
 The published methods train 30 k iterations of 2–2.6 M Gaussians with
 degree-3 spherical harmonics on native CUDA. The 40 k Splat.js row is a
-ten-minute browser run at 1.4 M Gaussians; the 170 k row is the same
+ten-minute browser run at 1.4 M Gaussians; the 200 k row is the same
 system given an hour — a 1.05 M cap fits more cycles into the hour than
 2 M does and scores higher (2 M at 114 k cycles: 26.19 dB). Its poses come
 from the in-browser solve at its desktop defaults: 8000 SIFT features from
