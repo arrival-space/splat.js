@@ -187,7 +187,25 @@ try {
   if (Q.get('gtrecon')) {
     // externally supplied reconstruction (e.g. COLMAP GT parsed to our
     // format) — poses + cloud swap in, everything else identical
-    recon = ses.useReconstruction(await (await fetch(Q.get('gtrecon'))).json());
+    const gj = await (await fetch(Q.get('gtrecon'))).json();
+    if (gj.frames && gj.cams) {
+      // an app-published recon (buildReconJson): cams index ITS frame list and carry f at
+      // ITS feature scale — remap by frame name onto our frames and rescale f to our fw;
+      // its sparse cloud is a flat {xyz, rgb} pair, the session wants [{X, rgb}]
+      const byName = new Map(ses.frames.map((f, i) => [f.name, i]));
+      gj.cams = gj.cams.map((c) => {
+        const fr = gj.frames[c.imgIdx]; const i = fr ? byName.get(fr.name) : undefined;
+        if (i == null) return null;
+        const s = ses.frames[i].fw / fr.fw;
+        return { ...c, imgIdx: i, f: c.f * s, ...(c.fy != null ? { fy: c.fy * s } : {}), cx: ses.frames[i].fw / 2, cy: ses.frames[i].fh / 2 };
+      }).filter(Boolean);
+    }
+    if (!gj.points && gj.cloud && gj.cloud.xyz) {
+      const xyz = gj.cloud.xyz, rgb = gj.cloud.rgb || [];
+      gj.points = [];
+      for (let i = 0; i + 2 < xyz.length; i += 3) gj.points.push({ X: [xyz[i], xyz[i + 1], xyz[i + 2]], rgb: [rgb[i] ?? 128, rgb[i + 1] ?? 128, rgb[i + 2] ?? 128] });
+    }
+    recon = ses.useReconstruction(gj);
     await say('gt-recon', { cams: recon.cams.length, points: recon.points.length });
   } else {
     recon = await ses.solve();
