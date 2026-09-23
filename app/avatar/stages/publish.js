@@ -1,16 +1,44 @@
-// publish.js — the avatar onto the account: rig GLB, splat, sidecar, fit and
-// thumbnail through the arrival.space upload flow, then POST /avatars/splat
-// (the backend copies the GLB to <user>/splat_avatar_<hash>_<stamp>.glb,
-// writes the sibling config, inserts the row and assigns it).
+// publish.js — the last stage, in one of two shapes.
 //
-// Sign-in needs a click (the OAuth popup can only open inside one), so this
-// stage draws the button and waits for it. Nothing is sent before.
+// HAND-OFF (ctx.handoff, the embedded route): the finished avatar goes to
+// whoever opened this tool — the splat rigger — and that is the end of Splat.js'
+// job. The rigger inspects it, attaches the animation clips and puts it on the
+// account, which is where all of that already lives (the user, 2026-09-18:
+// "splat-js need to hand off the avatar once it's finished ... the ui is just
+// for the creation"). Nothing is uploaded here and no account is touched.
+//
+// THE ACCOUNT (standalone, arrival.space/splat-js and the open-source build):
+// rig GLB, splat, sidecar, fit and thumbnail through the arrival.space upload
+// flow, then POST /avatars/splat (the backend copies the GLB to
+// <user>/splat_avatar_<hash>_<stamp>.glb, writes the sibling config, inserts
+// the row and assigns it). Sign-in needs a click (the OAuth popup can only open
+// inside one), so this stage draws the button and waits for it.
 import { getToken, api, uploadFile, hasToken, forgetRevokedToken } from '../../js/arrival.js';
 
 export const id = 'publish';
 export const needs = ['bind'];
 
 const fmtMB = (b) => `${(b / 1e6).toFixed(b > 1e7 ? 0 : 1)} MB`;
+
+/** the zip of everything, on #av-dl — the way out of both endings */
+function wireDownload(body, { name, ply, bin, fit, glb, sog, thumb }) {
+  const el = body.querySelector('#av-dl');
+  if (!el) return;
+  el.onclick = async () => {
+    const { zipStore } = await import('../../js/zip.js');
+    const files = [
+      { name: `${name}.ply`, data: new Uint8Array(await ply.arrayBuffer()) },
+      { name: `${name}_binding.bin`, data: bin },
+      { name: `${name}_fit.json`, data: new TextEncoder().encode(JSON.stringify(fit, null, 1)) },
+      { name: 'rig.glb', data: new Uint8Array(glb) },
+    ];
+    if (sog) files.push({ name: `${name}.sog`, data: new Uint8Array(await sog.arrayBuffer()) });
+    if (thumb) files.push({ name: thumb.type === 'image/webp' ? 'thumb.webp' : 'thumb.png', data: new Uint8Array(await thumb.arrayBuffer()) });
+    const zip = zipStore(files);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(zip); a.download = `${name}_avatar.zip`; a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+  };
+}
 
 export async function run(ctx, manifest, hooks) {
   const body = hooks.body?.(); const log = hooks.log || (() => {});
@@ -24,7 +52,7 @@ export async function run(ctx, manifest, hooks) {
   // the 20-80 MB PLY becomes a few MB with no runtime change. The PLY stays
   // in the package for the rigger and for re-fits.
   let sog = ctx.sogBlob || null;
-  if (!sog) {
+  if (!sog && !ctx.handoff) {   // the rigger takes the PLY and compresses later
     try {
       const { plyToSog } = await import('../../js/sog.js');
       sog = await plyToSog(new Uint8Array(await ply.arrayBuffer()), { onProgress: ({ label, frac }) => hooks.progress?.(frac ?? 0, 1, `compressing the splat${label ? ' · ' + label : ''}`) });
@@ -32,26 +60,34 @@ export async function run(ctx, manifest, hooks) {
       log(`sog: ${fmtMB(ply.size)} ply -> ${fmtMB(sog.size)} sog`);
     } catch (e) { log(`sog failed (${e.message || e}) — shipping the PLY`); sog = null; }
   }
+  // ── the hand-off: post the package to whoever opened this tool ────────────
+  if (ctx.handoff) {
+    const buf = async (b) => (b instanceof Blob ? await b.arrayBuffer() : b.buffer ? b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength) : b);
+    const assets = [
+      { assetType: 'splat', name: `${name}.ply`, buffer: await buf(ply) },
+      { assetType: 'binding', name: `${name}_binding.bin`, buffer: await buf(bin) },
+      { assetType: 'fit', name: `${name}_fit.json`, buffer: await buf(new TextEncoder().encode(JSON.stringify(fit))) },
+    ];
+    if (thumb) assets.push({ assetType: 'thumbnail', name: `${name}.png`, buffer: await buf(thumb) });
+    hooks.progress?.(0.5, 1, 'handing the avatar over …');
+    await ctx.handoff({ name, assets });
+    log(`handed over: ${assets.map((a) => a.assetType).join(', ')} (${fmtMB(assets.reduce((t, a) => t + a.buffer.byteLength, 0))})`);
+    if (body) {
+      body.innerHTML = `<div class="upcard-row"><p class="fine">Your avatar has gone back to the rigger — inspect it, give it its animations and put it on your account there.</p>
+        <span style="display:flex;gap:8px"><button class="btn btn-outline" id="av-dl">Download package</button></span></div>
+        <p class="fine" id="av-status"></p>`;
+      wireDownload(body, { name, ply, bin, fit, glb, sog, thumb });
+    }
+    return { handedOff: true, format: 'ply', note: 'handed to the rigger' };
+  }
+
   // the button — and the download, for anyone who wants the package instead
   const clicked = await new Promise((resolve) => {
     if (!body) return resolve('go');
     body.innerHTML = `<div class="upcard-row"><p class="fine">Splat ${sog ? `${fmtMB(sog.size)} (SOG, from ${fmtMB(ply.size)})` : fmtMB(ply.size)} · binding ${fmtMB(bin.byteLength)} · rig ${fmtMB(glb.byteLength)}. ${hasToken() ? '' : 'You will be asked to sign in to arrival.space.'}</p>
       <span style="display:flex;gap:8px"><button class="btn btn-outline" id="av-dl">Download package</button><button class="btn btn-accent" id="av-go">Use as my avatar</button></span></div>
       <p class="fine" id="av-status"></p>`;
-    body.querySelector('#av-dl').onclick = async () => {
-      const { zipStore } = await import('../../js/zip.js');
-      const files = [
-        { name: `${name}.ply`, data: new Uint8Array(await ply.arrayBuffer()) },
-        { name: `${name}_binding.bin`, data: bin },
-        { name: `${name}_fit.json`, data: new TextEncoder().encode(JSON.stringify(fit, null, 1)) },
-        { name: 'rig.glb', data: new Uint8Array(glb) },
-      ];
-      if (sog) files.push({ name: `${name}.sog`, data: new Uint8Array(await sog.arrayBuffer()) });
-      if (thumb) files.push({ name: thumb.type === 'image/webp' ? 'thumb.webp' : 'thumb.png', data: new Uint8Array(await thumb.arrayBuffer()) });
-      const zip = zipStore(files);
-      const a = document.createElement('a'); a.href = URL.createObjectURL(zip); a.download = `${name}_avatar.zip`; a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-    };
+    wireDownload(body, { name, ply, bin, fit, glb, sog, thumb });
     body.querySelector('#av-go').onclick = () => {
       // a popup for the first sign-in must be opened inside the click
       const popup = hasToken() ? null : window.open('', 'arrival-signin', 'width=520,height=640');

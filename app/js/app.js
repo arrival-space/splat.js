@@ -2618,6 +2618,32 @@ function adoptSession(ses, stage = '', res = null) {
   console.log(`[avatar] the viewer now shows the ${stage || 'new'} model — ${ses.trainer.n.toLocaleString()} splats`);
 }
 
+// ── the hand-off ──────────────────────────────────────────────────────────
+// ?handoff=1: this tool was opened by another one (the splat rigger) to MAKE an
+// avatar, nothing else. The finished package is posted back to whoever opened
+// it and that is the end of the job here — no inspection, no animation, no
+// account (the user, 2026-09-18: "the ui is just for the creation, the
+// inspection is then done in splat rigger, including the animation attachment").
+//
+// The message vocabulary is the rigger's own embed protocol, so a host that
+// already listens to the rigger needs one more `source` and nothing else:
+//   { source: 'splat-js', type: 'splat-asset', assetType, name, buffer }
+//   { source: 'splat-js', type: 'splat-done',  name }
+//   { source: 'splat-js', type: 'splat-error', message }
+// Same-origin only, and the buffers are transferred, not copied.
+const HANDOFF = new URLSearchParams(location.search).get('handoff') === '1' && window.parent !== window;
+
+function postToHost(msg, transfer) {
+  window.parent.postMessage({ source: 'splat-js', ...msg }, location.origin, transfer || []);
+}
+
+/** hand the finished avatar to whoever opened this tool */
+async function handOff({ name, assets }) {
+  for (const a of assets) postToHost({ type: 'splat-asset', ...a }, [a.buffer]);
+  postToHost({ type: 'splat-done', name });
+  flash('Avatar sent back — finish it in the rigger', 8000);
+}
+
 // ── the walk preview ──────────────────────────────────────────────────
 // A bound avatar can be watched walking before it is sent anywhere: the clip is
 // the rigger's own walking_anim.glb and the skinning is app/avatar/walk.js. The
@@ -2666,8 +2692,11 @@ async function runAvatarStages() {
       // shipped, so the end of the run shows the AVATAR, not the scene it came
       // out of (the user, 2026-09-18)
       onSession: (ses, stage, res) => { if (S.gen === gen) adoptSession(ses, stage, res); },
-      // the binding is what makes the avatar movable: show it walking
-      onBound: (o) => { if (S.gen === gen) startWalk({ ...o, session: S.session }); },
+      // the binding is what makes the avatar movable: show it walking — but not
+      // on the embedded route, where the rigger does the animating
+      ...(HANDOFF ? {} : { onBound: (o) => { if (S.gen === gen) startWalk({ ...o, session: S.session }); } }),
+      // ?handoff=1: the package goes back to the opener instead of onto the account
+      ...(HANDOFF ? { handoff: handOff } : {}),
       persist: (m) => { if (S._capRec && S.gen === gen) { S._capRec.avatar = m; persistCapture(S._capRec); } },
       arrival: { hasToken, API_BASE },
       // the thumbnail is of the avatar as it ships — the trained pose, not
@@ -2677,6 +2706,7 @@ async function runAvatarStages() {
   } catch (e) {
     console.error(e);
     flash(`Avatar: ${e.message || e}`, 8000);
+    if (HANDOFF) postToHost({ type: 'splat-error', message: String(e.message || e) });
   }
 }
 
