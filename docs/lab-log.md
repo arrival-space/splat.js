@@ -4,6 +4,365 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-09-22 (what the client draws: the cut wrecks a GenAI body, the trained ones survive it)
+
+The user: avatar 5816 (the untrained LHM++ body) "is deformed weirdly in app,
+not just the rigged, just the splat without anim applied — something went
+wrong while export". Also bad in SuperSplat. Our own renders of the same body
+were clean — the sheets had flattered it. Two tools out of that:
+- `render_orbit.js` `&pc=<file.sog>` renders through the PlayCanvas engine
+  (app/js/pcview.js) — what the client, the share viewer and SuperSplat draw;
+  the WebGL canvas cannot be read back, so `page_run.mjs` screenshots it on a
+  title cue. Every sheet from here on is rendered this way before a verdict.
+- `keyhole.js` `&nocut=1`: skip the hull cut for a model that is already the
+  person alone.
+
+**Found by elimination, each step a direct test:** the account's PLY is
+byte-identical to the package (MD5 in its name); the export equals the
+aligned seed row for row (scales, colours, opacity); quaternion order, tail
+cutoff (3σ, standard) and the SOG step all innocent. Then, through PlayCanvas:
+the UNCUT 12-frame body renders clean, the same body AFTER THE CUT is the
+smeared, flattened head of 5816 (`scratch/faces_pc_cut_test.png`). The cut
+(visual hull, dilated matte, hard top above the head landmarks) is built for
+a person in a room; a GenAI body is a stack of thin, third-opacity layers
+(160k splats, ~12/cm²) and the carving strips the face's outer layer and the
+top of the hair. Rebuilt without the cut, bound 158,534 splats at 1.9 cm,
+published by the CLI: **avatar 5821** (5816 superseded).
+
+**The trained avatars checked the same way** (`scratch/faces_pc_all.png`):
+masked uncut, masked cut (5813), masked cut+declawed, room+GenAI cut+declawed
+— all intact through the cut in PlayCanvas, front, sides, back. The one
+defect every trained version shares is the crown from straight above, which
+no orbit camera saw: blotchy, with a needle cluster. Not the cut, the data.
+
+Also today: `tests/bench/declaw.py` (axis-ratio cap after training, 8) is
+what removes the PlayCanvas streaks; needleReg 0.03 alone only halved the
+median ratio (135 → 55). And the account route without a button:
+`arrival avatar publish` in the arrival CLI, after the user's `arrival login`.
+
+## 2026-09-21b (back to the room recipe — and a correction to the 6 dB story)
+
+The user: the matte-only recipe "always created worse results ... fuzzy
+surfaces on the face", switch the seeded training back to the full room; and
+"the seed then will vanish". Harness got `&room=1` (the app's `maskTraining:
+false`: mattes stay on the frames for the hull and the cut, targets carry full
+alpha) and `&seed=cloud&append=<ply>` (the body's rows appended to the cloud
+seed, the face-seed mechanism, SH-DC → sigmoid logits; `&protect=N`). The
+in-trainer PSNR is full-frame under `room=1`, so a render-based masked scorer
+was added (`tests/bench/masked_psnr.py` on `render_views.html` renders at the
+photo's own cameras; reads ~0.9 dB above the in-trainer masked number, compare
+within it only). All rows: 54 cameras, 30k, SH 0, then the shipped cut.
+
+| row | recipe | seed | masked dB (renders) | bound splats |
+|---|---|---|---|---|
+| H | room (the shipped path) | SfM cloud | 28.2 | 46k |
+| G | room | cloud + LHM++12 body, unprotected | 28.8 | 136k |
+| F | room | cloud + LHM++12 body, protected all run | 28.7 | 106k |
+| E | masked | LHM++12 body | 31.7 (its own matte) | 272k |
+
+**The seed does not vanish in the room** — G = F by eye and by number. With
+the full orbit every part of the body gets a gradient from some photo; the
+dead count the trainer reports (119k by 20k) is the ROOM's churn, not the
+body's. Protection is free insurance, not a requirement.
+
+**Correction.** The "6 dB, holes to a person" of 09-20c was measured against
+the MASKED cloud row (A), which is not the shipped path. The shipped room
+recipe from the cloud (H) already has feet, legs and a back — the room recipe
+keeps the legs that the matte recipe lost. Against H the GenAI seed is worth
+**+0.6 dB masked and three times the bound splats** (a denser body), and by
+eye a slightly cleaner crown; the face is the same. Sheet:
+`scratch/room_three_way.png` (H / G / E, bodies and heads).
+
+Where the GenAI seed is decisive stays as measured: the few-photo case
+(6 cams: 22.6 vs 20.0) and the masked recipe. In the shipped recipe it is a
+modest gain, and the shipped recipe's own advantage over the masked one — the
+face the user prefers, the legs — holds with or without it.
+
+E versus H by eye: E's face is not fuzzier than H's in these renders; the
+user's "fuzzy" verdict came from the app at full resolution, so the face pass
+comparison is still the right next test, on the room recipe.
+
+## 2026-09-21 (twelve frames into LHM++, and the avatar on the account)
+
+Sixteen frames into LHM++ overflow the 16 GB card in the image transformer
+(SDPA already; the point encoder was yesterday's fix) — twelve fit. Export cap
+in `to_gs_ply.py` lifted 8 → 16 for the record.
+
+| LHM++ frames in | alone | + 54 cams, 30k |
+|---|---|---|
+| 8 (09-20d) | 18.4 | 30.7 |
+| 12 | 18.3 | 30.8 (min cam 28.3 vs 27.7) |
+| 16 | — | out of memory on the 5080 |
+
+Same within noise; twelve taken for the account because its worst camera is
+half a dB better. Live: `…/index.html?model=…/tom_lhmpp12_54cams_20260921.sog&recon=…_recon.json`.
+
+**On the account:** the keyhole harness's `&avatar=1` route ran the shipped
+stages on the trained session (landmarks 15 markers, cut, body fit 2.1 cm,
+bind 271,668 splats at 1.47 cm, SOG 3.6 MB), the user clicked "Use as my
+avatar" and signed in, and the publish stage put it up: **avatar 5813**. That
+is the first GenAI-seeded avatar on arrival.space, Tom, twelve orbit frames
+into LHM++ plus the full orbit trained on it.
+
+Noted for the shipped path: the harness trains masked (matte in the loop,
+random background outside) and cuts afterwards; the app trains the whole room
+and cuts. The comparison of the two on the same clip is still owed.
+
+## 2026-09-20d (LHM++: several photos into the body itself — 30.7 dB, and "no training" measured)
+
+LHM++ (aigc3d/LHM-plusplus, code released 2026-03-16, Apache-2.0, 700M
+parameters, 8 GB) takes ONE OR MANY pose-free photos and returns a 3DGS body
+(160,000 Gaussians) in the canonical pose or any SMPL-X pose. Installed next
+to LHM in the same WSL env (`~/lhm/LHM-plusplus`; extras: gsplat 1.4.0,
+pointops, torch_scatter, spconv-cu120, xformers 0.0.31 for torch 2.7.1).
+Two Blackwell gotchas: no flash_attn on sm_120, and the Sonata point
+encoder's fallback materialises a (patches × heads × 1024²) attention that
+runs the 16 GB card out of memory — patched to fused SDPA
+(`core/models/encoders/sonata/model.py`, original kept as `.orig`); and the
+same OOM is what made the first one-frame run crawl for 20 minutes. With the
+patch: ~50 s per export including the model load, 1–8 frames.
+
+Tom's orbit frames in (2 / 2,18,34,50 / every eighth), posed with the
+orbit-refined SMPL-X pose (`scripts/inference/to_gs_ply.py --pose_dir`), same
+alignment as before (the body lands in the same frame as LHM's, 1.3 cm).
+
+| body | frames in | alone (no training) | + 6 cams, 3k | + 54 cams, 30k |
+|---|---|---|---|---|
+| LHM-MINI (09-19/20) | 1 | 15.7 | 22.1 | 29.0–29.4 |
+| LHM++ | 1 | 16.4 | — | — |
+| LHM++ | 4 | 18.1 | — | — |
+| **LHM++** | **8** | **18.4** | **22.6** | **30.7** |
+| SfM cloud (reference) | — | — | 20.0 | 23.2 |
+
+**"Maybe we need no training at all"** (the user): measured no. Eight frames
+into LHM++ give a complete, clean body at 18.4 dB — a plausible person,
+generic face, painted stripes, hair as a shell — 12 dB under the trained
+result and visibly not Tom in the face. The body model is the SHAPE; the
+photographs are the identity, and only the trainer puts them on.
+
+**As the seed, LHM++ beats LHM-MINI by 1.3 dB** with the full orbit (30.7 vs
+29.4) and by 0.5 at six photos (22.6 vs 22.1): more frames into the prior =
+a better back and sides to start from. Sheets: `scratch/pp8_alone_sheet.png`,
+`scratch/pp8_54_sheet.png`. Live:
+`https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/tom_lhmpp8_54cams_20260920.sog&recon=https://ugc.arrival.space/splatjs/models/tom_lhmpp8_54cams_20260920_recon.json`
+
+So the pipeline shape stands: orbit → a few frames to LHM++ (one second) →
+align on the solved cameras → seed → train. The prior's job is the closed
+shape; nothing on the shelf replaces the training for likeness.
+
+## 2026-09-20c (the GenAI body as the seed for the FULL orbit: the best Tom we ever had)
+
+The row 09-19 never ran: the LHM body (one photo, 20,000 Gaussians, aligned
+into the orbit) as the seed, then ALL 54 training cameras. Same trainer, same
+photos, same 11 test cameras — only the seed differs from the cloud row.
+
+| seed | cams | 3k | 30k |
+|---|---|---|---|
+| SfM cloud | 54 | 21.6 | 23.2 |
+| **GenAI body** | 54 | 26.6 | **29.0–29.4** (three runs) |
+| SfM cloud | 6 | 19.6 | 20.0 |
+| GenAI body | 6 | 22.1 | 21.7 |
+
+Six dB, and the sheets say why: from the cloud the model dissolves below the
+knees and has no feet from any of ten virtual cameras; from the GenAI seed
+it is a whole person — legs, shoes, soles from straight above, the back, the
+crown — with the face and the stripes of the photographs on top. The face is
+equal to the cloud row's, not softer. The user, on the sheets: "the best tom
+we ever had". Renders: `tests/bench/render_orbit.html|js` (virtual orbit, az:el,
+`&target=head`), sheets `scratch/orbit_A_vs_D.png`, `scratch/face_A_vs_D.png`,
+`scratch/all_on_genai.png`; the six-photo version `scratch/six_on_genai.png`;
+the raw one-photo body `scratch/prior_only_sheet.png`.
+
+Live: `https://arrival.space/splat-js/index.html?model=https://ugc.arrival.space/splatjs/models/tom_genai54_20260920.sog&recon=https://ugc.arrival.space/splatjs/models/tom_genai54_20260920_recon.json`
+(the `/splat-js/?model=` form redirects and drops the query).
+
+**What the seed is, in one line:** a closed surface where the orbit has no
+evidence, kept because nothing argues against it — the trainer carves the
+photographed parts out of it and leaves the rest standing. The 09-20 verdict
+that the prior is "the seed, not a constraint" holds; what was wrong on 09-19
+was the missing row, not the idea.
+
+**Next:** the seed into the app's avatar path (server call: one frontal frame
+→ LHM → posed body + joints; align on the solved cameras; seed; train as
+today), then the shipped recipe vs this on the same clip; the six-photo
+package (prior6, bound) and this one are ready for the account.
+
+## 2026-09-20b (the prior's pose from the orbit: +0.8 dB alone, noise with photos)
+
+Multi-HMR's pose comes from one frontal frame; the orbit knows better. `~/lhm/LHM/refine_pose.py`
+(WSL) takes the 22 body joints prior_align.py triangulated over the 65 cameras,
+maps them into the prior's metric frame through the fitted similarity, and
+refines the SMPL-X root + body rotations on LHM's own layer (Adam, 400 steps,
+5 s, a small pull toward the photo's pose), then poses the same Gaussians again.
+
+| | joint residual | prior alone | prior + 6 cams, 3k |
+|---|---|---|---|
+| Multi-HMR pose (09-19) | 1.8 cm mean / 4.5 max | 14.9 dB | 22.1 dB |
+| refined against the orbit | 1.3 / 3.6 | **15.7** | 22.2 |
+
+Rotations moved by at most 4°; wrists and elbows halved their error, the
+ankles (3.8 cm) did not — that is the 2D detector's noise on shoes, not the
+pose. The prior alone gains 0.8 dB; with six photographs the trainer had
+already absorbed the difference (+0.1, noise band). The doubled left hand at
+camera 50 is still there after the refinement: it is not the arm's rotation
+but the HAND (fingers and wrist twist are not refined, and hands are the
+noisiest joints in 2D). Sheet: `scratch/keyhole_sheet_cam50_ref.png`
+(photo · prior · prior refined · each + 6 photos).
+
+So the pose is not the lever either at six photos; the trainer fixes what it
+sees. What remains open: the hands, and the prior's own fidelity (LHM++ with
+several photos into the prior).
+
+## 2026-09-20 (six photos: the prior's geometry, locked or slowed, measured negative)
+
+The user, on the LHM views: "when the avatar looks like that everywhere the
+generalization would be acceptable" — then "the more it fits to the original
+the better". So: how much of the prior's clean geometry survives the fit?
+Trainer got `opts.lockGeom` / `opts.geomLrScale` (one factor on the position,
+scale and rotation learning rates; colour and opacity untouched); the harness
+`&lock=1`, `&geomlr=`, `&nogrow=1`. Same keyhole as 09-19 (six cameras, the
+11 fixed test cameras, masked PSNR).
+
+| prior seed, 6 cams | 3k | 30k | 30k, no growth/relocation |
+|---|---|---|---|
+| free (09-19) | **22.1** | 21.7 | 21.4 |
+| geometry ×0.3 | 21.5 | 20.1 | 21.0 |
+| geometry ×0.1 | 20.6 | 20.1 | 21.2 |
+| geometry locked (colour + opacity only) | 18.1 | 18.0 | — |
+
+Locked geometry keeps the shape and smears the paint (train PSNR 19.5 dB: the
+photographs land on splats that cannot move to meet them — the 1.8 cm fit
+residual and Multi-HMR's arm are baked in). Every slower rate lands between.
+Growth off at 30k is worth +0.3 over growth on, still under the free 3k.
+
+**Verdict (conditional on this recipe):** the prior's job is the seed, not a
+constraint. The free trainer for a short budget is the best fit to the
+original at six photos; what limits it now is where the prior sits, so the
+next lever is the prior's POSE (refine SMPL-X against the triangulated joints
+before posing), not the trainer.
+
+## 2026-09-19 (a stable human from six photos: the generative prior as the seed)
+
+The question, from the user: "a stable human with only some images". The
+family that answers it is the feed-forward human reconstructor (LHM / LHM++);
+the idea tested here is to use its output as the SEED for our trainer, so the
+photographs refine what they see and the prior supplies the rest.
+
+**LHM-MINI runs on the 5080**, in WSL2 (`~/lhm`, micromamba, torch 2.7.1+cu128,
+pytorch3d and the rasterizer built for sm_120, `TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD=1`
+for their checkpoints): one frontal frame of Tom's orbit → 20,000 canonical
+Gaussians in 2.7 s, peak 14.5 GB (the 500M model wants 18 GB — MINI is the only
+fit on this card). Multi-HMR gives the SMPL-X shape and pose of the photo; the
+same Gaussians posed as in the photo are what we align.
+
+**Into the SfM frame** (`tests/bench/prior_align.py`): Multi-HMR's 2D joints
+on all 65 orbit frames (`frames_prior.py`, with a SAM2 matte per frame),
+triangulated over the solved cameras (22 body joints, 11–40 views each,
+1.3–11 px), then a similarity from the prior's posed joints: **14.86 SfM units
+per metre** (the known Tom scale), residual **1.8 cm mean, 4.5 cm max**.
+The rotation carries the quaternions, log s the scales, colours stay (degree 0).
+
+**The keyhole** (`tests/bench/keyhole.html|js`, `keyhole_run.mjs`): the saved
+09-14 Tom session's cameras and frames, mattes from SAM2, a fixed test set of
+11 cameras (5,10,…,60) that no row ever trains on, PSNR inside the matte at
+those 11, 720×1280, SH degree 0, masked training, default trainer otherwise
+(NOT the app's avatar recipe — every row shares this one, so the rows compare
+with each other, not with the README). Six training cameras 1,12,23,34,45,56.
+
+| seed | trained on | iters | held-out dB (11 cams) | train dB | splats |
+|---|---|---|---|---|---|
+| LHM prior alone, aligned | — | 0 | **14.9** | — | 20k |
+| SfM cloud | 6 cams | 3k | 19.6 | 24.1 | 60k |
+| SfM cloud | 6 cams | 30k | 20.0 | 27.9 | 182k |
+| **LHM prior** | **6 cams** | **3k** | **22.1** | 33.1 | 20k |
+| LHM prior | 6 cams | 30k | 21.7 | 42.4 | 61k |
+| LHM prior, all rows frozen | 6 cams | 3k / 30k | 21.3 / 20.9 | 28 / 30 | 20k |
+| LHM prior, unseen third frozen+protected | 6 cams | 3k / 10k / 30k | 22.1 / 21.8 / 21.7 | 32 / 36 / 43 | 20k–61k |
+| SfM cloud (the full orbit) | 54 cams | 3k | 21.6 | 21.6 | 60k |
+| SfM cloud (the full orbit) | 54 cams | 30k | **23.2** | 23.6 | 182k |
+
+Sheet, held-out camera 50 (photo · prior alone · prior+6 · cloud+6 · cloud+54):
+`scratch/keyhole_sheet_cam50.png`. Harness rows: `keyhole_run.mjs
+"dir=keyhole&test=5,10,15,20,25,30,35,40,50,55,60&train=1,12,23,34,45,56&seed=prior_sfm.ply&iters=3000&tag=…"`.
+
+**What it says.**
+- The prior seed is worth **+2.5 dB** over the cloud seed at six photos and
+  equal budget, and by eye it is the difference between a person and a
+  streaked torso without legs.
+- Six photos plus the prior at 3k (22.1) beat the full orbit at 3k (21.6) and
+  sit **1 dB under** the full orbit at 30k (23.2). "Some images" is a real
+  product point, not a toy.
+- **More iterations hurt at six photos**: 42 dB on the training views, held-out
+  down 0.4 dB — the classic few-view overfit. Freezing the unseen third of the
+  seed (`prior_cover.py`: in front of the prior's own depth, inside the matte,
+  ≥ 2 cameras) changes nothing (22.06 vs 22.10): the drift is on the SEEN
+  side, splats specialising to six views. Freezing everything costs 0.8 dB —
+  the seen part needs to move to absorb the 1.8 cm alignment error.
+- The visible residual is Multi-HMR's pose, not the fit: the prior's left arm
+  hangs a hand's width from the photo's, and prior+6 keeps a ghost of it.
+
+**Next**, in order: (1) a few-view regulariser instead of position freezing —
+the trainer already has the knobs (opacity/needle reg, relocation off,
+lower position lr); the 30k row is the test bed. (2) Fix the arm: refine the
+SMPL-X pose against the triangulated joints before posing (a 22-joint IK on
+the prior's own layer), or pose per training photo. (3) The app's avatar
+recipe on the same rows so the number is comparable to the README. (4) LHM++
+when its code lands (several photos into the prior itself). (5) A service:
+photos in, `posed.ply` + `joints.json` out, on this box for now.
+
+## 2026-09-18e (Splat.js makes the avatar and hands it over)
+
+The division of labour, from the user: "splat-js need to hand off the avatar
+once it's finished, no need to animate it there also no need to actually set it
+to the user, so the ui is just for the creation, the inspection is then done in
+splat rigger, including the animation attachment etc."
+
+So there is a second ending. `?handoff=1` (and only inside a frame): the finished
+package is posted to whoever opened this tool and that is the end of the job —
+no walk preview, no account step, no upload. The standalone endings are
+untouched, because the public tool at arrival.space/splat-js has no rigger
+behind it: Download package, Use as my avatar, and the walk stay there.
+
+**The message vocabulary is the rigger's own**, so nothing new had to be
+invented and a host that already listens to the rigger needs one more `source`:
+
+```
+{ source: 'splat-js', type: 'splat-asset', assetType: 'splat'|'binding'|'fit'|'thumbnail', name, buffer }
+{ source: 'splat-js', type: 'splat-done',  name }
+{ source: 'splat-js', type: 'splat-error', message }
+```
+
+Same-origin only, buffers transferred rather than copied. The SOG compression is
+skipped on this route — the rigger takes the PLY and the host compresses when it
+uploads.
+
+**Verified end to end** with `tests/e2e/avatar_handoff.mjs`: a host page
+(`scratch/handoff_host.html`) iframes the app with the flag, the run goes from
+the clip to a bound avatar, and the host collects
+
+| asset | |
+|---|---|
+| splat | tom_avatar.ply, 20.01 MB |
+| binding | tom_avatar_binding.bin, 1.86 MB |
+| fit | tom_avatar_fit.json |
+| thumbnail | tom_avatar.png |
+
+then `splat-done`, 114 s after the video went in. That test file is the
+executable spec for the rigger side.
+
+**What the rigger still needs** (client_git, not touched here): open
+`/splat-js/app/index.html?handoff=1` in a frame — both tools are siblings in the
+release web root and under the client's dev server — collect the same messages
+under `source === 'splat-js'`, and load the three files the way it already loads
+`?splat=&fit=&bin=`. From there its own path continues unchanged: inspect,
+attach clips, post the assets to arrival.space.
+
+Why this shape and not a port: everything under `app/avatar/` imports only the
+Splat.js library and three small helpers, so the pipeline is portable already —
+but the capture shell (video intake, the review card, the strip, the solve and
+training progress, the viewer) is `app/js/app.js`, and that is what a port would
+have to rebuild. A frame and five message types cost neither.
+
 ## 2026-09-18d (the avatar walks, and nothing stands in front of it)
 
 Two asks. "The use as my avatar need to show the avatar in full the user needs
@@ -4425,3 +4784,7 @@ All nine republished under stamped filenames with their entities repointed —
 overwriting in place is not publishing here (Cloudflare sits in front of
 CloudFront and kept serving a week-old copy), and a new URL is the only
 reliable cache break.
+
+### 2026-09-23 — WEB-7811: "Forgot your password?" on the sign-in popup
+
+The Upload/Share sign-in popup is the backend's OAuth page (`backend_git/user_server/api/mcp-oauth.js`), and it had no password reset. It now has a "Forgot your password?" link under the password field, visible only once "Sign in with Email" is chosen. It sends the existing arrival.space reset mail (`/sendPasswordResetMail`) and keeps the popup open. backend 5d22d0c, on dev, not live. Nothing changed in Splat.js.
