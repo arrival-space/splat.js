@@ -1111,6 +1111,13 @@ export class GSTrainer {
       const sLr = 1e-2 * Math.pow(0.6, Math.min(1, this.iter / this.horizon));
       this.adamData[3] = this.adamData[4] = this.adamData[5] = sLr;
     }
+    // opts.geomLrScale: one factor on the position, scale and rotation learning
+    // rates (colour and opacity untouched). 0 = the seed's geometry is final,
+    // only the photographs' colours go in; a fraction keeps a ready-made
+    // surface (a generative human prior, 2026-09-20) close to its clean shape
+    // while the photographs correct it. opts.lockGeom is the 0 case.
+    const gls = this.opts.lockGeom ? 0 : this.opts.geomLrScale;
+    if (gls != null && gls !== 1) for (let k = 0; k < 10; k++) this.adamData[k] *= gls;
     d.queue.writeBuffer(this.uniAdam, 0, this._warmed(this.adamData, 0, 14));
     if (this.shK) {
       this.shAdamData[3] = this.iter;

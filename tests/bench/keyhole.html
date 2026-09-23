@@ -1,0 +1,15 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>keyhole</title>
+<link rel="stylesheet" href="/app/css/app.css">
+<style>
+  body { margin: 0; background: #111; color: #ddd; font: 13px/1.4 ui-monospace, monospace; display: block; }
+  pre#log { margin: 0; padding: 8px; white-space: pre-wrap; max-height: 40vh; overflow: auto; }
+  #dock { position: relative; }
+  #stage { position: relative; min-height: 640px; }
+  #cv { display: block; }
+</style>
+<pre id="log"></pre>
+<div id="dock" class="dock"></div>
+<div id="stage" class="stage"><canvas id="cv" width="540" height="960"></canvas></div>
+<script type="module" src="./keyhole.js"></script>
