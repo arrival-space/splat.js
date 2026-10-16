@@ -4,10 +4,6 @@
 import { buildScenery } from '../render/scenery.js';
 import { material, meshEntity } from './pcMesh.js';
 
-// with Google's tiles: our lake this far (m) under the lake level, below Google's photographed water,
-// still above the foot of the island's seawall (0.5 m under)
-const GOOGLE_LAKE_SINK = 0.45;
-
 export class SceneryVisual {
   constructor(app, parent, world) {
     this.root = new pc.Entity('MeigsScenery');
@@ -31,13 +27,10 @@ export class SceneryVisual {
   set visible(v) { this.root.enabled = v; }
   /** Hide the stand-in city once the OpenStreetMap one is up. */
   set standInCity(v) { this.city.enabled = v; }
-  /**
-   * With Google's tiles only Meigs itself stays. The lake plane sinks just under Google's water, so
-   * it shows only where the airfield is cut out of the tiles (the box around the island).
-   */
+  /** With Google's tiles only Meigs itself stays; Google's own lake is the water. */
   setGoogle(on) {
     this.city.enabled = !on && this.city.enabled;
-    this.lake?.setLocalPosition(0, on ? -GOOGLE_LAKE_SINK : 0, 0);
+    if (this.lake) this.lake.enabled = !on;
   }
   destroy() { this.root.destroy(); }
 }

@@ -29,7 +29,8 @@ the parking spot. Enter a Google Maps API key with the Map Tiles API in its
 settings, and once the first tiles are in, Google's photographed Chicago becomes
 the city, the land and the lake. Only **Meigs Field** stays ours: a box around
 Northerly Island is cut out of the tiles, so the 1990s field shows flat and paved
-instead of today's park. Inside the box, our own lake fills in around the island.
+instead of today's park. The cut starts half a metre above the lake, so Google's
+water stays all round the island.
 
 The OpenStreetMap buildings stay as invisible collision volumes. Without a key,
 or before the tiles arrive, the procedural OpenStreetMap city is drawn as before.

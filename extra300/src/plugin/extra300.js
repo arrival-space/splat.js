@@ -26,6 +26,7 @@ import { buildSkyDome } from '../render/sky.js';
 import { carveBox } from '../render/carve.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane
+const CARVE_ABOVE_LAKE = 0.5; // m: Google's tiles are cut away above this, over the airfield [tune]
 
 export class Extra300 extends ArrivalScript {
   static scriptName = 'extra300Meigs';
@@ -158,6 +159,7 @@ export class Extra300 extends ArrivalScript {
       this.world.attachOsm(osm, this.skylineYear);
       this.city = new OsmVisual(this.app, this._worldRoot, this.world, this._cityOptions());
       this.city.visible = this.showScenery;
+      if (this._google) this.city.setGoogle(true);
       // the stand-in skyline stays up until the last OSM tile is built (see update)
     } catch (e) {
       console.warn('[extra300] OpenStreetMap city unavailable, keeping the stand-in skyline:', e);
@@ -169,7 +171,7 @@ export class Extra300 extends ArrivalScript {
   // lake and the river from OpenStreetMap. Our buildings stay as the invisible collision volumes.
   _googleTick(dt) {
     // the vibe sets app.googleTilesLoading while its first tiles stream in and clears it when they are up
-    if (!this._google && this.app.googleTilesLoading === false && this.city) this._setGoogle(true);
+    if (!this._google && this.app.googleTilesLoading === false) this._setGoogle(true);
     // (re)publish the cut-out now and then: the tiles vibe may start after us, or be re-added
     this._carveTimer = (this._carveTimer ?? 0) - dt;
     if (this._carveTimer <= 0) {
@@ -192,7 +194,8 @@ export class Extra300 extends ArrivalScript {
 
   _publishCarve() {
     if (!this._worldRoot) return;
-    const { local, half } = carveBox(this.world.airfieldBox(), this.world.water - 15, 400);
+    // from just above the lake up: the island's park, hills and trees go, Google's water around it stays
+    const { local, half } = carveBox(this.world.airfieldBox(), this.world.water + CARVE_ABOVE_LAKE, 400);
     const m = new pc.Mat4();
     m.set(local);
     const world = new pc.Mat4().mul2(this._worldRoot.getWorldTransform(), m);

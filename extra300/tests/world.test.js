@@ -60,7 +60,7 @@ test('triangulation covers a polygon exactly (area preserved)', () => {
 test('the Google-tiles cut-out covers the runway and the island, and stops short of the Loop', async () => {
   const { carveBox } = await import('../src/render/carve.js');
   const w = buildMeigs();
-  const { local, half } = carveBox(w.airfieldBox(), w.water - 15, 400);
+  const { local, half } = carveBox(w.airfieldBox(), w.water + 0.5, 400);
   // render-metres point → box-local, by the transpose (the box is a pure rotation + offset)
   const inside = (n, e, h = 0) => {
     const p = [e - local[12], h - local[13], -n - local[14]];
