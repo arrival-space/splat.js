@@ -3,7 +3,7 @@
 // `ArrivalScript` / `ArrivalSpace` surface for the vibe to run. Lets the
 // plugin be loaded, flown and screenshotted headlessly (tests/e2e).
 //
-// URL parameters: ?fly=1 board immediately, ?view=chase|tower|flyby|cockpit,
+// URL parameters: ?fly=1 board immediately (?intro=1 with the intro film), ?view=chase|tower|flyby|cockpit,
 // ?bundle=0 load the sources instead of dist/ (faster edit-reload).
 import * as pc from 'playcanvas';
 
@@ -91,6 +91,7 @@ camera.setPosition(ap.x - 9, 2.2, ap.z + 7);
 camera.lookAt(ap.x, 1, ap.z);
 
 if (params.get('fly') === '1') {
+  vibe.playIntro = params.get('intro') === '1';   // the film only when asked for: ?intro=1
   vibe._enter();
   const view = params.get('view');
   if (view) { while (vibe.cameraRig.view !== view) vibe.cameraRig.cycle(); vibe._setAvatarVisible(view !== 'cockpit'); vibe.visual.setCockpitView(view === 'cockpit'); }

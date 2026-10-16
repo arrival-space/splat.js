@@ -103,6 +103,21 @@ export class CameraRig {
   centre() { this.lookYaw = 0; this.lookPitch = 0; }
 
   /**
+   * A camera at body-axes point `eye` looking at body-axes point `at` (both from R, as the model is
+   * built), carried along with the airplane: the intro's shots.
+   */
+  bodyPose(ac, eye, at, fov, cg = [0, 0, 0]) {
+    const pos = nedToRender(ac.state.pos);
+    const rot = simToRenderQuat(ac.state.q);
+    const toWorld = (p) => {
+      const o = rotateVec(rot, fromBody([p[0] - cg[0], p[1] - cg[1], p[2] - cg[2]]));
+      return [pos[0] + o[0], pos[1] + o[1], pos[2] + o[2]];
+    };
+    const e = toWorld(eye), t = toWorld(at);
+    return { pos: e, rot: lookRotation(e, t), fov };
+  }
+
+  /**
    * @param {object} ac  aircraft (sim) — state.pos (NED), state.q, state.vel
    * @param {number} dt
    * @returns {{ pos: number[], rot: number[], fov: number }} render space, metres

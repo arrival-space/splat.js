@@ -26,6 +26,7 @@ import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
 import { buildSkyDome } from '../render/sky.js';
 import { carveBox } from '../render/carve.js';
+import { INTRO_CARDS, INTRO_LENGTH, INTRO_STARTER, introAt } from '../render/intro.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane
 // m above the datum (the runway): over the airfield Google's tiles are cut away above this. Just under
@@ -49,6 +50,7 @@ export class Extra300 extends ArrivalScript {
   skylineYear = 2026;
   cityDetail = 'full';
   easyMode = false;
+  playIntro = true;
   seatAnimation = 'driving.glb';
   avatarSeatHeight = 0.50;    // the seated pose has its origin ~0.5 m under the hips: hips on the cushion, feet inside the floor
   avatarSeatForward = -1.20;
@@ -67,6 +69,7 @@ export class Extra300 extends ArrivalScript {
     skylineYear: { title: 'Skyline year (2026 = today, 2002 = the last Meigs year)', min: 1980, max: 2026, step: 1 },
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
+    playIntro: { title: 'Intro film on first boarding (skippable)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
     avatarSeatHeight: { title: 'Pilot seat: avatar height (m, body z: + is down)', min: -1.5, max: 1.0, step: 0.01 },
     avatarSeatForward: { title: 'Pilot seat: avatar fore/aft (m, body x: + is forward)', min: -2.0, max: 0.5, step: 0.01 },
@@ -137,6 +140,8 @@ export class Extra300 extends ArrivalScript {
     // tap / click the airplane to board
     this._unsubClick = ArrivalSpace.onEntityClick?.(this.visual.root, () => { if (!this._flying) this._enter(); });
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
+    this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
+    this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
     if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._enter();
     if (this.hud.buttons.exit) this.hud.buttons.exit.onclick = () => this._exit();
     if (this.hud.buttons.view) this.hud.buttons.view.onclick = () => this._action('view');
@@ -307,12 +312,68 @@ export class Extra300 extends ArrivalScript {
     this._pose = this.cameraRig.update(this.ac, 0, this.ac.cg);
     this.hud.showPrompt('');
     this.hud.setFlying(true, this._panelVisible);
-    // the controls card opens by itself the first time; H toggles it from then on
-    if (!this._helpShown) { this.hud.toggleHelp(true); this._helpShown = true; }
+    // the first boarding plays the intro film; after it (and on later boardings) only the small
+    // take-off card shows, the full table is behind Controls / H
+    if (this.playIntro && !this._introPlayed && !this._demo) this._startIntro();
+    else this._showTakeoffCard();
+  }
+
+  _showTakeoffCard() {
+    this._helpAutoHidden = false;
+    this.hud.showQuick(this.ac.agl < 30);
+  }
+
+  // ── the intro film ──────────────────────────────────────────────────────
+  _startIntro() {
+    this._introPlayed = true;
+    this._intro = { t: 0 };
+    const c = this.ac.controls;
+    // it starts with the engine still: the first shot watches the starter turn the prop over
+    this.ac.engine.running = false;
+    this.ac.rpm = 0;
+    c.throttle = 0; c.parkingBrake = true; c.starter = false;
+    this.mapper.throttle = 0;
+    this._setAvatarVisible(true);
+    this.visual.setCockpitView(false);
+    this.hud.showIntro(true);
+  }
+
+  _introTick(dt) {
+    const it = this._intro;
+    it.t += dt;
+    const c = this.ac.controls;
+    c.throttle = 0; c.parkingBrake = true;
+    c.starter = it.t > INTRO_STARTER[0] && it.t < INTRO_STARTER[1] && !this.ac.engine.running;
+    const shot = introAt(it.t);
+    // the last second flies into the rear seat: the pilot's own head goes, and the canopy
+    const inside = it.t > INTRO_LENGTH - 1.2;
+    this._setAvatarVisible(!inside);
+    this.visual.setCockpitView(inside);
+    this.hud.setIntroCard(shot.card >= 0 ? INTRO_CARDS[shot.card] : null, shot.cardAlpha, Math.min(1, it.t / INTRO_LENGTH));
+    if (shot.done) { this._endIntro(); return null; }
+    return this.cameraRig.bodyPose(this.ac, shot.eye, shot.at, shot.fov, this.ac.cg);
+  }
+
+  /** The film ends (or is skipped): the engine runs, the brake is off, the pilot is in the cockpit view. */
+  _endIntro() {
+    if (!this._intro) return;
+    this._intro = null;
+    const c = this.ac.controls;
+    c.starter = false;
+    c.parkingBrake = false;
+    if (this.engineRunningAtStart && !this.ac.engine.running) { this.ac.engine.running = true; this.ac.rpm = Math.max(this.ac.rpm, 750); }
+    this.hud.showIntro(false);
+    this.hud.setFlying(true, this._panelVisible);
+    this.cameraRig.view = 'cockpit';
+    this.cameraRig.centre();
+    this._setAvatarVisible(false);
+    this.visual.setCockpitView(true);
+    this._showTakeoffCard();
   }
 
   _exit() {
     if (!this._flying) return;
+    this._intro = null;
     if (this._demo) this._stopDemo('Demo ended');
     this._flying = false;
     this.unlockKeyboard();
@@ -360,6 +421,8 @@ export class Extra300 extends ArrivalScript {
   // ── demo flight ──────────────────────────────────────────────────────────
   _startDemo() {
     if (!this.isEnabled) return;
+    this._introPlayed = true;
+    if (this._intro) this._endIntro();
     if (!this._flying) this._enter();
     this._paused = false;
     this._resetToRunway();
@@ -424,6 +487,13 @@ export class Extra300 extends ArrivalScript {
     if (!this._flying) {
       if (key === 'e' && this._nearAircraft()) { this._enter(); e.preventDefault(); }
       if (key === 'o') { this._startDemo(); e.preventDefault(); }
+      return;
+    }
+    // during the intro: Space, Enter or Esc skip it; nothing else flies the airplane yet
+    if (this._intro) {
+      if (key === ' ' || key === 'Enter' || key === 'Escape') this._endIntro();
+      e.preventDefault();
+      e.stopPropagation();
       return;
     }
     // any flight control key takes the airplane back from the demo pilot
@@ -515,7 +585,9 @@ export class Extra300 extends ArrivalScript {
       yoke: this._yoke ? { x: this._mouse.x, y: this._mouse.y } : null,
     };
     if (this._demo && raw.pad && raw.pad.axes.slice(0, 4).some((a) => Math.abs(a) > 0.35)) this._stopDemo();
-    if (this._demo) {
+    if (this._intro) {
+      // the film: nobody at the controls yet, the airplane stands on its brakes
+    } else if (this._demo) {
       if (!this._paused) this._demo.step(Math.min(dt, 0.1));
       this._directCamera();
       this.hud.showDemoStatus(Extra300.DEMO_TEXT[this._demo.phase] || '');
@@ -530,7 +602,7 @@ export class Extra300 extends ArrivalScript {
     if (!this._paused) this.ac.update(dt);
     this._checkBuildings();
     // the controls card has done its job once the airplane is flying
-    if (!this._helpAutoHidden && this.ac.agl > 30) { this._helpAutoHidden = true; this.hud.toggleHelp(false); }
+    if (!this._helpAutoHidden && this.ac.agl > 30) { this._helpAutoHidden = true; this.hud.showQuick(false); }
     const v = this.instruments.update(this.ac, dt);
     this.visual.update(this.ac, this._paused ? 0 : dt);
 
@@ -539,7 +611,7 @@ export class Extra300 extends ArrivalScript {
       if (ev.e === 'splash') this.hud.flash('In the lake. Backspace to reset', 4);
     }
 
-    this._pose = this.cameraRig.update(this.ac, dt, this.ac.cg);
+    this._pose = (this._intro && this._introTick(dt)) || this.cameraRig.update(this.ac, dt, this.ac.cg);
 
     this.sound.update({
       rpm: this.ac.rpm,
@@ -551,7 +623,7 @@ export class Extra300 extends ArrivalScript {
     });
 
     this._panelAcc += dt;
-    if (this._panelVisible && this._panelAcc > 1 / 30) {
+    if (this._panelVisible && !this._intro && this._panelAcc > 1 / 30) {
       this._panelAcc = 0;
       const c = this.ac.controls;
       this.hud.panel.draw(v, {
@@ -559,9 +631,6 @@ export class Extra300 extends ArrivalScript {
         engineRunning: this.ac.engine.running, paused: this._paused,
       });
     }
-    const e = this.ac.euler;
-    this.hud.readout.textContent = `H — controls   ${this.cameraRig.view.toUpperCase()}  IAS ${Math.round(v.ias)} kt  ALT ${Math.round(v.altitude)} ft  HDG ${String(Math.round(v.compass)).padStart(3, '0')}  `
-      + `pitch ${(e.theta / DEG).toFixed(0)}°  bank ${(e.phi / DEG).toFixed(0)}°  ${Math.round(v.rpm)} rpm  ${v.g.toFixed(1)} g${this.mapper.easy ? '   EASY' : ''}`;
   }
 
   postUpdate() {

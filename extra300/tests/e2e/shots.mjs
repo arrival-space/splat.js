@@ -62,9 +62,15 @@ await shot('08-loop-lowpass', '?fly=1&view=chase', () => {
   await page.keyboard.press('e');
   const boarded = await page.evaluate(() => window.vibe._flying);
   if (!boarded) errors.push('roll: pressing E beside the airplane did not board it');
+  // the first boarding plays the intro film; Space skips it
+  const filming = await page.evaluate(() => !!window.vibe._intro);
+  await page.keyboard.press(' ');
+  const skipped = await page.evaluate(() => !window.vibe._intro && window.vibe.ac.engine.running);
+  if (!filming || !skipped) errors.push(`roll: intro ${filming ? 'played' : 'did not play'}, ${skipped ? 'Space skipped it' : 'Space did not skip it'}`);
+  const t0 = await page.evaluate(() => window.vibe.ac.time);
   await page.keyboard.down('r');
   // software GL is slow with the whole city: wait on simulated time, not the wall clock
-  await page.waitForFunction(() => window.vibe.ac.time > 5, null, { timeout: 120000 });
+  await page.waitForFunction((t0) => window.vibe.ac.time > t0 + 5, t0, { timeout: 120000 });
   const s = await page.evaluate(() => ({ tas: window.vibe.ac.out.tas, rpm: window.vibe.ac.rpm, t: window.vibe.ac.time, dn: window.vibe.ac.state.pos[0] }));
   await page.keyboard.up('r');
   console.log(`takeoff roll in the browser: ${s.t.toFixed(1)} s simulated, ${s.rpm.toFixed(0)} rpm, ${(s.tas / 0.5144).toFixed(0)} kt`);
@@ -83,10 +89,10 @@ await shot('08-loop-lowpass', '?fly=1&view=chase', () => {
   const onTop = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === window.vibe.hud.easyButton, box);
   if (!onTop) errors.push('easy: the button is not the topmost element under the pointer');
   await page.mouse.click(box.x, box.y);
-  const on = await page.evaluate(() => window.vibe.mapper.easy && /ON/.test(window.vibe.hud.easyButton.textContent));
+  const on = await page.evaluate(() => window.vibe.mapper.easy && /Easy mode/.test(window.vibe.hud.easyButton.textContent));
   await page.screenshot({ path: join(out, '09-easy-mode.png') });
   await page.keyboard.press('l');
-  const off = await page.evaluate(() => !window.vibe.mapper.easy && /off/.test(window.vibe.hud.easyButton.textContent));
+  const off = await page.evaluate(() => !window.vibe.mapper.easy);
   if (!on) errors.push('easy: the click did not switch easy mode on');
   if (!off) errors.push('easy: L did not switch it off again');
   console.log(`easy mode: click ${on ? 'on' : 'FAILED'}, L ${off ? 'off' : 'FAILED'}`);

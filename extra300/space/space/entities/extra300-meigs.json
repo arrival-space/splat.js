@@ -29,6 +29,7 @@
       "skylineYear": 2026,
       "cityDetail": "full",
       "easyMode": false,
+      "playIntro": true,
       "seatAnimation": "driving.glb",
       "avatarSeatHeight": 0.5,
       "avatarSeatForward": -1.2

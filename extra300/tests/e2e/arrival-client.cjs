@@ -183,7 +183,9 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     if (!vibe) return { error: 'no vibe' };
     const r = {};
     r.alreadyFlyingFromClick = vibe._flying;
+    vibe.playIntro = false;   // straight to flying: the film has its own checks (tests/intro.test.js, the harness ?intro=1)
     try { vibe._enter(); } catch (e) { r.enterError = String(e && e.stack || e); }
+    if (vibe._intro) vibe._endIntro();   // boarded by the click above, which started the film
     r.flying = vibe._flying;
     r.attachHandle = vibe._attach ? Object.keys(vibe._attach) : null;
     r.localAttached = (AS.getLocalAttachedEntity && AS.getLocalAttachedEntity()) === vibe.visual.root;
