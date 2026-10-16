@@ -26,7 +26,10 @@ import { buildSkyDome } from '../render/sky.js';
 import { carveBox } from '../render/carve.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane
-const CARVE_ABOVE_LAKE = 0.5; // m: Google's tiles are cut away above this, over the airfield [tune]
+// m above the datum (the runway): over the airfield Google's tiles are cut away above this. Just under
+// our island's surface, so their water (photographed, not flat: it varies by a metre or more from
+// tile to tile) and low shore all stay, and what's left inside the island is hidden under it.
+const CARVE_FLOOR = -0.3;
 
 export class Extra300 extends ArrivalScript {
   static scriptName = 'extra300Meigs';
@@ -194,8 +197,8 @@ export class Extra300 extends ArrivalScript {
 
   _publishCarve() {
     if (!this._worldRoot) return;
-    // from just above the lake up: the island's park, hills and trees go, Google's water around it stays
-    const { local, half } = carveBox(this.world.airfieldBox(), this.world.water + CARVE_ABOVE_LAKE, 400);
+    // from just under the runway up: the island's park, hills and trees go, Google's water around it stays
+    const { local, half } = carveBox(this.world.airfieldBox(), CARVE_FLOOR, 400);
     const m = new pc.Mat4();
     m.set(local);
     const world = new pc.Mat4().mul2(this._worldRoot.getWorldTransform(), m);

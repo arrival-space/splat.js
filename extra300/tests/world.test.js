@@ -60,7 +60,7 @@ test('triangulation covers a polygon exactly (area preserved)', () => {
 test('the Google-tiles cut-out covers the runway and the island, and stops short of the Loop', async () => {
   const { carveBox } = await import('../src/render/carve.js');
   const w = buildMeigs();
-  const { local, half } = carveBox(w.airfieldBox(), w.water + 0.5, 400);
+  const { local, half } = carveBox(w.airfieldBox(), -0.3, 400);
   // render-metres point → box-local, by the transpose (the box is a pure rotation + offset)
   const inside = (n, e, h = 0) => {
     const p = [e - local[12], h - local[13], -n - local[14]];
@@ -73,4 +73,13 @@ test('the Google-tiles cut-out covers the runway and the island, and stops short
   const sears = w.landmarks.find((l) => /Sears|Willis/.test(l.name));
   if (sears) assert.ok(!inside(...sears.ne, 100));
   assert.ok(!inside(rw.centre[0], rw.centre[1] - 1500), '1.5 km west: the mainland');
+});
+
+test('the cut-out leaves Google\'s water: it starts just under the runway, metres above the lake', async () => {
+  const { carveBox } = await import('../src/render/carve.js');
+  const w = buildMeigs();
+  const { local, half } = carveBox(w.airfieldBox(), -0.3, 400);
+  const bottom = local[13] - half[1];
+  assert.ok(Math.abs(bottom + 0.3) < 1e-9);
+  assert.ok(bottom - w.water > 4, `${(bottom - w.water).toFixed(1)} m above the lake`);
 });
