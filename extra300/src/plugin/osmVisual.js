@@ -80,6 +80,8 @@ export class OsmVisual {
 
     // ground: land, parks, inland water, roads, rail, and the stone edge of the lake
     meshEntity(app, this.root, 'land', groundLayer(osm.land, 0), material('#8b8d84'), { castShadows: false });
+    // past the box: the suburbs out to the horizon, west of the lakefront
+    if (world.farLand) meshEntity(app, this.root, 'farLand', groundLayer([world.farLand], 0), material('#7d8573'), { castShadows: false });
     meshEntity(app, this.root, 'parks', groundLayer(osm.parks, 0.01), overlay('#5f8240', -1), { castShadows: false });
     meshEntity(app, this.root, 'river', groundLayer(osm.water, 0.01), overlay('#355f78', -1), { castShadows: false });
     meshEntity(app, this.root, 'roads', ribbons(osm.roads, 0.02), overlay('#4a4b4e', -2), { castShadows: false });

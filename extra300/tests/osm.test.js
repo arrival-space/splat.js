@@ -174,3 +174,18 @@ test('every triangle faces outward: winding agrees with its normal, and the norm
     }
   }
 });
+
+test('world: past the OSM box the suburbs are land and the lake is lake, out to the horizon', async () => {
+  const { CHICAGO_OSM } = await import('../src/world/data/chicagoOsm.js');
+  const w = buildMeigs();
+  w.attachOsm(await inflateOsm(CHICAGO_OSM));
+  const at = (lat, lon) => { const [n, e] = w.frame.toNE(lat, lon); return w.ground(n, e).surface; };
+  assert.equal(at(42.05, -87.70), 'grass', 'Evanston');
+  assert.equal(at(41.885, -87.79), 'grass', 'Oak Park');
+  assert.equal(at(41.80, -87.60), 'grass', 'Hyde Park');
+  assert.equal(at(41.58, -87.33), 'grass', 'Gary');
+  assert.equal(at(42.05, -87.62), 'water', 'off Evanston');
+  assert.equal(at(41.80, -87.55), 'water', 'off Hyde Park');
+  assert.equal(at(42.0, -87.3), 'water', 'mid-lake');
+  assert.ok(groundLayer([w.farLand], 0).vertexCount > 10, 'and it draws');
+});

@@ -9,7 +9,7 @@
 // today's Northerly Island, whose shoreline still follows the old fill.
 
 import { LocalFrame, pointInPolygon } from './geo.js';
-import { maskLookup } from './osmCodec.js';
+import { MASK_CELL, maskLookup } from './osmCodec.js';
 
 const FT = 0.3048;
 
@@ -46,6 +46,14 @@ export const MEIGS = {
     [41.8925, -87.6125], [41.8935, -87.6160], [41.9000, -87.6205], [41.9100, -87.6255],
     [41.9300, -87.6330],
   ],
+  // the lakefront beyond the OpenStreetMap box, north and south, outward from it [approx: beaches and
+  // harbours read off the map]; only for the far ground and for the gear, past the detailed city
+  farShore: {
+    north: [[41.927, -87.629], [41.965, -87.635], [41.986, -87.652], [42.020, -87.663], [42.055, -87.670],
+      [42.077, -87.680], [42.135, -87.745], [42.180, -87.780], [42.250, -87.810], [42.400, -87.820]],
+    south: [[41.810, -87.583], [41.794, -87.573], [41.782, -87.573], [41.765, -87.560], [41.758, -87.548],
+      [41.730, -87.527], [41.680, -87.480], [41.640, -87.400], [41.620, -87.330], [41.640, -87.150]],
+  },
   navyPier: [[41.8908, -87.6118], [41.8908, -87.5985], [41.8925, -87.5985], [41.8925, -87.6118]],
   // landmarks, roof heights in metres [verify positions against tiles]
   landmarks: [
@@ -68,6 +76,41 @@ export const MEIGS = {
   // where the Loop's fabric of mid-rises goes (procedural blocks) [approx]
   downtown: { south: 41.8730, north: 41.8960, west: -87.6420, east: -87.6190, minH: 25, maxH: 210, seed: 1982 },
 };
+
+/** Where the lake starts along one row of the land mask: the west end of the last stretch of open water. */
+export function maskShoreE(mask, box, j) {
+  const row = j * mask.nx;
+  // from the east edge, the first cell that starts ~400 m of mostly land westward (piers and harbours don't count)
+  const run = Math.round(400 / MASK_CELL);
+  for (let i = mask.nx - 1; i >= run; i--) {
+    if (!mask.data[row + i]) continue;
+    let land = 0;
+    for (let k = 0; k < run; k++) land += mask.data[row + i - k];
+    if (land > 0.8 * run) return box.x0 + (i + 1) * MASK_CELL;
+  }
+  return box.x0;
+}
+
+/**
+ * The land around the OSM box as one polygon [[e, n], ...] with the box cut out: west of the
+ * lakefront, which leaves the box's north and south edges where the mask says and follows the
+ * far shore points outward to FAR.
+ */
+export function buildFarLand(mask, box, northNE, southNE, FAR = 40000) {
+  const eTop = maskShoreE(mask, box, mask.ny - 1), eBot = maskShoreE(mask, box, 0);
+  const north = northNE.map(([n, e]) => [e, n]).filter(([, n]) => n > box.y1);
+  const south = southNE.map(([n, e]) => [e, n]).filter(([, n]) => n < box.y0);
+  // past the last point the shore runs straight out to the edge of the world
+  const extend = (pts, from, toN) => [...pts, [(pts[pts.length - 1] || from)[0], toN]];
+  const northLine = extend(north, [eTop, box.y1], FAR);
+  const southLine = extend(south, [eBot, box.y0], -FAR);
+  // counter-clockwise from the far south-west corner
+  return [
+    [-FAR, -FAR], ...[...southLine].reverse().map(([e, n]) => [Math.min(e, FAR), n]), [eBot, box.y0],
+    [box.x0, box.y0], [box.x0, box.y1], [eTop, box.y1],
+    ...northLine.map(([e, n]) => [Math.min(e, FAR), n]), [-FAR, FAR],
+  ];
+}
 
 /** Build everything the sim and the renderer need, in metres in the local frame. */
 export function buildMeigs(data = MEIGS) {
@@ -98,11 +141,16 @@ export function buildMeigs(data = MEIGS) {
 
   /** Ground query used by the gear: height above the datum, normal (NED up), surface. */
   let isLand = null;   // OSM land/water raster, once attached
+  let farLand = null;  // [[e, n], ...] the land around the OSM box, out to the horizon
+  let inBox = () => false;
   const ground = (n, e) => {
     const [al, ac] = runwayLocal(n, e);
     if (Math.abs(al) <= len / 2 + 30 && Math.abs(ac) <= wid / 2) return { h: 0, normal: UP, surface: 'asphalt' };
     if (pointInPolygon(n, e, island)) return { h: 0, normal: UP, surface: 'grass' };
-    if (isLand) return isLand(e, n) ? { h: 0, normal: UP, surface: 'grass' } : { h: water, normal: UP, surface: 'water' };
+    if (isLand) {
+      const land = inBox(e, n) ? isLand(e, n) : pointInPolygon(e, n, farLand);
+      return land ? { h: 0, normal: UP, surface: 'grass' } : { h: water, normal: UP, surface: 'water' };
+    }
     if (pointInPolygon(n, e, pier)) return { h: 1.5, normal: UP, surface: 'asphalt' };
     if (pointInPolygon(n, e, mainland)) return { h: 0.5, normal: UP, surface: 'grass' };
     return { h: water, normal: UP, surface: 'water' };
@@ -134,6 +182,9 @@ export function buildMeigs(data = MEIGS) {
     attachOsm(osm, year = 2026) {
       this.osm = osm;
       isLand = maskLookup(osm.mask, osm.header.box);
+      const b = osm.header.box;
+      inBox = (e, n) => e >= b.x0 && e < b.x1 && n >= b.y0 && n < b.y1;
+      farLand = this.farLand = buildFarLand(osm.mask, b, data.farShore.north.map(toNE), data.farShore.south.map(toNE));
       skylineYear = year;
       grid = new Map();
       osm.buildings.forEach((b, i) => {
