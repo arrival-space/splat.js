@@ -1,0 +1,25 @@
+{
+  "id": "fcc35518-309c-47e1-8d93-d939d6bca475",
+  "type": "Gate",
+  "data": {
+    "title": "",
+    "date": "",
+    "link": "",
+    "platform": "<auto-detect>",
+    "description": "",
+    "copyright": "",
+    "category": "",
+    "videoURL": "",
+    "logoURL": "",
+    "logoLinkURL": "",
+    "desktopEnabled": false,
+    "mobileEnabled": false,
+    "vrEnabled": false,
+    "openAsTab": false,
+    "enableWebStream": false,
+    "enableWebProxy": false,
+    "embeddedEnabled": false,
+    "screenSelect": 0
+  },
+  "state": {}
+}

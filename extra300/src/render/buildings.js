@@ -154,7 +154,7 @@ function pointed(wallsMb, roofMb, ring, y0, h, f, wallColor, roofColor, dome) {
  * @returns {{ key: string, style: string, kind: 'walls'|'roofs', mesh: MeshBuilder }[]}
  */
 export function buildCity(buildings, opts = {}) {
-  const year = opts.year ?? 2002;
+  const year = opts.year ?? 2026;
   const minHeight = opts.minHeight ?? 0;
   const tile = opts.tile ?? 1200;
   const out = new Map();

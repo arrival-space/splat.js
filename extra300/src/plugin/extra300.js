@@ -38,7 +38,7 @@ export class Extra300 extends ArrivalScript {
   windFromDeg = 0;
   qnhInHg = 29.92;
   oatC = 15;
-  skylineYear = 2002;
+  skylineYear = 2026;
   cityDetail = 'full';
 
   static properties = {
@@ -52,7 +52,7 @@ export class Extra300 extends ArrivalScript {
     windFromDeg: { title: 'Wind from (°true)', min: 0, max: 359, step: 1 },
     qnhInHg: { title: 'QNH (inHg)', min: 28.5, max: 31, step: 0.01 },
     oatC: { title: 'Sea-level temperature (°C)', min: -30, max: 45, step: 1 },
-    skylineYear: { title: 'Skyline year (Meigs closed 2003)', min: 1980, max: 2026, step: 1 },
+    skylineYear: { title: 'Skyline year (2026 = today, 2002 = the last Meigs year)', min: 1980, max: 2026, step: 1 },
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
   };
 
@@ -152,7 +152,7 @@ export class Extra300 extends ArrivalScript {
       this.world.attachOsm(osm, this.skylineYear);
       this.city = new OsmVisual(this.app, this._worldRoot, this.world, this._cityOptions());
       this.city.visible = this.showScenery;
-      this.scenery.standInCity = false;
+      // the stand-in skyline stays up until the last OSM tile is built (see update)
     } catch (e) {
       console.warn('[extra300] OpenStreetMap city unavailable, keeping the stand-in skyline:', e);
     }
@@ -347,7 +347,10 @@ export class Extra300 extends ArrivalScript {
   update(dt) {
     if (!this.isEnabled) return;
     this.hud.tick();
-    if (this.city && this.city.queue.length) this.city.tick(this._flying ? 3 : 8);
+    if (this.city && this.city.queue.length) {
+      this.city.tick(this._flying ? 3 : 8);
+      if (!this.city.queue.length) this.scenery.standInCity = false;
+    }
     if (!this._flying) {
       this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? 'Extra 300L' : 'Press E to fly the Extra 300L') : '');
       return;

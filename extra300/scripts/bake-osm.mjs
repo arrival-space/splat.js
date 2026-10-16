@@ -8,7 +8,10 @@
 //   • heights: OSM height > City of Chicago stories > OSM building:levels >
 //     a default by building type; the City's year_built (joined on
 //     chicago:building_id) plus a list of post-2003 towers give each
-//     building a year, so the plugin can show the skyline of any year
+//     building a year, so the plugin can show today's skyline (the default)
+//     or the one of any earlier year
+//   • whatever stands on the airfield today (Northerly Island's pavilion and
+//     park buildings) is left out: Meigs is open again
 //   • the Lake Michigan coastline is chained and closed against the box into
 //     land polygons, and rasterised into a 4 m land/water mask for the gear
 //   • rivers, parks, the main roads and the rail lines come along for the ground
@@ -110,8 +113,17 @@ function loadAll() {
   for (const f of readdirSync(RAW).filter((f) => f.startsWith('buildings_'))) {
     for (const e of JSON.parse(readFileSync(join(RAW, f), 'utf8')).elements) elements.set(`${e.type}/${e.id}`, e);
   }
-  const land = JSON.parse(readFileSync(join(RAW, 'land.json'), 'utf8')).elements;
-  const shore = JSON.parse(readFileSync(join(RAW, 'shore.json'), 'utf8')).elements;
+  // a layer may have come down whole or in quarters (land, landa, landb …): merge by element id
+  const layer = (name) => {
+    const byId = new Map();
+    for (const f of readdirSync(RAW).filter((f) => new RegExp(`^${name}[a-d]*\\.json$`).test(f))) {
+      for (const e of JSON.parse(readFileSync(join(RAW, f), 'utf8')).elements) byId.set(`${e.type}/${e.id}`, e);
+    }
+    if (!byId.size) throw new Error(`no ${name} data in ${RAW} — run scripts/fetch-osm.mjs`);
+    return [...byId.values()];
+  };
+  const land = layer('land');
+  const shore = layer('shore');
   const city = existsSync(join(RAW, 'chicago_bldgs.json')) ? JSON.parse(readFileSync(join(RAW, 'chicago_bldgs.json'), 'utf8')) : [];
   return { elements: [...elements.values()], land, shore, city };
 }
@@ -154,12 +166,22 @@ export function bake() {
   const toEN = (p) => { const [n, e] = frame.toNE(p.lat, p.lon); return [e, n]; };
   const meigsIsland = MEIGS.island.map(([lat, lon]) => { const [n, e] = frame.toNE(lat, lon); return [e, n]; });
   const onMeigs = ([e, n]) => pointInPolygon(e, n, meigsIsland);
+  // the airfield: the island plus the runway strip with its overruns (150 m past each end, 60 m either side)
+  const rw = MEIGS.runway;
+  const [rcn, rce] = frame.toNE(rw.centre[0], rw.centre[1]);
+  const brg = (rw.trueBearing * Math.PI) / 180;
+  const half = (rw.lengthFt * 0.3048) / 2 + 150, side = (rw.widthFt * 0.3048) / 2 + 60;
+  const ax = [Math.sin(brg), Math.cos(brg)];          // along the runway, (e, n)
+  const strip = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, c]) => [rce + ax[0] * a * half + ax[1] * c * side, rcn + ax[1] * a * half - ax[0] * c * side]);
+  const airfield = [meigsIsland, strip];
+  /** Does a footprint touch the airfield? (any corner inside it, or any airfield corner inside the footprint) */
+  const onAirfield = (ring) => airfield.some((poly) => ring.some(([e, n]) => pointInPolygon(e, n, poly)) || poly.some(([e, n]) => pointInPolygon(e, n, ring)));
   const { elements, land, shore, city } = loadAll();
   const cityById = new Map(city.map((c) => [c.bldg_id, c]));
 
   // ── buildings ────────────────────────────────────────────────────────────
   const shapes = [];
-  const stats = { elements: elements.length, noGeom: 0, tooSmall: 0, onMeigs: 0, demolished: 0 };
+  const stats = { elements: elements.length, noGeom: 0, tooSmall: 0, onAirfield: 0, demolished: 0 };
   for (const e of elements) {
     const t = e.tags || {};
     const g = rings(e);
@@ -204,7 +226,7 @@ export function bake() {
         return h2;
       }).filter((r) => r.length >= 3) : [];
       const cen = centroid(outer);
-      if (onMeigs(cen)) { stats.onMeigs++; continue; }               // Meigs gets its own buildings
+      if (onAirfield(outer)) { stats.onAirfield++; continue; }      // nothing stands on Meigs but Meigs
       shapes.push({
         id: `${e.type}/${e.id}`, isPart, outer, holes, cen, h, minH, year,
         style: styleFor(t, h, e.id),

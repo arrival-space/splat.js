@@ -243,7 +243,7 @@ export function buildScenery(world) {
   parts.push({ name: 'island', color: PALETTE.grass, mesh: flatPolygon(new MeshBuilder(), world.island, 0.0), layer: 'core', bias: -1 });
   const islandWalls = new MeshBuilder();
   wall(islandWalls, world.island, world.water - 0.5, 0.0);
-  parts.push({ name: 'islandWall', color: PALETTE.seawall, mesh: islandWalls, layer: 'city' });
+  parts.push({ name: 'islandWall', color: PALETTE.seawall, mesh: islandWalls, layer: 'core' });   // below ground where OSM land is, a seawall where the lake is
   const shoreWalls = new MeshBuilder();
   wall(shoreWalls, world.shore, world.water - 0.5, 0.5, false);
   parts.push({ name: 'seawall', color: PALETTE.seawall, mesh: shoreWalls, layer: 'city' });

@@ -110,7 +110,8 @@ test('buildings: wall normals point out of the footprint', () => {
 
 test('buildings: minimum height drops the small stuff, colour tags win', () => {
   const d = decodeOsm(encodeOsm(sample()));
-  assert.equal(buildCity(d.buildings, { minHeight: 15 }).shown, 1);
+  assert.equal(buildCity(d.buildings, { minHeight: 15, year: 2002 }).shown, 1);
+  assert.equal(buildCity(d.buildings, { minHeight: 15 }).shown, 2, 'today (the default) includes the 2009 tower');
   assert.deepEqual(parseColour('black'), [36, 36, 38]);
   assert.deepEqual(parseColour('#fff'), [255, 255, 255]);
   assert.equal(parseColour('not a colour'), null);

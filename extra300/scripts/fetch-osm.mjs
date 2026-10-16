@@ -85,7 +85,7 @@ async function fetchTile(t, force, depth = 0) {
   const file = join(RAW, `${t.name}.json`);
   if (existsSync(file) && !force) return;
   const quads = ['a', 'b', 'c', 'd'];
-  const alreadySplit = readdirSync(RAW).some((f) => f.startsWith(t.name) && f !== `${t.name}.json`);
+  const alreadySplit = readdirSync(RAW).some((f) => new RegExp(`^${t.name}[a-d]+\\.json$`).test(f));
   if (!alreadySplit || force) {
     try {
       const t0 = Date.now();

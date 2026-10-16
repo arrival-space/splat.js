@@ -25,7 +25,7 @@ async function shot(name, query, prep) {
   await page.goto(`http://localhost:8741/tests/harness/${query}`);
   await page.waitForFunction(() => window.harnessReady === true, null, { timeout: 60000 });
   if (prep) await page.evaluate(prep);
-  await page.waitForTimeout(1500);
+  await page.waitForTimeout(prep ? 6000 : 4000);
   await page.screenshot({ path: join(out, `${name}.png`) });
   await page.close();
 }

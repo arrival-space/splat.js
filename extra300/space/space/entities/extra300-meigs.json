@@ -1,0 +1,33 @@
+{
+  "id": "extra300-meigs",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/extra300-meigs.mjs",
+    "displayName": "Extra 300L — Meigs Field",
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "isEnabled": true,
+      "startRunway": "36",
+      "engineRunningAtStart": true,
+      "showPanel": true,
+      "showScenery": true,
+      "fuelLiters": 60,
+      "windKt": 0,
+      "windFromDeg": 0,
+      "qnhInHg": 29.92,
+      "oatC": 15,
+      "skylineYear": 2026,
+      "cityDetail": "full"
+    }
+  }
+}

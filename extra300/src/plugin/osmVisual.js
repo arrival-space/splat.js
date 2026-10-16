@@ -89,7 +89,7 @@ export class OsmVisual {
   }
 
   /** (Re)build the buildings for a skyline year and detail level; tiles stream in over the next frames. */
-  build({ year = 2002, minHeight = 0 } = {}) {
+  build({ year = 2026, minHeight = 0 } = {}) {
     if (this.cityRoot) this.cityRoot.destroy();
     this.cityRoot = new pc.Entity('buildings');
     this.root.addChild(this.cityRoot);

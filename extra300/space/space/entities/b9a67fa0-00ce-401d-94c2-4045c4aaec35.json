@@ -1,0 +1,25 @@
+{
+  "id": "b9a67fa0-00ce-401d-94c2-4045c4aaec35",
+  "type": "Gate",
+  "data": {
+    "title": "",
+    "date": "",
+    "link": "",
+    "platform": "<auto-detect>",
+    "description": "",
+    "copyright": "",
+    "category": "",
+    "videoURL": "",
+    "logoURL": "",
+    "logoLinkURL": "",
+    "desktopEnabled": false,
+    "mobileEnabled": false,
+    "vrEnabled": false,
+    "openAsTab": false,
+    "enableWebStream": false,
+    "enableWebProxy": false,
+    "embeddedEnabled": false,
+    "screenSelect": 0
+  },
+  "state": {}
+}

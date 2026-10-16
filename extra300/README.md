@@ -30,7 +30,7 @@ tap it) to fly. Press **H** in the cockpit for the controls.
   - **Roofs:** flat roofs with courtyards; gabled houses; pyramids and domes where OSM tags them.
   - **Tall towers:** built from their OSM `building:part`s, so Sears keeps its setbacks and antennas.
   - **Heights:** from OSM, or from the City of Chicago's storey counts.
-  - **Years:** a building's year comes from the City's `year_built`. The default skyline is 2002, the last full year of Meigs; the *Skyline year* setting shows any other year.
+  - **Years:** the default is today's skyline. Anything standing on the airfield (island, runway and overruns) is left out, so Meigs is open again amid the 2026 city. A building's year comes from the City's `year_built`, and the *Skyline year* setting shows any year back to 1980 (2002 was the last full Meigs year).
   - **Ground:** the Lake Michigan shore, the river, parks, the main roads and the rail lines. The gear knows land from water.
   - **Collisions:** hitting a building ends the flight.
 - **Meigs Field**:

@@ -13,6 +13,9 @@ test('build produces a self-contained vibe module', async () => {
   const file = join(root, 'dist', 'extra300-meigs.mjs');
   const src = readFileSync(file, 'utf8');
   assert.ok(!/^\s*import\s/m.test(src), 'no imports left: Arrival loads a single file');
+  // arrival validate also rejects import("…") / from "./…" anywhere in the text, comments included
+  assert.ok(!/import\s*\(\s*['"]\.{1,2}\//.test(src), 'no import("./…") even in JSDoc types');
+  assert.ok(!/from\s+['"]\.{1,2}\//.test(src), 'no relative from "./…"');
   // the baked OpenStreetMap city rides inside the bundle; keep it well under a few MB
   assert.ok(src.length < 4_000_000, `bundle size ${src.length}`);
 

@@ -77,7 +77,7 @@ export function groundEffectFactor(h, span) {
 }
 
 export class Aero {
-  /** @param {import('./aircraft/extra300l.js').EXTRA_300L} ac */
+  /** @param {object} ac  aircraft data, e.g. EXTRA_300L from aircraft/extra300l.js */
   constructor(ac) {
     this.ac = ac;
     this.eps = 0;                 // tail downwash angle, lagged by the wing-to-tail transit time

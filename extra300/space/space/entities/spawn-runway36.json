@@ -1,0 +1,22 @@
+{
+  "id": "spawn-runway36",
+  "type": "SpawnPoint",
+  "data": {
+    "position": {
+      "x": -4,
+      "y": 0,
+      "z": -2
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "isDefaultThirdPerson": true,
+    "isDefaultFreeCam": true,
+    "alwaysSnapBack": false,
+    "hidden": false,
+    "capturedIn": "avatar",
+    "displayName": "Meigs Field, runway 36"
+  }
+}

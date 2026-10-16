@@ -57,7 +57,7 @@ export class Instruments {
   setKollsmanInHg(inHg) { this.kollsman = inHg * INHG; }
 
   /**
-   * @param {import('../sim/aircraft.js').Aircraft} ac
+   * @param {object} ac  the Aircraft (sim/aircraft.js)
    * @param {number} dt
    */
   update(ac, dt) {

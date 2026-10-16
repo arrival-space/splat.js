@@ -28,12 +28,15 @@ export const MEIGS = {
     centre: [41.8586, -87.6083],     // [verify]
     surface: 'asphalt',
   },
-  // Northerly Island (landfill, 1920s-30s) and the Solidarity Drive causeway [verify]
+  // Northerly Island (landfill, 1920s-30s) as an airfield: the west shore traced from today's
+  // OpenStreetMap outline, the east side the straight pre-2003 seawall (the 2015 park cut a cove
+  // into it), the south tip long enough for the runway-36 overrun
   island: [
-    [41.8503, -87.6102], [41.8503, -87.6060], [41.8560, -87.6057], [41.8620, -87.6054],
-    [41.8652, -87.6049], [41.8672, -87.6056], [41.8678, -87.6078], [41.8668, -87.6098],
-    [41.8662, -87.6142], [41.8656, -87.6142], [41.8655, -87.6104], [41.8620, -87.6109],
-    [41.8560, -87.6108],
+    [41.85266, -87.60902], [41.85347, -87.60984], [41.85482, -87.60989], [41.85572, -87.60962], [41.85680, -87.60941],
+    [41.85725, -87.60967], [41.85815, -87.60999], [41.85905, -87.61023], [41.85959, -87.61042], [41.86040, -87.61066],
+    [41.86130, -87.61044], [41.86175, -87.61013], [41.86220, -87.60994], [41.86310, -87.60979], [41.86400, -87.60975],
+    [41.86490, -87.61011], [41.86544, -87.61049], [41.86580, -87.61047], [41.86598, -87.60782], [41.86580, -87.60589],
+    [41.86544, -87.60572], [41.86481, -87.60649], [41.86436, -87.60671], [41.85392, -87.60671], [41.85284, -87.60746],
   ],
   // mainland lakefront, south to north; land lies to the west [verify]
   shoreline: [
@@ -108,7 +111,7 @@ export function buildMeigs(data = MEIGS) {
   // buildings, indexed on a 100 m grid for collision checks
   const CELL = 100;
   let grid = null;
-  let skylineYear = 2002;
+  let skylineYear = 2026;
 
   const landmarks = data.landmarks.map((l) => ({ ...l, ne: toNE(l.at) }));
 
@@ -128,7 +131,7 @@ export function buildMeigs(data = MEIGS) {
     data, frame, elevation, water, ground, shoreEastAt,
     osm: null,
     /** Hand the world the decoded OpenStreetMap scenery: land/water raster for the gear, buildings for collisions. */
-    attachOsm(osm, year = 2002) {
+    attachOsm(osm, year = 2026) {
       this.osm = osm;
       isLand = maskLookup(osm.mask, osm.header.box);
       skylineYear = year;
