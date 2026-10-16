@@ -214,7 +214,7 @@ export function buildMeigs(data = MEIGS) {
      * are cut away inside it so the flat 1990s field shows instead of today's park.
      * @returns {{ centre: number[], dir: number[], halfAlong: number, halfAcross: number }}  (n, e)
      */
-    airfieldBox(margin = 12) {
+    airfieldBox(margin = 0) {
       let a0 = Infinity, a1 = -Infinity, c0 = Infinity, c1 = -Infinity;
       for (const [n, e] of island) {
         const [al, ac] = runwayLocal(n, e);
