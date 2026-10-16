@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.arrival-cli/
+# CLI workspace: the pull baseline and server-provided agent docs are local state;
+# space/space/ is committed so the managed space content is reviewable in git
+space/.arrival/
+space/AGENTS.md
+space/CLAUDE.md
+space/reference/
+
+# the repo root ignores scripts/; this project's build/serve/sync scripts are source
+!scripts/

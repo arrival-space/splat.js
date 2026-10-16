@@ -1,0 +1,14 @@
+{
+  "server": "https://api-live.arrival.space",
+  "spaceId": null,
+  "title": "Meigs Field — Extra 300L",
+  "description": "Chicago's Meigs Field (CGX), closed in 2003, reopened: runway 36 on Northerly Island, the default start of Microsoft Flight Simulator for twenty years. Walk up to the Extra 300L and press E to fly.",
+  "privacy": "Closed",
+  "entityId": "extra300-meigs",
+  "spawnId": "spawn-runway36",
+  "placement": {
+    "position": { "x": 0, "y": 0, "z": -504.68 },
+    "spawn": { "x": -4, "y": 0, "z": -2 }
+  },
+  "params": {}
+}

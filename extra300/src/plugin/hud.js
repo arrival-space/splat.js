@@ -1,0 +1,127 @@
+// hud.js — the DOM side: instrument panel canvas, the boarding prompt, the
+// keyboard card, status messages, and touch buttons on phones.
+
+import { Panel } from '../instruments/panel.js';
+
+const HELP = [
+  ['Pitch', '↑ / ↓  or  W / S'],
+  ['Roll', '← / →  or  A / D'],
+  ['Rudder', 'Q / E  (or Z / X)'],
+  ['Throttle', 'PgUp / PgDn,  + / -,  Home idle,  End full'],
+  ['Prop rpm', '[  /  ]'],
+  ['Trim', ';  nose down    \'  nose up'],
+  ['Brakes', '.  or  B  (hold)        ,  parking brake'],
+  ['Engine', 'M  mixture run / cut-off     K  starter (hold)'],
+  ['Views', 'V  cockpit / chase / tower / fly-by     C  centre view     drag to look'],
+  ['Panel', 'I  show / hide     G  reset g-meter     N  set altimeter'],
+  ['Mouse yoke', 'Y  toggle'],
+  ['Sim', 'P  pause     Backspace  back to runway 36     Esc  leave the airplane'],
+  ['Gamepad', 'left stick: stick   right stick: rudder / throttle   triggers: brakes'],
+];
+
+export class Hud {
+  constructor(container, limits, isMobile) {
+    this.container = container;
+    this.isMobile = isMobile;
+    const css = (el, s) => Object.assign(el.style, s);
+
+    this.panelCanvas = document.createElement('canvas');
+    css(this.panelCanvas, { position: 'fixed', left: '0', bottom: '0', pointerEvents: 'none', zIndex: 20, display: 'none' });
+    container.appendChild(this.panelCanvas);
+    this.panel = new Panel(this.panelCanvas, limits);
+
+    this.prompt = document.createElement('div');
+    css(this.prompt, {
+      position: 'fixed', left: '50%', bottom: '18%', transform: 'translateX(-50%)', padding: '10px 18px',
+      background: 'rgba(12,13,16,0.82)', color: '#f1efe8', font: '600 15px "Helvetica Neue", Arial, sans-serif',
+      borderRadius: '6px', zIndex: 21, display: 'none', pointerEvents: 'none', letterSpacing: '0.02em',
+    });
+    container.appendChild(this.prompt);
+
+    this.message = document.createElement('div');
+    css(this.message, {
+      position: 'fixed', left: '50%', top: '9%', transform: 'translateX(-50%)', padding: '8px 16px',
+      background: 'rgba(12,13,16,0.75)', color: '#f1efe8', font: '600 14px "Helvetica Neue", Arial, sans-serif',
+      borderRadius: '6px', zIndex: 21, display: 'none', pointerEvents: 'none',
+    });
+    container.appendChild(this.message);
+    this._msgUntil = 0;
+
+    this.help = document.createElement('div');
+    css(this.help, {
+      position: 'fixed', right: '16px', top: '16px', padding: '12px 16px', maxWidth: '520px',
+      background: 'rgba(12,13,16,0.86)', color: '#e6e3da', font: '13px/1.55 "Helvetica Neue", Arial, sans-serif',
+      borderRadius: '8px', zIndex: 22, display: 'none', pointerEvents: 'none',
+    });
+    this.help.innerHTML = `<div style="font-weight:700;margin-bottom:6px">Extra 300L — Meigs Field (CGX), runway 36</div>`
+      + HELP.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b}</div>`).join('');
+    container.appendChild(this.help);
+
+    this.readout = document.createElement('div');
+    css(this.readout, {
+      position: 'fixed', left: '12px', top: '12px', color: '#f1efe8', font: '600 12px ui-monospace, Menlo, monospace',
+      textShadow: '0 1px 2px #000', zIndex: 21, display: 'none', pointerEvents: 'none', whiteSpace: 'pre',
+    });
+    container.appendChild(this.readout);
+
+    this.buttons = {};
+    if (isMobile) {
+      const mk = (id, text, style) => {
+        const b = document.createElement('button');
+        b.textContent = text;
+        css(b, {
+          position: 'fixed', zIndex: 23, padding: '10px 14px', borderRadius: '8px', border: 'none',
+          background: 'rgba(12,13,16,0.7)', color: '#f1efe8', font: '600 13px Arial', display: 'none', ...style,
+        });
+        container.appendChild(b);
+        this.buttons[id] = b;
+        return b;
+      };
+      mk('board', 'Fly the Extra', { left: '50%', bottom: '26%', transform: 'translateX(-50%)', display: 'none' });
+      mk('exit', 'Exit', { right: '12px', top: '12px' });
+      mk('view', 'View', { right: '12px', top: '60px' });
+      mk('brake', 'Brake', { right: '12px', top: '108px' });
+      mk('reset', 'Reset', { right: '12px', top: '156px' });
+    }
+    this.layout();
+  }
+
+  layout() {
+    const w = window.innerWidth;
+    const h = Math.round(Math.min(window.innerHeight * 0.26, w * 0.17));
+    this.panel.resize(w, h, Math.min(2, window.devicePixelRatio || 1));
+    this.panelHeight = h;
+  }
+
+  showPrompt(text) {
+    this.prompt.textContent = text || '';
+    this.prompt.style.display = text ? 'block' : 'none';
+    if (this.buttons.board) this.buttons.board.style.display = text ? 'block' : 'none';
+  }
+
+  flash(text, seconds = 3) {
+    this.message.textContent = text;
+    this.message.style.display = 'block';
+    this._msgUntil = performance.now() + seconds * 1000;
+  }
+
+  tick() {
+    if (this._msgUntil && performance.now() > this._msgUntil) {
+      this.message.style.display = 'none';
+      this._msgUntil = 0;
+    }
+  }
+
+  setFlying(flying, panelVisible) {
+    this.panelCanvas.style.display = flying && panelVisible ? 'block' : 'none';
+    this.readout.style.display = flying ? 'block' : 'none';
+    for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
+    if (!flying) this.help.style.display = 'none';
+  }
+
+  toggleHelp() { this.help.style.display = this.help.style.display === 'none' ? 'block' : 'none'; }
+
+  destroy() {
+    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, ...Object.values(this.buttons)]) el.remove();
+  }
+}
