@@ -4,6 +4,7 @@ import { buildExtraModel } from '../render/extraModel.js';
 import { fromBody } from '../render/geometry.js';
 import { nedToRender, simToRenderQuat } from '../render/cameraRig.js';
 import { material, meshEntity } from './pcMesh.js';
+import { glassMaterial } from './glassMaterial.js';
 
 export class AircraftVisual {
   constructor(app, parent) {
@@ -14,7 +15,8 @@ export class AircraftVisual {
     this._q2 = new pc.Quat();
     this.propAngle = 0;
     for (const part of buildExtraModel()) {
-      const mat = material(part.color, part.transparent ? { transparent: true, opacity: part.kind === 'propDisc' ? 0 : 0.28 } : {});
+      const mat = part.name === 'canopy' ? glassMaterial(app.graphicsDevice, part.color)
+        : material(part.color, part.transparent ? { transparent: true, opacity: part.kind === 'propDisc' ? 0 : 0.28 } : {});
       if (!part.hinge) {
         meshEntity(app, this.root, part.name, part.mesh, mat);
         continue;

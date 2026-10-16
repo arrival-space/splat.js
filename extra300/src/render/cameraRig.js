@@ -87,7 +87,8 @@ export class CameraRig {
   }
 
   look(dYaw, dPitch) {
-    this.lookYaw = Math.max(-2.6, Math.min(2.6, this.lookYaw + dYaw));
+    // the chase camera orbits all the way round; the pilot's head turns only so far
+    this.lookYaw = this.view === 'chase' ? (this.lookYaw + dYaw) % (2 * Math.PI) : Math.max(-2.6, Math.min(2.6, this.lookYaw + dYaw));
     this.lookPitch = Math.max(-1.2, Math.min(1.3, this.lookPitch + dPitch));
   }
   centre() { this.lookYaw = 0; this.lookPitch = 0; }
@@ -117,11 +118,16 @@ export class CameraRig {
       if (!this.chasePos) this.chasePos = want;
       const k = 1 - Math.exp(-dt * 4.5);
       for (let i = 0; i < 3; i++) this.chasePos[i] += (want[i] - this.chasePos[i]) * k;
+      // dragging orbits the camera round the airplane (not round itself): turn the lagged offset
+      // about the airplane, in azimuth by the look yaw and in elevation by the look pitch
+      const off = [this.chasePos[0] - pos[0], this.chasePos[1] - pos[1], this.chasePos[2] - pos[2]];
+      const r = Math.hypot(off[0], off[1], off[2]);
+      const az = Math.atan2(off[0], off[2]) + this.lookYaw;
+      const el = Math.max(-0.05, Math.min(1.45, Math.asin(off[1] / r) - this.lookPitch));
+      const cam = [pos[0] + r * Math.cos(el) * Math.sin(az), pos[1] + r * Math.sin(el), pos[2] + r * Math.cos(el) * Math.cos(az)];
       // keep the lens from sinking under the runway
-      this.chasePos[1] = Math.max(this.chasePos[1], 1.0);
-      const yawLook = this.lookYaw;
-      const r = lookRotation(this.chasePos, pos);
-      return { pos: this.chasePos.slice(), rot: yawLook ? qmul(axisAngle(0, 1, 0, yawLook), r) : r, fov: 60 };
+      cam[1] = Math.max(cam[1], 1.0);
+      return { pos: cam, rot: lookRotation(cam, pos), fov: 60 };
     }
     if (this.view === 'tower') {
       const t = this.towerPos;

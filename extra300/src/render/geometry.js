@@ -53,10 +53,24 @@ export class MeshBuilder {
   /**
    * Smooth-shaded surface through rings of points (a loft). Each ring has the
    * same count; rings are joined in order, and each ring is closed on itself.
-   * `outward` flips the winding if the rings run clockwise.
+   * The faces are turned outward whichever way the rings run.
    */
-  loft(rings, { closeEnds = true, flip = false } = {}) {
+  loft(rings, { closeEnds = true } = {}) {
     const m = rings[0].length;
+    // which way the rings run decides which way the faces point: turn them out of the body, whatever
+    // the caller's ring direction (a mirrored side reverses it). Test the widest part of the loft:
+    // its face normals summed against the way each point sits from its ring's centre.
+    const centre = (r) => r.reduce((c, p) => [c[0] + p[0] / r.length, c[1] + p[1] / r.length, c[2] + p[2] / r.length], [0, 0, 0]);
+    let facing = 0;
+    for (let i = 0; i < rings.length - 1; i++) {
+      const c0 = centre(rings[i]);
+      for (let j = 0; j < m; j++) {
+        const n = faceNormal(rings[i][j], rings[i + 1][j], rings[i + 1][(j + 1) % m]);
+        const p = rings[i][j];
+        facing += n[0] * (p[0] - c0[0]) + n[1] * (p[1] - c0[1]) + n[2] * (p[2] - c0[2]);
+      }
+    }
+    const flip = facing < 0;
     const base = this.vertexCount;
     // vertex normals by averaging the adjacent face normals
     const acc = rings.map((r) => r.map(() => [0, 0, 0]));
@@ -84,8 +98,15 @@ export class MeshBuilder {
       }
     }
     if (closeEnds) {
-      this.fan(rings[0], !flip);
-      this.fan(rings[rings.length - 1], flip);
+      // each cap faces away from the body (its middle: the rings' centres averaged)
+      const body = centre(rings.map(centre));
+      const cap = (ring) => {
+        const c = centre(ring);
+        const n = faceNormal(c, ring[0], ring[1]);
+        this.fan(ring, n[0] * (c[0] - body[0]) + n[1] * (c[1] - body[1]) + n[2] * (c[2] - body[2]) < 0);
+      };
+      cap(rings[0]);
+      cap(rings[rings.length - 1]);
     }
     return this;
   }
@@ -100,6 +121,13 @@ export class MeshBuilder {
       if (reverse) this.tri(c, b, a); else this.tri(c, a, b);
     }
     return this;
+  }
+
+  /** A quad wound to face away from `inside` (a point inside the body it skins). */
+  quadOut(a, b, c, d, inside) {
+    const n = faceNormal(a, b, c);
+    const m = [0, 1, 2].map((k) => (a[k] + b[k] + c[k] + d[k]) / 4 - inside[k]);
+    return n[0] * m[0] + n[1] * m[1] + n[2] * m[2] >= 0 ? this.quad(a, b, c, d) : this.quad(a, d, c, b);
   }
 
   box(min, max) {

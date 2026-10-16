@@ -72,3 +72,73 @@ test('scenery walls: each two-sided pair is marked for back-face culling, and ea
     assert.ok(Math.abs(n[0] + n[12]) < 1e-9 && Math.abs(n[2] + n[14]) < 1e-9, `${name}: the pair faces opposite ways`);
   }
 });
+
+test('the airplane is lit from outside: every surface faces away from its part\'s inside', () => {
+  const outward = (p) => {
+    const P = p.mesh.positions, N = p.mesh.normals, I = p.mesh.indices, nv = P.length / 3;
+    const c = [0, 0, 0];
+    for (let i = 0; i < nv; i++) for (let k = 0; k < 3; k++) c[k] += P[i * 3 + k] / nv;
+    let out = 0;
+    for (let t = 0; t < I.length; t += 3) {
+      const i = I[t];
+      const tc = [0, 1, 2].map((k) => (P[I[t] * 3 + k] + P[I[t + 1] * 3 + k] + P[I[t + 2] * 3 + k]) / 3 - c[k]);
+      if (N[i * 3] * tc[0] + N[i * 3 + 1] * tc[1] + N[i * 3 + 2] * tc[2] > 0) out++;
+    }
+    return out / (I.length / 3);
+  };
+  const parts = buildExtraModel();
+  for (const name of ['fuselage', 'stripes', 'spinner', 'pant1', 'pant-1', 'wheel1', 'tailwheel']) {
+    const f = outward(parts.find((p) => p.name === name));
+    assert.ok(f > 0.95, `${name}: ${(f * 100).toFixed(0)}% outward`);
+  }
+  // thin surfaces: the top skin faces up, the bottom skin down (render y is up)
+  for (const name of ['wingL', 'wingR', 'stabL', 'elevator']) {
+    const { positions: P, normals: N } = parts.find((p) => p.name === name).mesh;
+    // pair each skin point with the opposite skin at the same spot: the one facing up must be the higher
+    let wrong = 0, n = 0;
+    for (let i = 0; i < P.length; i += 3) {
+      if (Math.abs(N[i + 1]) < 0.8) continue;           // skins only, not the leading edge or the tips
+      for (let j = 0; j < P.length; j += 3) {
+        if (Math.abs(N[j + 1]) < 0.8 || Math.sign(N[j + 1]) === Math.sign(N[i + 1])) continue;
+        if (Math.abs(P[j] - P[i]) > 0.01 || Math.abs(P[j + 2] - P[i + 2]) > 0.01) continue;
+        n++;
+        if (Math.sign(N[i + 1]) !== Math.sign(P[i + 1] - P[j + 1])) wrong++;
+        break;
+      }
+    }
+    assert.ok(n > 10 && wrong / n < 0.05, `${name}: ${wrong} of ${n} skin normals point inward`);
+  }
+  // and every triangle winds the way its normals point (front faces are the lit ones)
+  for (const p of parts) {
+    const { positions: P, normals: N, indices: I } = p.mesh;
+    let bad = 0;
+    for (let t = 0; t < I.length; t += 3) {
+      const [a, b, d] = [I[t] * 3, I[t + 1] * 3, I[t + 2] * 3];
+      const u = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], v = [P[d] - P[a], P[d + 1] - P[a + 1], P[d + 2] - P[a + 2]];
+      const fn = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+      if (fn[0] * N[a] + fn[1] * N[a + 1] + fn[2] * N[a + 2] < 0) bad++;
+    }
+    assert.ok(bad / (I.length / 3) < 0.16, `${p.name}: ${bad} triangles wound against their normals`);
+  }
+});
+
+test('chase view: dragging orbits round the airplane at the same distance, always looking at it', async () => {
+  const { CameraRig, nedToRender } = await import('../src/render/cameraRig.js');
+  const ac = { state: { pos: [0, 0, -100], q: [1, 0, 0, 0], vel: [40, 0, 0] } };
+  const rig = new CameraRig({ eye: EXTRA.eye, towerPos: [0, 0, 0] });
+  rig.view = 'chase';
+  const at = nedToRender(ac.state.pos);
+  const dist = (p) => Math.hypot(p[0] - at[0], p[1] - at[1], p[2] - at[2]);
+  const behind = rig.update(ac, 1 / 60).pos;
+  rig.look(Math.PI / 2, 0);
+  const side = rig.update(ac, 1 / 60).pos;
+  rig.look(Math.PI / 2, 0);
+  const front = rig.update(ac, 1 / 60).pos;
+  assert.ok(Math.abs(dist(side) - dist(behind)) < 0.01 && Math.abs(dist(front) - dist(behind)) < 0.01, 'same distance');
+  // flying north (render −z): behind is +z, a half turn puts the camera ahead (−z)
+  assert.ok(behind[2] > at[2] + 10 && front[2] < at[2] - 10, `behind ${behind[2].toFixed(1)}, front ${front[2].toFixed(1)}`);
+  assert.ok(Math.abs(side[0] - at[0]) > 10, 'a quarter turn is off to the side');
+  rig.look(0, -0.8);                                  // drag down: up over the airplane
+  const above = rig.update(ac, 1 / 60).pos;
+  assert.ok(above[1] > front[1] + 5);
+});

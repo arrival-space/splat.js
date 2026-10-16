@@ -15,7 +15,7 @@ export const LIVERY = {
   red: '#c41e2a',
   blue: '#1d3e8a',
   dark: '#1b1d22',
-  canopy: '#9fc4dc',
+  canopy: '#4f6678',   // smoke-tinted acrylic (glassMaterial adds the mirror finish)
   tyre: '#151515',
   metal: '#a4a7ab',
   spinner: '#c41e2a',
@@ -54,9 +54,11 @@ function fuselageStripes() {
       const y = side * (hw + 0.004);
       pts.push([B(x, y, zc - 0.05), B(x, y, zc + 0.12)]);
     }
+    const st = STATIONS.slice(2, 10);
     for (let i = 0; i < pts.length - 1; i++) {
       const [a0, a1] = pts[i], [b0, b1] = pts[i + 1];
-      if (side > 0) mb.quad(a0, a1, b1, b0); else mb.quad(a0, b0, b1, a1);
+      // facing away from the fuselage's axis here
+      mb.quadOut(a0, b0, b1, a1, B((st[i][0] + st[i + 1][0]) / 2, 0, (st[i][1] + st[i + 1][1]) / 2));
     }
   }
   return mb;
@@ -82,7 +84,7 @@ function canopy() {
   const m = rings[0].length;
   for (let i = 0; i < rings.length - 1; i++) {
     for (let j = 0; j < m - 1; j++) {
-      mb.quad(rings[i][j], rings[i + 1][j], rings[i + 1][j + 1], rings[i][j + 1]);
+      mb.quadOut(rings[i][j], rings[i + 1][j], rings[i + 1][j + 1], rings[i][j + 1], B((xs[i] + xs[i + 1]) / 2, 0, -0.53));
     }
   }
   return mb;
@@ -109,7 +111,7 @@ function surface(stations, { planeOffset = 0, t = 0.13, mirror = false } = {}) {
     return [...upper, ...lower].map(([x, h]) => B(x, s, planeOffset - h));
   };
   const rings = stations.map(([s, xle, xte]) => sectionPts(s, xle, xte));
-  mb.loft(rings, { flip: mirror });
+  mb.loft(rings);
   return mb;
 }
 
@@ -189,7 +191,7 @@ function surfaceVertical(stations, t) {
     const lower = pts.slice(1, -1).reverse().map(([x, h]) => [x, -h]);
     return [...upper, ...lower].map(([x, h]) => B(x, h, z));
   });
-  mb.loft(rings, { flip: true });
+  mb.loft(rings);
   return mb;
 }
 
@@ -204,7 +206,7 @@ function spinner() {
     const r = r0 * Math.sqrt(1 - f * f) + 0.002;
     rings.push(ring(B(PROP_X + f * len, 0, 0), [1, 0, 0], [0, 1, 0], r, r, 16, 2));
   }
-  mb.loft(rings, { flip: true });
+  mb.loft(rings);
   return mb;
 }
 /** Three blades around the hub at the origin of the prop node (node sits on the crank axis). */
@@ -252,7 +254,8 @@ function mainLeg(side) {
   const p = (q, dx, dz) => B(q[0] + dx, q[1], q[2] + dz);
   const a0 = p(top, w * 1.6, -t), a1 = p(top, -w * 1.6, -t), a2 = p(top, -w * 1.6, t), a3 = p(top, w * 1.6, t);
   const b0 = p(bot, w, -t), b1 = p(bot, -w, -t), b2 = p(bot, -w, t), b3 = p(bot, w, t);
-  mb.quad(a0, b0, b1, a1).quad(a1, b1, b2, a2).quad(a2, b2, b3, a3).quad(a3, b3, b0, a0);
+  const mid = B((top[0] + bot[0]) / 2, (top[1] + bot[1]) / 2, (top[2] + bot[2]) / 2);
+  mb.quadOut(a0, b0, b1, a1, mid).quadOut(a1, b1, b2, a2, mid).quadOut(a2, b2, b3, a3, mid).quadOut(a3, b3, b0, a0, mid);
   return mb;
 }
 function wheelPant(side) {
@@ -262,7 +265,7 @@ function wheelPant(side) {
   const hs = [0.02, 0.15, 0.21, 0.21, 0.14, 0.02];
   const ws = [0.02, 0.09, 0.12, 0.12, 0.08, 0.01];
   const rr = xs.map((x, i) => ring(B(cx + x, cy, cz - 0.02), [1, 0, 0], [0, 1, 0], ws[i], hs[i], 14, 2.2));
-  mb.loft(rr, { flip: true });
+  mb.loft(rr);
   return mb;
 }
 function wheel(radius, width) {
