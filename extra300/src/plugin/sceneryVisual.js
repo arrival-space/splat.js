@@ -14,10 +14,10 @@ export class SceneryVisual {
       if (!part.mesh.vertexCount) continue;
       const flat = ['lake', 'mainland', 'island', 'runway', 'markings', 'taxiLine'].includes(part.name);
       let mat = material(part.color);
-      if (part.bias) {
+      if (part.bias || part.cullBack) {
         mat = mat.clone();
-        mat.depthBias = part.bias;
-        mat.slopeDepthBias = part.bias;
+        if (part.bias) { mat.depthBias = part.bias; mat.slopeDepthBias = part.bias; }
+        if (part.cullBack) mat.cull = pc.CULLFACE_BACK;
         mat.update();
       }
       const e = meshEntity(app, part.layer === 'city' ? this.city : this.root, part.name, part.mesh, mat, { castShadows: !flat, receiveShadows: true });

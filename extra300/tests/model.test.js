@@ -59,3 +59,16 @@ test('scenery builds with every landmark and a few thousand Loop blocks', () => 
   assert.ok(loop > 5000 && loop < 60000, `loop verts ${loop}`);
   for (const p of parts) assert.ok(p.mesh.positions.every(Number.isFinite), p.name);
 });
+
+test('scenery walls: each two-sided pair is marked for back-face culling, and each quad faces its own way', async () => {
+  const { buildScenery } = await import('../src/render/scenery.js');
+  const { buildMeigs } = await import('../src/world/meigs.js');
+  const parts = buildScenery(buildMeigs());
+  for (const name of ['islandWall', 'seawall', 'navyPierWall']) {
+    const p = parts.find((x) => x.name === name);
+    assert.ok(p && p.cullBack, `${name} culls back faces`);
+    // the two quads of a segment: same corners, opposite normals (so exactly one is front-facing from anywhere)
+    const n = p.mesh.normals;
+    assert.ok(Math.abs(n[0] + n[12]) < 1e-9 && Math.abs(n[2] + n[14]) < 1e-9, `${name}: the pair faces opposite ways`);
+  }
+});

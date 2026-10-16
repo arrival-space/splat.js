@@ -243,13 +243,13 @@ export function buildScenery(world) {
   parts.push({ name: 'island', color: PALETTE.grass, mesh: flatPolygon(new MeshBuilder(), world.island, 0.0), layer: 'core', bias: -1 });
   const islandWalls = new MeshBuilder();
   wall(islandWalls, world.island, world.water - 0.5, 0.0);
-  parts.push({ name: 'islandWall', color: PALETTE.seawall, mesh: islandWalls, layer: 'core' });   // below ground where OSM land is, a seawall where the lake is
+  // walls are built two-sided (a quad each way): they need back-face culling, or the pair z-fights
+  parts.push({ name: 'islandWall', color: PALETTE.seawall, mesh: islandWalls, layer: 'core', cullBack: true });   // below ground where OSM land is, a seawall where the lake is
   const shoreWalls = new MeshBuilder();
   wall(shoreWalls, world.shore, world.water - 0.5, 0.5, false);
-  parts.push({ name: 'seawall', color: PALETTE.seawall, mesh: shoreWalls, layer: 'city' });
-  const pier = flatPolygon(new MeshBuilder(), world.pier, 1.5);
-  wall(pier, world.pier, world.water - 0.5, 1.5);
-  parts.push({ name: 'navyPier', color: PALETTE.pier, mesh: pier, layer: 'city' });
+  parts.push({ name: 'seawall', color: PALETTE.seawall, mesh: shoreWalls, layer: 'city', cullBack: true });
+  parts.push({ name: 'navyPier', color: PALETTE.pier, mesh: flatPolygon(new MeshBuilder(), world.pier, 1.5), layer: 'city' });
+  parts.push({ name: 'navyPierWall', color: PALETTE.pier, mesh: wall(new MeshBuilder(), world.pier, world.water - 0.5, 1.5), layer: 'city', cullBack: true });
 
   const rw = runway(world);
   parts.push({ name: 'runway', color: PALETTE.asphalt, mesh: rw.asphalt, layer: 'core', bias: -2 });
