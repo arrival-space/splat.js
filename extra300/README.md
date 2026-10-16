@@ -32,7 +32,7 @@ Northerly Island is cut out of the tiles, so the 1990s field shows flat and pave
 instead of today's park. The cut starts just under the runway's surface, so
 Google's water and low shore stay all round the island.
 
-The OpenStreetMap buildings stay as invisible collision volumes. Without a key,
+Google's buildings aren't solid, and the OpenStreetMap ones aren't drawn or solid while the tiles are on. Without a key,
 or before the tiles arrive, the procedural OpenStreetMap city is drawn as before.
 The sync writes the tiles host (`space/space/entities/google-3d-tiles.json`) but
 leaves its key alone. That file is git-ignored, because it holds the key once one
@@ -59,7 +59,7 @@ is set.
   - **Heights:** from OSM, or from the City of Chicago's storey counts.
   - **Years:** the default is today's skyline. Anything standing on the airfield (island, runway and overruns) is left out, so Meigs is open again amid the 2026 city. A building's year comes from the City's `year_built`, and the *Skyline year* setting shows any year back to 1980 (2002 was the last full Meigs year).
   - **Ground:** the Lake Michigan shore, the river, parks, the main roads and the rail lines. The gear knows land from water.
-  - **Collisions:** hitting a building ends the flight.
+  - **Collisions:** hitting a building ends the flight (the OpenStreetMap city only, not under Google's tiles).
 - **Meigs Field**:
   - The 3,948 ft runway on Northerly Island, painted as it was.
   - The terminal and tower, Burnham Harbor, Navy Pier.

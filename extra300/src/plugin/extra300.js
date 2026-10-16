@@ -170,8 +170,8 @@ export class Extra300 extends ArrivalScript {
   }
 
   // ── Google Photorealistic 3D Tiles (the "Google 3D Tiles" vibe in the same space) ──────
-  // Its tiles are the city and the land; we keep Meigs itself (cut out of the tiles), and the
-  // lake and the river from OpenStreetMap. Our buildings stay as the invisible collision volumes.
+  // Its tiles are the city, the land and the lake; we keep only Meigs itself, cut out of the tiles.
+  // Our OpenStreetMap buildings aren't drawn then, and aren't solid either.
   _googleTick(dt) {
     // the vibe sets app.googleTilesLoading while its first tiles stream in and clears it when they are up
     if (!this._google && this.app.googleTilesLoading === false) this._setGoogle(true);
@@ -552,7 +552,8 @@ export class Extra300 extends ArrivalScript {
 
   /** Fly into a building and the flight ends there. */
   _checkBuildings() {
-    if (!this.world.osm || this.ac.damage.crashed) return;
+    // only the city we draw is solid: under Google's tiles the OpenStreetMap buildings aren't there
+    if (!this.world.osm || this.ac.damage.crashed || this._google) return;
     const p = this.ac.state.pos;
     const h = -p[2];
     if (h > 450) return;
