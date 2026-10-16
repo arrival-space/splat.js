@@ -13,3 +13,5 @@ space/reference/
 
 # raw OpenStreetMap / City of Chicago downloads (scripts/fetch-osm.mjs); the baked module in src/world/data is committed
 data/osm/raw/
+# the staged copy of dist/ the sync writes into the workspace (a build output)
+space/space/plugins/
