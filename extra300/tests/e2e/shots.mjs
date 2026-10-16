@@ -78,7 +78,11 @@ await shot('08-loop-lowpass', '?fly=1&view=chase', () => {
   page.on('pageerror', (e) => errors.push(`demo: ${e.message}`));
   await page.goto('http://localhost:8741/tests/harness/?');
   await page.waitForFunction(() => window.harnessReady === true, null, { timeout: 60000 });
-  await page.evaluate(() => window.vibe.hud.demoButton.click());
+  // a real mouse click where the button is drawn (a scripted .click() would pass even if nothing can reach it)
+  const box = await page.evaluate(() => { const r = window.vibe.hud.demoButton.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  const onTop = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === window.vibe.hud.demoButton, box);
+  if (!onTop) errors.push('demo: the button is not the topmost element under the pointer');
+  await page.mouse.click(box.x, box.y);
   const started = await page.evaluate(() => !!window.vibe._demo && window.vibe._flying);
   if (!started) errors.push('demo: the button did not start the demo flight');
   await page.waitForFunction(() => window.vibe._demo && ['climb', 'crosswind'].includes(window.vibe._demo.phase), null, { timeout: 300000 });

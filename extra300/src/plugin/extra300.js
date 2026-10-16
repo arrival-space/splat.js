@@ -88,7 +88,7 @@ export class Extra300 extends ArrivalScript {
     this.cameraRig = new CameraRig({ eye: EXTRA.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
     this.visual = new AircraftVisual(this.app, this._worldRoot);
     this.sound = new CockpitSound();
-    this.hud = new Hud(this.getUIContainer(), EXTRA.limits, this.isMobile);
+    this.hud = new Hud(this.getUIContainer(), EXTRA.limits, this.isMobile, (tag, opts) => this.createUI(tag, opts));
 
     this._resetToRunway();
     this.visual.update(this.ac, 0);

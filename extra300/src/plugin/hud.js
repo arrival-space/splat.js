@@ -29,9 +29,16 @@ const HELP = [
 ];
 
 export class Hud {
-  constructor(container, limits, isMobile) {
+  /**
+   * @param {HTMLElement} container  the script's UI container (click-through: pointer-events none)
+   * @param {(tag: string, opts: object) => HTMLElement} createUI  the plugin API's createUI: the only way to
+   *   get an element the pointer can reach — it sets pointer-events:auto and pauses the game's mouse
+   *   capture while hovered, so the click lands on the button instead of the camera
+   */
+  constructor(container, limits, isMobile, createUI) {
     this.container = container;
     this.isMobile = isMobile;
+    this.createUI = createUI;
     const css = (el, s) => Object.assign(el.style, s);
 
     this.panelCanvas = document.createElement('canvas');
@@ -87,14 +94,18 @@ export class Hud {
     });
     container.appendChild(this.readout);
 
-    // the demo flight: always there, so a visitor can just watch
-    this.demoButton = document.createElement('button');
-    css(this.demoButton, {
-      position: 'fixed', right: '12px', top: '26px', zIndex: 24, padding: '9px 14px', borderRadius: '8px',
-      border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(196,30,42,0.9)', color: '#fff',
-      font: '700 14px "Helvetica Neue", Arial, sans-serif', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+    // the demo flight: always there, so a visitor can just watch. Mid right edge: the corners belong
+    // to the Arrival client's own controls while walking.
+    const button = (style) => {
+      const b = createUI('button', { interactive: true, lockKeyboard: false });
+      css(b, { position: 'fixed', zIndex: 1000, pointerEvents: 'auto', cursor: 'pointer', ...style });
+      return b;
+    };
+    this.demoButton = button({
+      right: '16px', top: '42%', padding: '10px 16px', borderRadius: '8px',
+      border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(196,30,42,0.92)', color: '#fff',
+      font: '700 15px "Helvetica Neue", Arial, sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
     });
-    container.appendChild(this.demoButton);
     this.setDemo(false);
 
     this.demoStatus = document.createElement('div');
@@ -108,21 +119,19 @@ export class Hud {
     this.buttons = {};
     if (isMobile) {
       const mk = (id, text, style) => {
-        const b = document.createElement('button');
-        b.textContent = text;
-        css(b, {
-          position: 'fixed', zIndex: 23, padding: '10px 14px', borderRadius: '8px', border: 'none',
+        const b = button({
+          padding: '10px 14px', borderRadius: '8px', border: 'none',
           background: 'rgba(12,13,16,0.7)', color: '#f1efe8', font: '600 13px Arial', display: 'none', ...style,
         });
-        container.appendChild(b);
+        b.textContent = text;
         this.buttons[id] = b;
         return b;
       };
       mk('board', 'Fly the Extra', { left: '50%', bottom: '26%', transform: 'translateX(-50%)', display: 'none' });
-      mk('exit', 'Exit', { right: '12px', top: '12px' });
-      mk('view', 'View', { right: '12px', top: '60px' });
-      mk('brake', 'Brake', { right: '12px', top: '108px' });
-      mk('reset', 'Reset', { right: '12px', top: '156px' });
+      mk('exit', 'Exit', { right: '12px', top: '22%' });
+      mk('view', 'View', { right: '12px', top: 'calc(22% + 48px)' });
+      mk('brake', 'Brake', { right: '12px', top: 'calc(42% + 56px)' });
+      mk('reset', 'Reset', { right: '12px', top: 'calc(42% + 104px)' });
     }
     this.layout();
   }

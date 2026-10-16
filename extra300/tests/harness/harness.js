@@ -38,7 +38,9 @@ app.root.addChild(player);
 
 let cameraMode = 'third';
 let attached = null;
+// like the client: the plugin UI container is click-through; only createUI elements take the pointer
 const uiRoot = document.createElement('div');
+Object.assign(uiRoot.style, { position: 'fixed', inset: '0', pointerEvents: 'none', zIndex: 10 });
 document.body.appendChild(uiRoot);
 
 window.ArrivalSpace = {
@@ -57,6 +59,13 @@ window.ArrivalSpace = {
 class ArrivalScript extends pc.Script {
   get isMobile() { return false; }
   getUIContainer() { return uiRoot; }
+  createUI(tag, opts = {}) {
+    const el = document.createElement(tag);
+    if (opts.interactive !== false) el.style.pointerEvents = 'auto';
+    if (opts.style) Object.assign(el.style, opts.style);
+    uiRoot.appendChild(el);
+    return el;
+  }
   lockKeyboard() {}
   unlockKeyboard() {}
   getLeftStick() { return { x: 0, y: 0 }; }
