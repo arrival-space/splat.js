@@ -10,3 +10,9 @@
 - `space/entities/b9a67fa0-00ce-401d-94c2-4045c4aaec35.json` — id `b9a67fa0-00ce-401d-94c2-4045c4aaec35`, type `Gate` — content lives in videoURL/link, cannot host a plugin
 - `space/entities/fcc35518-309c-47e1-8d93-d939d6bca475.json` — id `fcc35518-309c-47e1-8d93-d939d6bca475`, type `Gate` — content lives in videoURL/link, cannot host a plugin
 - `space/room.json` — id `RoomInfo`, type `Simple`
+- `space/entities/spawn-runway36.json` — id `spawn-runway36`, type `SpawnPoint`, pos (-4, 0, -2)
+- `space/entities/extra300-meigs.json` — id `extra300-meigs`, type `UserModelEntity`, pos (0, 0, -8), scale 1, hosts `plugins/extra300-meigs.mjs`
+
+## Plugins
+
+- `plugins/extra300-meigs.mjs` — used by 1 entity(s)

@@ -14,15 +14,19 @@
     "worldScale": 1,
     "hideNavigationPortals": true,
     "farClip": 40000,
-    "defaultCamera": "third"
+    "defaultCamera": "third",
+    "stageLightType": "directional",
+    "stageLightRotation": 255.6
   },
   "state": {
-    "files": 0,
-    "memory": 0,
-    "updated": 1792181080951,
-    "entities": 8,
-    "entitySizes": {},
-    "screenshotTime": 1792181082343,
-    "screenshotDataHash": "4bca308a47b4792111d917672793d0ee2178c872b451f0b7163a0d89933421db"
+    "files": 1,
+    "memory": 651731,
+    "updated": 1792181755649,
+    "entities": 10,
+    "entitySizes": {
+      "extra300-meigs": 651731
+    },
+    "screenshotTime": 1792181793514,
+    "screenshotDataHash": "75db29a07b39258e2d2205367ed312ee187ddeae8586f2923f7b9dd3b26bcee0"
   }
 }
