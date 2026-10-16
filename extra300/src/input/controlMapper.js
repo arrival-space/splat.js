@@ -56,10 +56,12 @@ const EASE_PER_RAD = 16;   // stick eased off per radian past the buffet [tune] 
  * heading held on the ground, and the bank held where you leave it.
  */
 export const EASY = {
-  alphaMax: 13.5 * Math.PI / 180,   // body α; the wing stalls at ~18° (buffet 15.5°)
-  lead: 0.3,                       // s of α-rate the limiter looks ahead [tune] tests/handling.test.js easy
+  alphaMax: 15.5 * Math.PI / 180,   // body α; the first wing strip stalls at 17.8° (sweeps at 80 and 140 kt)
+  lead: 0.25,                        // s of α-rate the limiter looks ahead [tune] tests/handling.test.js easy
   kp: 3.0,                          // elevator per rad past the limit
   ki: 9.0,                          // per rad·s: learns the elevator that holds the limit
+  liftoffMargin: 2 * Math.PI / 180, // the limit while the wheels are still on the ground is this much lower
+  slew: 3.5,                        // elevator travel per s
   minQ: 60,                         // Pa (~20 kt): below this α means nothing
   gMax: 7, gMin: -4.5,              // and a load limit inside the airplane's ±10 g [tune]
   radPerG: 0.03,                    // α per g at aerobatic speeds, to fold the g limit into the same loop
@@ -97,6 +99,7 @@ export class ControlMapper {
     this._rudI = 0;
     this._phiRef = null;
     this._psiRef = null;
+    this._ele = 0;
   }
 
   /** Forget the held heading and bank (the airplane was put somewhere new). */
@@ -145,7 +148,7 @@ export class ControlMapper {
     let ele = soft(this.kb.elevator, KEY_CAP.elevator) * keyAuthority('elevator', q, boost);
     // the keyboard pilot holds the pull at the buffet instead of pulling through it (Shift: through)
     const alpha = flight.alpha ?? 0;
-    if (boost === 1 && q > 150) {
+    if (boost === 1 && q > 150 && !this.easy) {   // easy mode has its own, closer limit
       if (ele > 0 && alpha > BUFFET_ALPHA) ele = Math.max(0, ele - EASE_PER_RAD * (alpha - BUFFET_ALPHA));
       if (ele < 0 && alpha < -BUFFET_ALPHA) ele = Math.min(0, ele - EASE_PER_RAD * (alpha + BUFFET_ALPHA));
     }
@@ -189,7 +192,14 @@ export class ControlMapper {
     if (P('trimDown')) this.trim = clamp(this.trim - 0.25 * dt, -1, 1);
 
     ele = clamp(ele, -1, 1);
-    if (this.easy) ele = this._limitAlpha(ele, flight, dt);
+    if (this.easy) {
+      // a stick slammed full back reaches the wing faster than any limiter can see it coming:
+      // easy mode moves the elevator at most this fast (a brisk 0.3 s end to end)
+      // (the stick itself is slewed; the limiter then works on that)
+      const slew = EASY.slew * dt;
+      this._ele = clamp(ele, this._ele - slew, this._ele + slew);
+      ele = this._limitAlpha(this._ele, flight, dt);
+    } else this._ele = ele;
     // easy mode holds the bank where the pilot left it, so the torque roll after lift-off and in the
     // climb is taken out with aileron; steep up or down, where bank means little, it only damps the roll
     if (this.easy && !flight.onGround && q > 40 && ail === 0 && this.kb.aileron === 0) {
@@ -223,13 +233,16 @@ export class ControlMapper {
     const a = flight.alpha ?? 0;
     if (this._alphaPrev != null && dt > 0) this._alphaDot += ((a - this._alphaPrev) / dt - this._alphaDot) * Math.min(1, dt * 20);
     this._alphaPrev = a;
-    if (flight.onGround || (flight.qbar ?? 0) < EASY.minQ) { this._lim.hi = this._lim.lo = null; return ele; }
+    // on the wheels too: the lift-off is where an over-rotation drops a wing (three-point α is ~12°)
+    if ((flight.qbar ?? 0) < EASY.minQ) { this._lim.hi = this._lim.lo = null; return ele; }
     const pred = a + EASY.lead * this._alphaDot;
+    // rotating on the main wheels the nose comes up fast: lift off with a couple of degrees in hand
+    const alphaMax = EASY.alphaMax - (flight.onGround ? EASY.liftoffMargin : 0);
     for (const sgn of [1, -1]) {
       const key = sgn > 0 ? 'hi' : 'lo';
       const n = flight.loadFactor ?? 1;
       const gLeft = sgn > 0 ? EASY.gMax - n : n - EASY.gMin;
-      const margin = Math.min(EASY.alphaMax - sgn * pred, gLeft * EASY.radPerG);   // rad left before a limit
+      const margin = Math.min(alphaMax - sgn * pred, gLeft * EASY.radPerG);   // rad left before a limit
       const e = sgn * ele;                                 // the stick, as a pull toward this limit
       if (margin > 6 * Math.PI / 180) { this._lim[key] = null; continue; }
       // never above the stick: when the stick asks for less there is nothing to limit
