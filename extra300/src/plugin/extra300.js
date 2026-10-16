@@ -366,6 +366,8 @@ export class Extra300 extends ArrivalScript {
     this.mapper.update(raw, dt, this.ac.controls);
     if (!this._paused) this.ac.update(dt);
     this._checkBuildings();
+    // the controls card has done its job once the airplane is flying
+    if (!this._helpAutoHidden && this.ac.agl > 30) { this._helpAutoHidden = true; this.hud.toggleHelp(false); }
     const v = this.instruments.update(this.ac, dt);
     this.visual.update(this.ac, this._paused ? 0 : dt);
 

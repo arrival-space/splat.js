@@ -34,7 +34,7 @@ export class Hud {
     const css = (el, s) => Object.assign(el.style, s);
 
     this.panelCanvas = document.createElement('canvas');
-    css(this.panelCanvas, { position: 'fixed', left: '0', bottom: '0', pointerEvents: 'none', zIndex: 20, display: 'none' });
+    css(this.panelCanvas, { position: 'fixed', left: '50%', bottom: '4px', transform: 'translateX(-50%)', pointerEvents: 'none', zIndex: 20, display: 'none' });
     container.appendChild(this.panelCanvas);
     this.panel = new Panel(this.panelCanvas, limits);
 
@@ -109,9 +109,12 @@ export class Hud {
   }
 
   layout() {
-    const w = window.innerWidth;
-    const h = Math.round(Math.min(window.innerHeight * 0.26, w * 0.17));
-    this.panel.resize(w, h, Math.min(2, window.devicePixelRatio || 1));
+    // the cluster is only as wide as its instruments, centred on the bottom edge
+    let h = Math.round(Math.min(window.innerHeight * 0.21, 175));
+    let w = Panel.widthFor(Panel.radiusFor(h));
+    const maxW = window.innerWidth - 16;
+    if (w > maxW) { h = Math.floor(h * (maxW / w)); w = Panel.widthFor(Panel.radiusFor(h)); }
+    this.panel.resize(Math.ceil(w), h, Math.min(2, window.devicePixelRatio || 1));
     this.panelHeight = h;
   }
 
