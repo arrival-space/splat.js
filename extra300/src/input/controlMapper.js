@@ -30,7 +30,7 @@ export const BINDINGS = {
 // one-shot actions handled by the plugin
 export const ACTIONS = {
   view: ['v'], panel: ['i'], reset: ['Backspace'], pause: ['p'], help: ['h', '?'],
-  mixture: ['m'], parkingBrake: [','], autoRudder: ['u'], demo: ['o'], gReset: ['g'], kollsman: ['n'], exit: ['Escape'], yoke: ['y'], lookCenter: ['c'],
+  mixture: ['m'], parkingBrake: [','], autoRudder: ['u'], easy: ['l'], demo: ['o'], gReset: ['g'], kollsman: ['n'], exit: ['Escape'], yoke: ['y'], lookCenter: ['c'],
 };
 
 /**
@@ -48,6 +48,22 @@ export const KEY_AUTHORITY = {
 /** A pilot feels the buffet a couple of degrees before the stall and eases off there. */
 export const BUFFET_ALPHA = 15.5 * Math.PI / 180;
 const EASE_PER_RAD = 16;   // stick eased off per radian past the buffet [tune] tests/handling.test.js loops
+
+/**
+ * Easy mode: the elevator is never allowed to take the wing past the stall
+ * (or past 7 g), from any input (Shift, pad, yoke), either way up; and the
+ * torque is handled for you: rudder against the yaw in the air, the runway
+ * heading held on the ground, and the bank held where you leave it.
+ */
+export const EASY = {
+  alphaMax: 13.5 * Math.PI / 180,   // body α; the wing stalls at ~18° (buffet 15.5°)
+  lead: 0.3,                       // s of α-rate the limiter looks ahead [tune] tests/handling.test.js easy
+  kp: 3.0,                          // elevator per rad past the limit
+  ki: 9.0,                          // per rad·s: learns the elevator that holds the limit
+  minQ: 60,                         // Pa (~20 kt): below this α means nothing
+  gMax: 7, gMin: -4.5,              // and a load limit inside the airplane's ±10 g [tune]
+  radPerG: 0.03,                    // α per g at aerobatic speeds, to fold the g limit into the same loop
+};
 
 /** How much of its travel a held key may use without Shift. */
 export const KEY_CAP = { elevator: 0.75, aileron: 0.5, rudder: 0.65 };
@@ -74,6 +90,20 @@ export class ControlMapper {
     this.trim = 0;
     this.autoRudder = opts.autoRudder ?? true;   // the pilot's feet: keeps the ball centred in the air
     this._autoRud = 0;
+    this.easy = opts.easy ?? false;
+    this._lim = { hi: null, lo: null };   // active α-limiter integrators (null: not limiting)
+    this._alphaPrev = null;
+    this._alphaDot = 0;
+    this._rudI = 0;
+    this._phiRef = null;
+    this._psiRef = null;
+  }
+
+  /** Forget the held heading and bank (the airplane was put somewhere new). */
+  resetHolds() {
+    this._psiRef = this._phiRef = null;
+    this._rudI = 0;
+    this._lim.hi = this._lim.lo = null;
   }
 
   static pressed(keys, names) {
@@ -90,9 +120,9 @@ export class ControlMapper {
    * @param {{x:number,y:number}|null} [raw.yoke] mouse yoke, -1..1 from screen centre
    * @param {number} dt
    * @param {object} controls  aircraft controls object, written in place
-   * @param {{ qbar?: number, alpha?: number, beta?: number, yawRate?: number, onGround?: boolean }} [flight]
-   *   dynamic pressure (Pa), angle of attack and sideslip (rad), yaw rate (rad/s): for the keyboard's
-   *   pilot-force model, its feel for the buffet, and the auto-rudder
+   * @param {{ qbar?: number, alpha?: number, beta?: number, yawRate?: number, rollRate?: number, heading?: number, bank?: number, pitch?: number, loadFactor?: number, onGround?: boolean }} [flight]
+   *   dynamic pressure (Pa), angle of attack and sideslip (rad), yaw and roll rate (rad/s), true heading, bank and pitch (rad), load factor: for
+   *   the keyboard's pilot-force model, its feel for the buffet, the auto-rudder and easy mode
    */
   update(raw, dt, controls, flight = {}) {
     const k = raw.keys || new Set();
@@ -122,10 +152,12 @@ export class ControlMapper {
     let rud = soft(this.kb.rudder, KEY_CAP.rudder) * keyAuthority('rudder', q, boost);
     // auto-rudder: right pedal for a sideslip from the right, damped by the yaw rate; any rudder
     // input from keys, pad or sticks takes over
-    const target = this.autoRudder && !flight.onGround && q > 300
-      ? clamp(4 * (flight.beta ?? 0) - 0.4 * (flight.yawRate ?? 0), -1, 1) : 0;
+    const target = this.easy ? this._easyRudder(flight, dt)
+      : this.autoRudder && !flight.onGround && q > 300
+        ? clamp(4 * (flight.beta ?? 0) - 0.4 * (flight.yawRate ?? 0), -1, 1) : 0;
     this._autoRud += (target - this._autoRud) * Math.min(1, dt * 8);
     if (this.kb.rudder === 0) rud = this._autoRud;
+    else if (this.easy) { this._psiRef = null; this._rudI = 0; }   // the pilot steers: hold the new heading after
     let brake = P('brakes') ? 1 : 0;
     let brakeL = brake, brakeR = brake;
 
@@ -156,8 +188,22 @@ export class ControlMapper {
     if (P('trimUp')) this.trim = clamp(this.trim + 0.25 * dt, -1, 1);
     if (P('trimDown')) this.trim = clamp(this.trim - 0.25 * dt, -1, 1);
 
+    ele = clamp(ele, -1, 1);
+    if (this.easy) ele = this._limitAlpha(ele, flight, dt);
+    // easy mode holds the bank where the pilot left it, so the torque roll after lift-off and in the
+    // climb is taken out with aileron; steep up or down, where bank means little, it only damps the roll
+    if (this.easy && !flight.onGround && q > 40 && ail === 0 && this.kb.aileron === 0) {
+      const p = flight.rollRate ?? 0, phi = flight.bank ?? 0;
+      const steep = Math.abs(flight.pitch ?? 0) > 60 * Math.PI / 180;
+      if (steep) this._phiRef = null;
+      else if (this._phiRef == null) this._phiRef = phi;
+      const err = steep ? 0 : Math.atan2(Math.sin(this._phiRef - phi), Math.cos(this._phiRef - phi));
+      ail = clamp(2 * err - 0.25 * p, -0.6, 0.6);
+    } else this._phiRef = flight.onGround ? 0 : null;
+    if (!this.easy) this._lim.hi = this._lim.lo = null;
+
     controls.aileron = clamp(ail, -1, 1);
-    controls.elevator = clamp(ele, -1, 1);
+    controls.elevator = ele;
     controls.rudder = clamp(rud, -1, 1);
     controls.throttle = this.throttle;
     controls.prop = this.prop;
@@ -166,5 +212,48 @@ export class ControlMapper {
     controls.brakeR = brakeR;
     controls.starter = P('starter');
     return controls;
+  }
+
+  /**
+   * Easy mode's α-limiter. Within 3° of the limit an integrator starts from the stick and learns the
+   * elevator that holds α there; whatever asks for more (key, Shift, pad) gets that instead.
+   * Mirrored for pushing.
+   */
+  _limitAlpha(ele, flight, dt) {
+    const a = flight.alpha ?? 0;
+    if (this._alphaPrev != null && dt > 0) this._alphaDot += ((a - this._alphaPrev) / dt - this._alphaDot) * Math.min(1, dt * 20);
+    this._alphaPrev = a;
+    if (flight.onGround || (flight.qbar ?? 0) < EASY.minQ) { this._lim.hi = this._lim.lo = null; return ele; }
+    const pred = a + EASY.lead * this._alphaDot;
+    for (const sgn of [1, -1]) {
+      const key = sgn > 0 ? 'hi' : 'lo';
+      const n = flight.loadFactor ?? 1;
+      const gLeft = sgn > 0 ? EASY.gMax - n : n - EASY.gMin;
+      const margin = Math.min(EASY.alphaMax - sgn * pred, gLeft * EASY.radPerG);   // rad left before a limit
+      const e = sgn * ele;                                 // the stick, as a pull toward this limit
+      if (margin > 6 * Math.PI / 180) { this._lim[key] = null; continue; }
+      // never above the stick: when the stick asks for less there is nothing to limit
+      const I = Math.max(-1, Math.min(1, e, (this._lim[key] ?? e) + EASY.ki * margin * dt));
+      this._lim[key] = I;
+      const cap = I + EASY.kp * margin;
+      if (e > cap) ele = sgn * Math.max(-1, cap);
+    }
+    return ele;
+  }
+
+  /** Easy mode's feet: the ball centred in the air (with an integrator for the climb torque), the heading held on the ground. */
+  _easyRudder(flight, dt) {
+    const q = flight.qbar ?? 0, r = flight.yawRate ?? 0, psi = flight.heading ?? 0;
+    if (flight.onGround) {
+      this._rudI = 0;
+      if (this._psiRef == null) this._psiRef = psi;
+      const err = Math.atan2(Math.sin(this._psiRef - psi), Math.cos(this._psiRef - psi));
+      return clamp(3 * err - 1.2 * r, -1, 1);
+    }
+    this._psiRef = null;
+    if (q < 40) return 0;
+    const beta = flight.beta ?? 0;
+    this._rudI = clamp(this._rudI + 3 * beta * dt, -0.6, 0.6);
+    return clamp(4 * beta + this._rudI - 0.4 * r, -1, 1);
   }
 }

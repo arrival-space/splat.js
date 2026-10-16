@@ -108,3 +108,15 @@ test('kollsman knob moves the altimeter ~1,000 ft per inch', () => {
   assert.ok(Math.abs(ins.values.kollsmanInHg - 30.92) < 1e-9);
   void INHG;
 });
+
+test('stall warning: sounds at high α in flight, silent below 40 kt (taxiing, tail down)', () => {
+  const warn = (kt) => {
+    const ac = posed({ tas: kt * KT, alt: 0, alpha: 17 * DEG });
+    ac.out.qbar = 0.5 * 1.225 * (kt * KT) ** 2;
+    return new Instruments(EXTRA).update(ac, 1 / 60).stallWarning;
+  };
+  assert.equal(warn(60), true);
+  assert.equal(warn(45), true);
+  assert.equal(warn(35), false);
+  assert.equal(warn(10), false);
+});

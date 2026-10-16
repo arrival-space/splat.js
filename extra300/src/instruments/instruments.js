@@ -117,7 +117,9 @@ export class Instruments {
     v.fuelCenterL = ac.load.fuelCenterL;
     v.fuelWingsL = ac.load.fuelWingsL;
     v.oat = atm.T - 273.15;
-    v.stallWarning = ac.aero.wingStallFraction() > 0 || (o.tas > 15 && Math.abs(o.alpha) > 15 * DEG && Math.abs(o.alpha) < 60 * DEG);
+    // the vane only speaks with air over it: nothing below ~40 kt (taxiing, tail down, in a gust)
+    const casKt = Math.sqrt(2 * Math.max(0, o.qbar) / 1.225) / 0.514444;
+    v.stallWarning = casKt > 40 && (ac.aero.wingStallFraction() > 0 || (Math.abs(o.alpha) > 15 * DEG && Math.abs(o.alpha) < 60 * DEG));
     return v;
   }
 

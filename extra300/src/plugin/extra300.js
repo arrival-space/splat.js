@@ -41,6 +41,7 @@ export class Extra300 extends ArrivalScript {
   oatC = 15;
   skylineYear = 2026;
   cityDetail = 'full';
+  easyMode = false;
 
   static properties = {
     isEnabled: { title: 'Enabled' },
@@ -55,6 +56,7 @@ export class Extra300 extends ArrivalScript {
     oatC: { title: 'Sea-level temperature (°C)', min: -30, max: 45, step: 1 },
     skylineYear: { title: 'Skyline year (2026 = today, 2002 = the last Meigs year)', min: 1980, max: 2026, step: 1 },
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
+    easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
   };
 
   initialize() {
@@ -83,12 +85,13 @@ export class Extra300 extends ArrivalScript {
       weather: this._weather(),
     });
     this.instruments = new Instruments(EXTRA, { kollsman: this.qnhInHg * INHG });
-    this.mapper = new ControlMapper();
+    this.mapper = new ControlMapper({ easy: this.easyMode });
     const tower = this.world.landmarks.find((l) => l.name === 'Meigs Tower');
     this.cameraRig = new CameraRig({ eye: EXTRA.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
     this.visual = new AircraftVisual(this.app, this._worldRoot);
     this.sound = new CockpitSound();
     this.hud = new Hud(this.getUIContainer(), EXTRA.limits, this.isMobile, (tag, opts) => this.createUI(tag, opts));
+    this.hud.setEasy(this.mapper.easy);
 
     this._resetToRunway();
     this.visual.update(this.ac, 0);
@@ -112,7 +115,7 @@ export class Extra300 extends ArrivalScript {
 
     // tap / click the airplane to board
     this._unsubClick = ArrivalSpace.onEntityClick?.(this.visual.root, () => { if (!this._flying) this._enter(); });
-    this.hud.demoButton.onclick = (ev) => { ev.stopPropagation(); this._demo ? this._stopDemo() : this._startDemo(); };
+    this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._enter();
     if (this.hud.buttons.exit) this.hud.buttons.exit.onclick = () => this._exit();
     if (this.hud.buttons.view) this.hud.buttons.view.onclick = () => this._action('view');
@@ -175,6 +178,7 @@ export class Extra300 extends ArrivalScript {
   }
 
   _resetToRunway() {
+    this.mapper.resetHolds();
     const s = this.world.startPosition();
     let { n, e, heading } = s;
     if (this.startRunway === '18') {
@@ -274,6 +278,11 @@ export class Extra300 extends ArrivalScript {
     }
   }
 
+  _setEasy(on) {
+    this.mapper.easy = on;
+    this.hud.setEasy(on);
+  }
+
   // ── demo flight ──────────────────────────────────────────────────────────
   _startDemo() {
     if (!this.isEnabled) return;
@@ -285,7 +294,6 @@ export class Extra300 extends ArrivalScript {
     this._director = true;
     this._helpAutoHidden = true;
     this.hud.toggleHelp(false);
-    this.hud.setDemo(true);
     this.hud.flash('Demo flight: watch, or press any flight key to take over', 4);
   }
 
@@ -296,7 +304,6 @@ export class Extra300 extends ArrivalScript {
     this.mapper.trim = this.ac.controls.elevatorTrim || 0;
     this.ac.controls.brakeL = this.ac.controls.brakeR = 0;
     this._demo = null;
-    this.hud.setDemo(false);
     this.hud.showDemoStatus('');
     this.hud.flash(message, 2.5);
   }
@@ -374,6 +381,10 @@ export class Extra300 extends ArrivalScript {
       case 'parkingBrake': c.parkingBrake = !c.parkingBrake; break;
       case 'gReset': this.instruments.resetG(); break;
       case 'kollsman': this.instruments.kollsman = this.ac.weather.qnh; this.hud.flash(`Altimeter ${(this.ac.weather.qnh / INHG).toFixed(2)}`, 1.5); break;
+      case 'easy':
+        this._setEasy(!this.mapper.easy);
+        this.hud.flash(this.mapper.easy ? 'Easy mode: the wing won\'t stall, torque handled for you' : 'Easy mode off: all yours', 2.5);
+        break;
       case 'autoRudder': this.mapper.autoRudder = !this.mapper.autoRudder; this.hud.flash(this.mapper.autoRudder ? 'Auto-rudder on (keeps the ball centred)' : 'Auto-rudder off: your feet', 2); break;
       case 'yoke': this._yoke = !this._yoke; this.hud.flash(this._yoke ? 'Mouse yoke on' : 'Mouse yoke off', 1.5); break;
       case 'lookCenter': this.cameraRig.centre(); break;
@@ -434,9 +445,11 @@ export class Extra300 extends ArrivalScript {
       this._directCamera();
       this.hud.showDemoStatus(Extra300.DEMO_TEXT[this._demo.phase] || '');
     } else {
+      const e0 = this.ac.euler;
       this.mapper.update(raw, dt, this.ac.controls, {
-        qbar: this.ac.out.qbar, alpha: this.ac.out.alpha, beta: this.ac.out.beta,
-        yawRate: this.ac.state.omega[2], onGround: this.ac.gear.onGround,
+        qbar: this.ac.out.qbar, alpha: this.ac.out.alpha, beta: this.ac.out.beta, loadFactor: this.ac.out.loadFactor,
+        yawRate: this.ac.state.omega[2], rollRate: this.ac.state.omega[0],
+        heading: e0.psi, bank: e0.phi, pitch: e0.theta, onGround: this.ac.gear.onGround,
       });
     }
     if (!this._paused) this.ac.update(dt);
@@ -473,7 +486,7 @@ export class Extra300 extends ArrivalScript {
     }
     const e = this.ac.euler;
     this.hud.readout.textContent = `H — controls   ${this.cameraRig.view.toUpperCase()}  IAS ${Math.round(v.ias)} kt  ALT ${Math.round(v.altitude)} ft  HDG ${String(Math.round(v.compass)).padStart(3, '0')}  `
-      + `pitch ${(e.theta / DEG).toFixed(0)}°  bank ${(e.phi / DEG).toFixed(0)}°  ${Math.round(v.rpm)} rpm  ${v.g.toFixed(1)} g`;
+      + `pitch ${(e.theta / DEG).toFixed(0)}°  bank ${(e.phi / DEG).toFixed(0)}°  ${Math.round(v.rpm)} rpm  ${v.g.toFixed(1)} g${this.mapper.easy ? '   EASY' : ''}`;
   }
 
   postUpdate() {
@@ -542,6 +555,7 @@ export class Extra300 extends ArrivalScript {
       this.world.setSkylineYear(this.skylineYear);
       this.city.build(this._cityOptions());
     }
+    if (name === 'easyMode') this._setEasy(this.easyMode);
     if (name === 'showPanel') { this._panelVisible = this.showPanel; this.hud.setFlying(this._flying, this._panelVisible); }
     if (['windKt', 'windFromDeg', 'qnhInHg', 'oatC'].includes(name)) this.ac.weather = this._weather();
     if (name === 'fuelLiters' || name === 'startRunway' || name === 'engineRunningAtStart') { if (!this._flying) this._resetToRunway(); }

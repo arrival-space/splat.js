@@ -9,10 +9,16 @@ Place the vibe where the airplane should park. Meigs Field, the lake and
 Chicago are laid out around it. Walk up to the airplane and press **E** (or
 tap it) to fly. Press **H** in the cockpit for the controls.
 
-To watch first, press **▶ Watch a Platzrunde** (or **O**). The airplane then
-flies one circuit by itself while the camera follows it: takeoff from 36, a
-loop over the lake, then the landing. Press any flight key, or the button,
-to take over wherever it is.
+New to it? Press **Easy mode** on the right edge (or **L**), on the ground
+or in the air. The wing then can't be pulled past the stall (nor past 7 g),
+whatever the keys, Shift or a gamepad ask for. The propeller's torque is
+handled for you: the runway heading is held on the takeoff roll, the ball is
+centred in the air, and the bank stays where you leave it. Press it again for
+the real thing.
+
+To watch first, press **O**. The airplane flies one circuit by itself while
+the camera follows it: takeoff from 36, a loop over the lake, then the
+landing. Press any flight key to take over wherever it is.
 
 ![Runway 36, Meigs Field, from the cockpit](docs/img/cockpit-runway36.png)
 
@@ -73,7 +79,7 @@ direct stick positions.
 ```bash
 cd extra300
 npm install
-npm test               # 68 unit, component and flight-test checks (~4 s)
+npm test               # 100 unit, component and flight-test checks (~4 s)
 npm run build          # → dist/extra300-meigs.mjs, the single-file vibe
 npm run serve          # http://localhost:8740/tests/harness/  (PlayCanvas + an Arrival stand-in)
 npm run test:e2e       # headless Chromium on the local stand-in: boards, rolls, screenshots into dist/shots/

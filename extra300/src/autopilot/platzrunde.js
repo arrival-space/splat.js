@@ -4,7 +4,7 @@
 //
 // The pilot works the same controls a person does: stick, pedals, throttle,
 // brakes. The loop is flown through the keyboard mapper — holding the pitch
-// key, as a player would. The plugin's "Watch a Platzrunde" button runs it;
+// key, as a player would. The plugin's demo flight (O) runs it;
 // tests/flight.test.js flies it in Node as the end-to-end test.
 
 import { Pid, casKt } from './pid.js';

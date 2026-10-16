@@ -72,28 +72,24 @@ await shot('08-loop-lowpass', '?fly=1&view=chase', () => {
   await page.screenshot({ path: join(out, '07-takeoff-roll.png') });
   await page.close();
 }
-// the demo button: one click, it flies itself; a flight key takes over
+// the easy-mode button: there while flying, a real mouse click toggles it
 {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-  page.on('pageerror', (e) => errors.push(`demo: ${e.message}`));
-  await page.goto('http://localhost:8741/tests/harness/?');
-  await page.waitForFunction(() => window.harnessReady === true, null, { timeout: 60000 });
+  page.on('pageerror', (e) => errors.push(`easy: ${e.message}`));
+  await page.goto('http://localhost:8741/tests/harness/?fly=1');
+  await page.waitForFunction(() => window.harnessReady === true && window.vibe._flying, null, { timeout: 60000 });
   // a real mouse click where the button is drawn (a scripted .click() would pass even if nothing can reach it)
-  const box = await page.evaluate(() => { const r = window.vibe.hud.demoButton.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
-  const onTop = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === window.vibe.hud.demoButton, box);
-  if (!onTop) errors.push('demo: the button is not the topmost element under the pointer');
+  const box = await page.evaluate(() => { const r = window.vibe.hud.easyButton.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; });
+  const onTop = await page.evaluate(({ x, y }) => document.elementFromPoint(x, y) === window.vibe.hud.easyButton, box);
+  if (!onTop) errors.push('easy: the button is not the topmost element under the pointer');
   await page.mouse.click(box.x, box.y);
-  const started = await page.evaluate(() => !!window.vibe._demo && window.vibe._flying);
-  if (!started) errors.push('demo: the button did not start the demo flight');
-  await page.waitForFunction(() => window.vibe._demo && ['climb', 'crosswind'].includes(window.vibe._demo.phase), null, { timeout: 300000 });
-  await page.waitForTimeout(1500);
-  await page.screenshot({ path: join(out, '09-demo-climbing-out.png') });
-  const status = await page.evaluate(() => window.vibe.hud.demoStatus.textContent);
-  if (!/Climbing|Crosswind/.test(status)) errors.push(`demo: status line says "${status}"`);
-  await page.keyboard.press('w');
-  const tookOver = await page.evaluate(() => window.vibe._demo === null && window.vibe.hud.demoButton.textContent.includes('Watch'));
-  if (!tookOver) errors.push('demo: a flight key did not take over');
-  console.log(`demo: started, "${status}", take-over ${tookOver ? 'ok' : 'FAILED'}`);
+  const on = await page.evaluate(() => window.vibe.mapper.easy && /ON/.test(window.vibe.hud.easyButton.textContent));
+  await page.screenshot({ path: join(out, '09-easy-mode.png') });
+  await page.keyboard.press('l');
+  const off = await page.evaluate(() => !window.vibe.mapper.easy && /off/.test(window.vibe.hud.easyButton.textContent));
+  if (!on) errors.push('easy: the click did not switch easy mode on');
+  if (!off) errors.push('easy: L did not switch it off again');
+  console.log(`easy mode: click ${on ? 'on' : 'FAILED'}, L ${off ? 'off' : 'FAILED'}`);
   await page.close();
 }
 await browser.close();

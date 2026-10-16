@@ -14,6 +14,7 @@ const QUICK_START = [
 const HELP = [
   ['Pitch', 'S / ↓ nose up (pull)    W / ↑ nose down (push)    + Shift: pull through the buffet'],
   ['Roll', 'A / ←  left    D / →  right'],
+  ['Easy mode', 'L  on / off, any time: no stalls, rudder and bank held against the torque'],
   ['Rudder', 'Q  left    E  right    (Z / X too)    U  auto-rudder on / off'],
   ['Throttle', 'R  more    F  less    (also + / − or PgUp / PgDn)    Home idle    End full'],
   ['Brakes', 'B or .  (hold)    ,  parking brake'],
@@ -94,19 +95,18 @@ export class Hud {
     });
     container.appendChild(this.readout);
 
-    // the demo flight: always there, so a visitor can just watch. Mid right edge: the corners belong
-    // to the Arrival client's own controls while walking.
     const button = (style) => {
       const b = createUI('button', { interactive: true, lockKeyboard: false });
       css(b, { position: 'fixed', zIndex: 1000, pointerEvents: 'auto', cursor: 'pointer', ...style });
       return b;
     };
-    this.demoButton = button({
-      right: '16px', top: '42%', padding: '10px 16px', borderRadius: '8px',
-      border: '1px solid rgba(255,255,255,0.3)', background: 'rgba(196,30,42,0.92)', color: '#fff',
-      font: '700 15px "Helvetica Neue", Arial, sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
+    // easy mode, switchable any time in flight. Mid right edge: the corners belong to the Arrival client.
+    this.easyButton = button({
+      right: '16px', top: '42%', padding: '9px 14px', borderRadius: '8px', display: 'none',
+      border: '1px solid rgba(255,255,255,0.3)', color: '#fff',
+      font: '700 14px "Helvetica Neue", Arial, sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.4)',
     });
-    this.setDemo(false);
+    this.setEasy(false);
 
     this.demoStatus = document.createElement('div');
     css(this.demoStatus, {
@@ -152,11 +152,13 @@ export class Hud {
     if (this.buttons.board) this.buttons.board.style.display = text ? 'block' : 'none';
   }
 
-  /** Demo button label: start, or take over while the demo flies. */
-  setDemo(running) {
-    this.demoButton.textContent = running ? '✋ Take over' : '▶ Watch a Platzrunde';
-    this.demoButton.title = running ? 'Take the controls (or just press any flight key)' : 'Takeoff, a loop over the lake, and a landing — flown for you (O)';
-    this.demoButton.style.background = running ? 'rgba(30,60,140,0.92)' : 'rgba(196,30,42,0.9)';
+  /** Easy-mode button: what it is now, and what a click does. */
+  setEasy(on) {
+    this.easyButton.textContent = on ? 'Easy mode: ON' : 'Easy mode: off';
+    this.easyButton.title = on
+      ? 'No stalls, torque handled for you. Click (or L) for the real thing'
+      : 'Click (or L): the wing can\'t stall, rudder and bank are held against the torque';
+    this.easyButton.style.background = on ? 'rgba(40,140,70,0.92)' : 'rgba(12,13,16,0.72)';
   }
 
   showDemoStatus(text) {
@@ -181,6 +183,7 @@ export class Hud {
     this.panelCanvas.style.display = flying && panelVisible ? 'block' : 'none';
     this.readout.style.display = flying ? 'block' : 'none';
     this.credit.style.display = flying ? 'block' : 'none';
+    this.easyButton.style.display = flying ? 'block' : 'none';
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (!flying) this.help.style.display = 'none';
   }
@@ -191,6 +194,6 @@ export class Hud {
   }
 
   destroy() {
-    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, this.credit, this.demoButton, this.demoStatus, ...Object.values(this.buttons)]) el.remove();
+    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, this.credit, this.easyButton, this.demoStatus, ...Object.values(this.buttons)]) el.remove();
   }
 }
