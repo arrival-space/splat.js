@@ -22,9 +22,16 @@ const span = 8.0;          // [pub] 8.00 m
 const rootChord = 1.86;    // [est] three-view; with tip gives S = 10.7 m²
 const tipChord = 0.82;     // [est]
 const semi = span / 2;
-const teX = -1.014;        // [est] straight trailing edge station; puts R at ~28 % MAC
+// Planform from the three-view (skybrary.aero E300, scaled to the 8.0 m span): the leading edge is
+// nearly straight (0.24 m of sweep root to tip) and the taper is all in the trailing edge, which
+// comes forward toward the tips. Placed so the mean quarter-chord stays where the handling was
+// validated (R at ~28 % MAC).
+const leRoot = 0.50;       // [est] leading edge at the root, body x
+const leSweep = 0.24;      // [est] three-view: LE root → tip, aft
+export const wingLE = (y) => leRoot - (leSweep * Math.abs(y)) / semi;
+export const wingChord = (y) => rootChord + ((tipChord - rootChord) * Math.abs(y)) / semi;
 
-/** Wing panels: TE straight, LE swept, symmetric section (MA 15 S root, MA 12 S tip). */
+/** Wing panels: LE nearly straight, TE swept forward, symmetric section (MA 15 S root, MA 12 S tip). */
 function wingSegments(n = 6, yInner = 0.0) {
   const segs = [];
   for (const side of [-1, 1]) {
@@ -32,12 +39,12 @@ function wingSegments(n = 6, yInner = 0.0) {
       const y0 = yInner + ((semi - yInner) * i) / n;
       const y1 = yInner + ((semi - yInner) * (i + 1)) / n;
       const ym = 0.5 * (y0 + y1);
-      const c = rootChord + ((tipChord - rootChord) * ym) / semi;
+      const c = wingChord(ym);
       segs.push({
         name: `wing${side < 0 ? 'L' : 'R'}${i}`,
         group: 'wing',
         side,
-        pos: [teX + 0.75 * c, side * ym, 0.2],   // low wing: chord plane 0.2 m below R
+        pos: [wingLE(ym) - 0.25 * c, side * ym, 0.2],   // low wing: chord plane 0.2 m below R
         chord: c,
         area: (y1 - y0) * c,
         span: [0, 1, 0],            // spanwise axis (same for both sides so lift is up)
@@ -187,8 +194,9 @@ export const EXTRA_300L = {
   // tests/performance.test.js "hands off at cruise"
   rigging: { aileron: 0.006, rudder: 0.03 },
 
-  // where the pilot's eyes are (rear seat) for the cockpit camera [est]
-  eye: [-1.0, 0, -0.95],
+  // where the pilot's eyes are (rear seat) for the cockpit camera: under the canopy's highest point,
+  // a hand's width below it (three-view: canopy top 0.71 m above the thrust line) [est]
+  eye: [-1.12, 0, -0.60],
 };
 
 export const KNOTS = KT; // re-export so callers can stay unit-explicit

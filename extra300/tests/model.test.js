@@ -102,6 +102,7 @@ test('the airplane is lit from outside: every surface faces away from its part\'
       for (let j = 0; j < P.length; j += 3) {
         if (Math.abs(N[j + 1]) < 0.8 || Math.sign(N[j + 1]) === Math.sign(N[i + 1])) continue;
         if (Math.abs(P[j] - P[i]) > 0.01 || Math.abs(P[j + 2] - P[i + 2]) > 0.01) continue;
+        if (Math.abs(P[j + 1] - P[i + 1]) < 1e-3) break;   // the trailing edge: the skins meet, nothing to compare
         n++;
         if (Math.sign(N[i + 1]) !== Math.sign(P[i + 1] - P[j + 1])) wrong++;
         break;

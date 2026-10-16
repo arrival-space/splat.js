@@ -25,17 +25,23 @@ import bmesh
 from mathutils import Matrix, Vector
 
 # ── the airplane's numbers (body axes, metres) ──────────────────────────────
-TE = -1.014                                     # wing trailing edge (straight)
+# Planform and outline from the three-view (skybrary.aero E300), scaled to the 8.0 m span and
+# 7.12 m length, registered on the wing so the flight model's balance is unchanged (the sim's
+# src/sim/aircraft/extra300l.js uses the same wingLE / wingChord). Nose (spinner tip) at x = 2.32.
+def wing_le(y): return 0.50 - 0.24 * abs(y) / 4.0        # leading edge: nearly straight
 def chord_at(y): return 1.86 + (0.82 - 1.86) * abs(y) / 4.0
+def wing_te(y): return wing_le(y) - chord_at(y)         # trailing edge: swept forward
 AIL_IN, AIL_OUT, AIL_FRAC = 0.95, 3.95, 0.30
 WING_Z = 0.2                                    # chord plane, below R
-HT_Z, HT_HINGE = -0.18, -4.18
-VT_HINGE = -4.25
+HT_Z, HT_HINGE = -0.18, -4.10                   # (visual hinge; the sim's tail strips have their own)
+VT_HINGE = -4.40
+NOSE_X = 2.32
 PROP_X = 2.05
 PROP_R = 0.99
 MAIN = dict(x=0.55, y=0.93, z=1.33, r=0.18)     # contact point, tyre radius
 TAIL = dict(x=-4.45, z=0.42, r=0.08)
-EYE = (-1.0, 0.0, -0.95)
+EYE = (-1.12, 0.0, -0.60)
+RAIL_Z = -0.18                                  # canopy rail (cockpit sill), body z
 
 COLORS = {
     'white': '#f3f1ec', 'red': '#c41e2a', 'dark': '#1b1d22', 'tyre': '#151515', 'metal': '#a4a7ab',
@@ -164,50 +170,67 @@ def bisect_paint(bm, planes):
 
 
 # ── fuselage: a shell with the cockpit open, red cowling and cheat line ─────
-# x, top z, bottom z, half-width, squareness [est] from the three-view
+# x, top z, bottom z, half-width, squareness — side and top views of the three-view. Between the
+# windscreen and the turtle deck the "top" is the line the canopy's ends sit on; the canopy covers it.
 FUS = [
-    (2.07, -0.17, 0.15, 0.17, 2.0),
-    (1.99, -0.32, 0.31, 0.32, 2.2),
-    (1.82, -0.41, 0.40, 0.41, 2.5),
-    (1.50, -0.47, 0.45, 0.46, 2.7),
-    (1.20, -0.50, 0.47, 0.48, 2.9),
-    (0.95, -0.53, 0.47, 0.49, 3.0),
-    (0.40, -0.545, 0.46, 0.50, 3.0),
-    (-0.40, -0.545, 0.45, 0.49, 3.0),
-    (-1.20, -0.54, 0.41, 0.45, 3.0),
-    (-1.95, -0.53, 0.35, 0.39, 2.9),
-    (-2.70, -0.46, 0.26, 0.30, 2.7),
-    (-3.40, -0.40, 0.15, 0.21, 2.5),
-    (-4.05, -0.35, 0.03, 0.12, 2.3),
-    (-4.58, -0.33, -0.12, 0.05, 2.0),
+    (1.90, -0.17, 0.17, 0.18, 2.0),     # spinner back plate
+    (1.87, -0.20, 0.25, 0.30, 2.3),     # blunt cowl face, the inlets either side of the spinner
+    (1.80, -0.24, 0.33, 0.41, 2.6),
+    (1.62, -0.265, 0.42, 0.45, 2.8),
+    (1.36, -0.29, 0.47, 0.46, 3.0),
+    (0.82, -0.31, 0.58, 0.46, 3.0),
+    (0.29, -0.335, 0.58, 0.46, 3.0),
+    (0.11, -0.36, 0.58, 0.46, 3.0),     # windscreen base
+    (-0.90, -0.48, 0.56, 0.44, 3.0),
+    (-2.03, -0.62, 0.42, 0.38, 2.9),    # canopy's end: the turtle deck starts high
+    (-2.68, -0.54, 0.33, 0.31, 2.7),
+    (-3.31, -0.44, 0.25, 0.19, 2.5),
+    (-3.63, -0.39, 0.21, 0.13, 2.4),
+    (-4.08, -0.34, 0.16, 0.09, 2.3),
+    (-4.62, -0.31, 0.06, 0.04, 2.0),    # tail post
 ]
-COCKPIT = dict(x0=0.93, x1=-1.93, y=0.37, z=-0.40)   # the opening in the top: canopy rail height
+CANOPY_X0, CANOPY_X1 = 0.11, -2.03
+# canopy top line (body z) along x: side view
+CANOPY_TOP = [(0.11, -0.36), (-0.07, -0.40), (-0.25, -0.51), (-0.43, -0.60), (-0.60, -0.65), (-0.78, -0.69),
+              (-0.96, -0.71), (-1.32, -0.71), (-1.50, -0.69), (-1.68, -0.67), (-1.85, -0.65), (-2.03, -0.62)]
+
+
+def fus_at(x):
+    return smooth_interp(FUS, [x])[0]
+
+
+def canopy_top(x):
+    pts = CANOPY_TOP
+    for (x0, z0), (x1, z1) in zip(pts, pts[1:]):
+        if x1 <= x <= x0:
+            t = (x0 - x) / (x0 - x1)
+            return z0 + (z1 - z0) * t
+    return pts[0][1] if x > pts[0][0] else pts[-1][1]
 
 
 def fuselage():
     bm = bmesh.new()
-    xs = [FUS[0][0] - (FUS[0][0] - FUS[-1][0]) * i / 70 for i in range(71)]
-    # stations closer together where the shape changes fast (the cowl)
-    xs = sorted(set([round(x, 4) for x in xs] + [2.05, 2.03, 2.01, 1.95, 1.9, 1.86]), reverse=True)
+    xs = [FUS[0][0] - (FUS[0][0] - FUS[-1][0]) * i / 80 for i in range(81)]
+    # stations closer together where the shape changes fast (the cowl face)
+    xs = sorted(set([round(x, 4) for x in xs] + [1.885, 1.86, 1.84, 1.82, 1.77, 1.72]), reverse=True)
     rows = smooth_interp(FUS, xs)
     rings = [superellipse(x, top, bot, hw, e, 40) for x, top, bot, hw, e in rows]
     loft(bm, rings, cap=True)
+    # paint: red cowl nose, and a red cheat line sweeping down toward the tail on both sides.
+    # The mesh is cut along every edge first (the cockpit's too), so edges are straight, not stair steps.
+    def zl(x):            # the cheat line's top edge (body z) along the fuselage
+        return 0.0 + 0.036 * (x - 1.5)
+    W = 0.09              # its depth
+    bisect_paint(bm, [((1.55, 0, 0), (1, 0, 0)), ((-3.9, 0, 0), (1, 0, 0)),
+                      ((0, 0, zl(0)), (-0.036, 0, 1)), ((0, 0, zl(0) + W), (-0.036, 0, 1)),
+                      ((CANOPY_X0, 0, 0), (1, 0, 0)), ((CANOPY_X1, 0, 0), (1, 0, 0)), ((0, 0, RAIL_Z), (0, 0, 1))])
     # the cockpit opening: everything above the rail between windscreen and turtle deck
-    kill = [f for f in bm.faces if COCKPIT['x1'] < f.calc_center_median().x < COCKPIT['x0']
-            and -f.calc_center_median().z < COCKPIT['z'] and abs(f.calc_center_median().y) < COCKPIT['y'] + 0.05]
+    kill = [f for f in bm.faces if CANOPY_X1 < body(f.calc_center_median())[0] < CANOPY_X0 and body(f.calc_center_median())[2] < RAIL_Z]
     bmesh.ops.delete(bm, geom=kill, context='FACES')
     outward(bm)
-    # paint: red cowl nose, and a red cheat line sweeping down toward the tail on both sides.
-    # The mesh is cut along each paint edge first, so the edges are straight lines, not stair steps.
-    def zl(x):            # the cheat line's top edge (body z) along the fuselage
-        return -0.05 + 0.07 * (1.2 - x)
-    W = 0.10              # its depth
-    # planes z = zl(x) and z = zl(x) + W: z + 0.07x = const → normal (0.07, 0, 1)
-    bisect_paint(bm, [((1.62, 0, 0), (1, 0, 0)), ((-3.9, 0, 0), (1, 0, 0)),
-                      ((0, 0, zl(0)), (0.07, 0, 1)), ((0, 0, zl(0) + W), (0.07, 0, 1))])
     for f in bm.faces:
         x, y, z = body(f.calc_center_median())
-        red = x > 1.62 or (-3.9 < x < 1.62 and zl(x) < z < zl(x) + W and abs(y) > 0.1)
+        red = x > 1.55 or (-3.9 < x < 1.55 and zl(x) < z < zl(x) + W and abs(y) > 0.1)
         f.material_index = 1 if red else 0
     ob = new_object('fuselage', bm, ['white', 'red'], smooth_angle=50)
     sol = ob.modifiers.new('shell', 'SOLIDIFY')
@@ -217,58 +240,61 @@ def fuselage():
 
 
 def fuselage_interior():
-    """Floor, bulkheads, and the parts of the cockpit the shell doesn't give."""
+    """Floor and the bulkheads fore and aft of the cockpit (the shell's inside skin is the walls)."""
     bm = bmesh.new()
-    # floor between the seats, below the hips
-    for x0, x1 in ((0.9, -1.85),):
-        pts = [(x0, -0.36, 0.30), (x1, -0.30, 0.30), (x1, 0.30, 0.30), (x0, 0.36, 0.30)]
-        bm.faces.new([bm.verts.new(V(*p)) for p in pts])
-    # bulkhead behind the rear seat, and the firewall face ahead of the front panel
-    for x, hw, bot in ((-1.88, 0.37, 0.34), (1.05, 0.46, 0.45)):
-        # the fuselage section there, below the canopy rail
-        sec = [p for p in superellipse(x, -0.53, bot, hw, 3.0, 48) if p[2] >= COCKPIT['z']]
+    pts = [(0.75, -0.38, 0.42), (-2.05, -0.30, 0.40), (-2.05, 0.30, 0.40), (0.75, 0.38, 0.42)]
+    bm.faces.new([bm.verts.new(V(*p)) for p in pts])
+    for x in (-2.05, 0.75):
+        _, top, bot, hw, e = fus_at(x)
+        sec = [p for p in superellipse(x, top, bot, hw * 0.98, e, 48) if p[2] <= 0.43]
         bm.faces.new([bm.verts.new(V(*p)) for p in sec])
     outward(bm)
     return new_object('cockpitShell', bm, ['floor'], smooth_angle=20)
 
 
 # ── canopy: one-piece bubble on a frame ──────────────────────────────────────
+def canopy_section(x, n=24):
+    """The canopy at station x: the fuselage's own section shape raised to the canopy's top line, above the rail."""
+    _, top, bot, hw, e = fus_at(x)
+    ztop = min(canopy_top(x), top)
+    zc, hh = 0.5 * (ztop + bot), 0.5 * (bot - ztop)
+    s0 = min(1.0, max(0.0, (zc - RAIL_Z) / hh)) ** (e / 2)
+    t0 = math.asin(s0)
+    pts = []
+    for k in range(n + 1):
+        t = t0 + (math.pi - 2 * t0) * k / n
+        c, s_ = math.cos(t), math.sin(t)
+        pts.append((x, hw * math.copysign(abs(c) ** (2 / e), c), zc - hh * abs(s_) ** (2 / e)))
+    return pts
+
+
 def canopy():
     bm = bmesh.new()
-    xs = [0.93, 0.82, 0.62, 0.30, -0.10, -0.55, -1.0, -1.45, -1.75, -1.93]
-    hs = [0.00, 0.12, 0.27, 0.39, 0.44, 0.45, 0.43, 0.35, 0.22, 0.04]
-    ws = [0.33, 0.35, 0.37, 0.38, 0.385, 0.385, 0.38, 0.36, 0.31, 0.24]
-    base = -COCKPIT['z']   # rail height (body z, negative = up)
-    rings = []
-    for x, h, w in zip(xs, hs, ws):
-        r = []
-        for k in range(25):
-            t = math.pi * k / 24
-            # bubble: rounder at the top, near-vertical sides at the rail
-            r.append((x, w * math.cos(t), -base - h * (math.sin(t) ** 0.85)))
-        rings.append(r)
+    xs = [CANOPY_X0 - (CANOPY_X0 - CANOPY_X1) * i / 24 for i in range(25)]
+    rings = [canopy_section(x) for x in xs]
     loft(bm, rings, close=False, cap=False)
     outward(bm)
     ob = new_object('canopy', bm, ['glass'], smooth_angle=80, meta=dict(transparent=True))
     sol = ob.modifiers.new('thick', 'SOLIDIFY')
     sol.thickness = 0.006
-    # frame: the rail along both sides and the bow at the front and back
+    # frame: the rail along both sides, and bows across the front and back edges
     bm = bmesh.new()
     for side in (-1, 1):
-        r0 = [(x, side * (w + 0.008), -base + 0.015) for x, w in zip(xs, ws)]
-        r1 = [(x, side * (w + 0.008), -base - 0.035) for x, w in zip(xs, ws)]
-        r2 = [(x, side * (w - 0.03), -base - 0.035) for x, w in zip(xs, ws)]
-        r3 = [(x, side * (w - 0.03), -base + 0.015) for x, w in zip(xs, ws)]
-        loft(bm, list(zip(r0, r1, r2, r3)), close=True, cap=True)
-    for x, h, w in ((xs[1], hs[1], ws[1]), (xs[-2], hs[-2], ws[-2])):
-        ring = []
-        for k in range(17):
-            t = math.pi * k / 16
-            ring.append((x, w * math.cos(t), -base - h * (math.sin(t) ** 0.85)))
-        inner = [(x, p[1] * 0.93, -base - (-(p[2]) - base) * 0.88) for p in ring]
-        for (a, b), (c, d) in zip(zip(ring, ring[1:]), zip(inner, inner[1:])):
-            q = [bm.verts.new(V(*p)) for p in (a, b, d, c)]
-            bm.faces.new(q)
+        outer, inner = [], []
+        for r in rings:
+            p = r[0] if side > 0 else r[-1]
+            outer.append(p)
+        r0 = [(x, y + side * 0.012, z + 0.01) for x, y, z in outer]
+        r1 = [(x, y + side * 0.012, z - 0.03) for x, y, z in outer]
+        r2 = [(x, y - side * 0.03, z - 0.03) for x, y, z in outer]
+        r3 = [(x, y - side * 0.03, z + 0.01) for x, y, z in outer]
+        loft(bm, [list(q) for q in zip(r0, r1, r2, r3)], close=True, cap=True)
+    for x in (CANOPY_X0 - 0.06, CANOPY_X1 + 0.05):
+        ring = canopy_section(x, 16)
+        out = [(x, y * 1.02, z - 0.008) for _, y, z in ring]
+        inn = [(x, y * 0.94, z + 0.035) for _, y, z in ring]
+        for (a, b), (c, d) in zip(zip(out, out[1:]), zip(inn, inn[1:])):
+            bm.faces.new([bm.verts.new(V(*p)) for p in (a, b, d, c)])
     outward(bm)
     new_object('canopyFrame', bm, ['dark'], smooth_angle=40)
 
@@ -304,10 +330,12 @@ def bevel(ob, width=0.015, segments=2):
     return ob
 
 
-def seat(x, name, back_h=0.62, headrest=True):
+FLOOR_Z = 0.42
+
+
+def seat(x, name, back_h=0.62, headrest=True, pan_z=0.20):
     """Bucket seat reclined ~28°, seat pan at hip height, harness lying on it."""
     bm = bmesh.new()
-    pan_z = -0.13
     back_rot = Matrix.Rotation(math.radians(-28), 3, 'Y')   # lean back (top aft)
     back_c = (x - 0.16, 0, pan_z - back_h / 2)
     box(bm, (x + 0.12, 0, pan_z + 0.04), (0.42, 0.40, 0.08))                       # pan
@@ -334,10 +362,10 @@ def seat(x, name, back_h=0.62, headrest=True):
 def stick(x, name):
     """Control stick from the floor; origin at its pivot, rotated by the sim's elevator and aileron."""
     bm = bmesh.new()
-    pivot = (x, 0, 0.27)
-    cylinder(bm, (x, 0, 0.0), 0.014, 0.55, 'z', 12)          # shaft, up to z -0.27
-    cylinder(bm, (x, 0, -0.33), 0.022, 0.13, 'z', 14)       # grip
-    box(bm, (x, 0, 0.255), (0.12, 0.12, 0.03))              # boot base
+    pivot = (x, 0, FLOOR_Z - 0.03)
+    cylinder(bm, (x, 0, pivot[2] - 0.27), 0.014, 0.54, 'z', 12)     # shaft
+    cylinder(bm, (x, 0, pivot[2] - 0.60), 0.022, 0.13, 'z', 14)     # grip
+    box(bm, (x, 0, pivot[2] - 0.015), (0.12, 0.12, 0.03))           # boot base
     outward(bm)
     new_object(f'{name}Stick', bm, ['dark'], origin=pivot, smooth_angle=40,
                meta=dict(kind='stick', hinge=list(pivot), axis=[0, 1, 0]))
@@ -346,21 +374,21 @@ def stick(x, name):
 def pedals(x, name):
     bm = bmesh.new()
     for s in (-1, 1):
-        box(bm, (x, s * 0.12, 0.12), (0.03, 0.09, 0.16), Matrix.Rotation(math.radians(-20), 3, 'Y'))
-        cylinder(bm, (x - 0.05, s * 0.12, 0.25), 0.008, 0.14, 'x', 8)
+        box(bm, (x, s * 0.12, FLOOR_Z - 0.16), (0.03, 0.09, 0.16), Matrix.Rotation(math.radians(-20), 3, 'Y'))
+        cylinder(bm, (x - 0.05, s * 0.12, FLOOR_Z - 0.04), 0.008, 0.14, 'x', 8)
     outward(bm)
     new_object(f'{name}Pedals', bm, ['metal'], smooth_angle=30)
 
 
-def throttle(x, name):
+def throttle(x, name, z=0.02):
     bm = bmesh.new()
-    box(bm, (x, -0.33, -0.12), (0.22, 0.05, 0.06))                      # quadrant on the left wall
-    box(bm, (x + 0.02, -0.29, -0.2), (0.015, 0.012, 0.14), Matrix.Rotation(math.radians(-25), 3, 'Y'))
+    box(bm, (x, -0.38, z), (0.22, 0.05, 0.06))                       # quadrant on the left wall
+    box(bm, (x + 0.02, -0.34, z - 0.08), (0.015, 0.012, 0.14), Matrix.Rotation(math.radians(-25), 3, 'Y'))
     outward(bm)
     new_object(f'{name}Throttle', bm, ['dark'], smooth_angle=30)
     bm = bmesh.new()
-    cylinder(bm, (x + 0.05, -0.29, -0.27), 0.022, 0.03, 'y', 14)
-    box(bm, (x - 0.04, -0.29, -0.24), (0.012, 0.012, 0.11), Matrix.Rotation(math.radians(-25), 3, 'Y'))
+    cylinder(bm, (x + 0.05, -0.34, z - 0.15), 0.022, 0.03, 'y', 14)
+    box(bm, (x - 0.04, -0.34, z - 0.12), (0.012, 0.012, 0.11), Matrix.Rotation(math.radians(-25), 3, 'Y'))
     outward(bm)
     new_object(f'{name}Knobs', bm, ['red'], smooth_angle=30)
 
@@ -405,25 +433,26 @@ def panel(x, width, top, bottom, name, gauges, tilt=12):
 
 def cockpit():
     fuselage_interior()
-    # front seat (passenger / instructor) and rear seat (pilot in command when solo)
-    # the front seat's back is low and has no headrest: the pilot in the rear looks over it
-    seat(0.25, 'front', back_h=0.42, headrest=False)
-    seat(-1.05, 'rear')
-    stick(0.70, 'front')
-    stick(-0.60, 'rear')
-    pedals(1.05, 'front')
-    pedals(-0.12, 'rear')
-    throttle(0.45, 'front')
-    throttle(-0.80, 'rear')
+    # tandem seats under the canopy: the front one (passenger / instructor) under its forward part,
+    # the rear one (pilot in command when solo) under its highest point. The front seat's back is low
+    # and has no headrest: the pilot in the rear looks over it.
+    seat(-0.45, 'front', back_h=0.40, headrest=False)
+    seat(-1.25, 'rear')
+    stick(-0.12, 'front')
+    stick(-0.92, 'rear')
+    pedals(0.42, 'front')
+    pedals(-0.70, 'rear')
+    throttle(-0.30, 'front')
+    throttle(-1.05, 'rear')
     # front panel under the windscreen: six-pack and engine stack
-    six = [(-0.22, -0.46, 0.04), (-0.11, -0.46, 0.04), (0.0, -0.46, 0.04),
-           (-0.22, -0.36, 0.04), (-0.11, -0.36, 0.04), (0.0, -0.36, 0.04),
-           (0.13, -0.44, 0.03), (0.13, -0.37, 0.03), (0.22, -0.44, 0.022), (0.22, -0.38, 0.022), (0.22, -0.32, 0.022)]
-    panel(0.90, 0.62, -0.52, -0.27, 'front', six)
+    six = [(-0.22, -0.27, 0.04), (-0.11, -0.27, 0.04), (0.0, -0.27, 0.04),
+           (-0.22, -0.17, 0.04), (-0.11, -0.17, 0.04), (0.0, -0.17, 0.04),
+           (0.13, -0.26, 0.03), (0.13, -0.18, 0.03), (0.22, -0.27, 0.022), (0.22, -0.21, 0.022), (0.22, -0.15, 0.022)]
+    panel(0.08, 0.62, -0.34, -0.10, 'front', six)
     # rear panel on the front seat's back structure, in the pilot's line of sight under the canopy
-    rear = [(-0.18, -0.47, 0.035), (-0.08, -0.47, 0.035), (0.02, -0.47, 0.035),
-            (-0.13, -0.38, 0.03), (-0.03, -0.38, 0.03), (0.13, -0.45, 0.028), (0.13, -0.37, 0.022)]
-    panel(-0.36, 0.52, -0.53, -0.32, 'rear', rear, tilt=18)
+    rear = [(-0.17, -0.25, 0.034), (-0.07, -0.25, 0.034), (0.03, -0.25, 0.034),
+            (-0.12, -0.16, 0.03), (-0.02, -0.16, 0.03), (0.13, -0.24, 0.028), (0.13, -0.16, 0.022)]
+    panel(-0.80, 0.50, -0.32, -0.10, 'rear', rear, tilt=18)
 
 
 # ── lifting surfaces ────────────────────────────────────────────────────────
@@ -479,14 +508,14 @@ def surface(stations, plane_z, t, vertical=False, tip_round=0.0, n=14):
 
 
 def wing(side):
-    st = [(side * y, TE + chord_at(y), TE) for y in (0.3, 0.5, AIL_IN)]
+    st = [(side * y, wing_le(y), wing_te(y)) for y in (0.3, 0.5, AIL_IN)]
     bm = surface(st, WING_Z, 0.15)
     st2 = []
     for y in (AIL_IN, 1.6, 2.4, 3.2, AIL_OUT):
-        c = chord_at(y)
-        st2.append((side * y, TE + c, TE + AIL_FRAC * c))
+        st2.append((side * y, wing_le(y), wing_te(y) + AIL_FRAC * chord_at(y)))
     # past the aileron's end the wing is full chord again, then the rounded tip out to the 8.0 m span
-    st2.append((side * (AIL_OUT + 0.003), TE + chord_at(AIL_OUT), TE))
+    y = AIL_OUT + 0.003
+    st2.append((side * y, wing_le(y), wing_te(y)))
     bm2 = surface(st2, WING_Z, 0.13, tip_round=4.0 - AIL_OUT - 0.003)
     # merge both into one mesh
     me_tmp = bpy.data.meshes.new('tmp')
@@ -500,13 +529,13 @@ def wing(side):
     # nav light at the tip
     bm = bmesh.new()
     vs = bmesh.ops.create_uvsphere(bm, u_segments=12, v_segments=8, radius=0.035)['verts']
-    bmesh.ops.translate(bm, vec=V(TE + 0.5 * chord_at(4.0), side * 3.975, WING_Z), verts=vs)
+    bmesh.ops.translate(bm, vec=V(wing_le(4.0) - 0.5 * chord_at(4.0), side * 3.975, WING_Z), verts=vs)
     new_object('navL' if side < 0 else 'navR', bm, ['navRed' if side < 0 else 'navGreen'], smooth_angle=80)
 
 
 def paint_rays(bm, side):
     """Classic Extra sunburst: five red rays on the wing top fanning from the root trailing edge."""
-    ox, oy = -0.6, 0.0
+    ox, oy = -0.85, 0.0
     rays = [math.radians(a) for a in (-62, -38, -14, 10, 34)]   # angle from the spanwise axis, + toward the tail
     half = math.radians(5.5)
     planes = []
@@ -529,50 +558,41 @@ def paint_rays(bm, side):
 
 def aileron(side):
     y0, y1 = AIL_IN, AIL_OUT
-    h0, h1 = TE + AIL_FRAC * chord_at(y0), TE + AIL_FRAC * chord_at(y1)
+    h0, h1 = wing_te(y0) + AIL_FRAC * chord_at(y0), wing_te(y1) + AIL_FRAC * chord_at(y1)
     hinge = (0.5 * (h0 + h1), side * 0.5 * (y0 + y1), WING_Z)
-    st = [(side * y, TE + AIL_FRAC * chord_at(y) - 0.012, TE) for y in (y0 + 0.01, 2.0, 3.0, y1 - 0.01)]
+    st = [(side * y, wing_te(y) + AIL_FRAC * chord_at(y) - 0.012, wing_te(y)) for y in (y0 + 0.01, 2.0, 3.0, y1 - 0.01)]
     bm = surface(st, WING_Z, 0.13 * 0.6 / AIL_FRAC * 0.30)
     new_object('aileronL' if side < 0 else 'aileronR', bm, ['red'], origin=hinge, smooth_angle=35,
                meta=dict(kind='aileron', side=side, hinge=list(hinge), axis=[h1 - h0, side * (y1 - y0), 0]))
 
 
 def tail():
+    # three-view: a near-rectangular tailplane (0.8 m chord, LE swept 0.2 m), square tips
     for side in (-1, 1):
-        # stabiliser; its tip stops short for the elevator's horn balance
-        st = [(side * 0.08, -3.55, HT_HINGE), (side * 0.8, -3.62, HT_HINGE), (side * 1.42, -3.74, HT_HINGE)]
-        bm = surface(st, HT_Z, 0.12)
+        st = [(side * 0.08, -3.58, HT_HINGE), (side * 0.8, -3.68, HT_HINGE), (side * 1.58, -3.79, HT_HINGE)]
+        bm = surface(st, HT_Z, 0.12, tip_round=0.02)
         new_object('stabL' if side < 0 else 'stabR', bm, ['white'], smooth_angle=35)
-    # elevator: both halves, horn balances at the tips reaching ahead of the hinge
     bm = bmesh.new()
     me_tmp = bpy.data.meshes.new('tmp')
     for side in (-1, 1):
-        st = [(side * 0.08, HT_HINGE - 0.01, -4.62), (side * 0.8, HT_HINGE - 0.01, -4.58), (side * 1.42, HT_HINGE - 0.01, -4.47)]
-        b = surface(st, HT_Z, 0.12 * 0.7)
-        b.to_mesh(me_tmp); b.free(); bm.from_mesh(me_tmp)
-        horn = [(side * 1.43, -3.76, -4.47), (side * 1.55, -3.80, -4.43), (side * 1.6, -3.86, -4.40)]
-        b = surface(horn, HT_Z, 0.11, tip_round=0.05)
+        st = [(side * 0.08, HT_HINGE - 0.01, -4.40), (side * 0.8, HT_HINGE - 0.01, -4.40), (side * 1.58, HT_HINGE - 0.01, -4.38)]
+        b = surface(st, HT_Z, 0.12 * 0.9, tip_round=0.02)
         b.to_mesh(me_tmp); b.free(); bm.from_mesh(me_tmp)
     bpy.data.meshes.remove(me_tmp)
     for f in bm.faces:
         x, y, z = body(f.calc_center_median())
-        f.material_index = 1 if abs(y) > 1.0 else 0
+        f.material_index = 1 if abs(y) > 1.15 else 0
     hinge = (HT_HINGE, 0, HT_Z)
     new_object('elevator', bm, ['white', 'red'], origin=hinge, smooth_angle=35,
                meta=dict(kind='elevator', hinge=list(hinge), axis=[0, 1, 0]))
-    # fin and rudder (span along body −z), rudder with a horn over the fin's top
-    bm = surface([(-0.30, -3.55, VT_HINGE), (-0.8, -3.80, VT_HINGE), (-1.24, -3.98, VT_HINGE)], 0, 0.12, vertical=True)
+    # fin: a steep trapezoid; rudder: big, straight trailing edge, square top (span along body −z)
+    bm = surface([(-0.30, -3.71, VT_HINGE), (-0.8, -3.92, VT_HINGE), (-1.27, -4.14, VT_HINGE)], 0, 0.12, vertical=True)
     new_object('fin', bm, ['white'], smooth_angle=35)
-    bm = bmesh.new()
-    me_tmp = bpy.data.meshes.new('tmp')
-    b = surface([(0.05, VT_HINGE - 0.01, -4.70), (-0.8, VT_HINGE - 0.01, -4.66), (-1.25, VT_HINGE - 0.01, -4.46)], 0, 0.10, vertical=True)
-    b.to_mesh(me_tmp); b.free(); bm.from_mesh(me_tmp)
-    b = surface([(-1.25, -3.99, -4.46), (-1.33, -4.02, -4.40), (-1.38, -4.08, -4.34)], 0, 0.10, vertical=True, tip_round=0.04)
-    b.to_mesh(me_tmp); b.free(); bm.from_mesh(me_tmp)
-    bpy.data.meshes.remove(me_tmp)
+    bm = surface([(0.12, VT_HINGE - 0.01, -4.78), (-0.8, VT_HINGE - 0.01, -4.80), (-1.27, VT_HINGE - 0.01, -4.76)], 0, 0.11,
+                 vertical=True, tip_round=0.03)
     for f in bm.faces:
         x, y, z = body(f.calc_center_median())
-        f.material_index = 1 if z < -0.75 or x < -4.55 else 0
+        f.material_index = 1 if z < -0.80 else 0
     hinge = (VT_HINGE, 0, -0.6)
     new_object('rudder', bm, ['white', 'red'], origin=hinge, smooth_angle=35,
                meta=dict(kind='rudder', hinge=list(hinge), axis=[0, 0, -1]))
@@ -585,7 +605,7 @@ def nose():
     for i in range(13):
         f = i / 12
         r = 0.175 * math.sqrt(max(0.0, 1 - f ** 2.2)) + 0.003
-        x = PROP_X + 0.02 + f * 0.40
+        x = 1.89 + f * (NOSE_X - 1.89)
         rings.append([(x, r * math.cos(2 * math.pi * k / 32), r * math.sin(2 * math.pi * k / 32)) for k in range(32)])
     loft(bm, rings)
     outward(bm)
@@ -624,12 +644,12 @@ def nose():
     # cooling inlets either side of the spinner, oil cooler scoop below, exhaust
     bm = bmesh.new()
     for s in (-1, 1):
-        cylinder(bm, (2.0, s * 0.255, 0.04), 0.075, 0.06, 'x', 20)
-    box(bm, (1.55, 0, 0.47), (0.35, 0.18, 0.06))
+        cylinder(bm, (1.86, s * 0.26, 0.05), 0.07, 0.04, 'x', 20)
+    box(bm, (1.45, 0, 0.49), (0.35, 0.18, 0.06))
     outward(bm)
     new_object('inlets', bm, ['gauge'], smooth_angle=40)
     bm = bmesh.new()
-    cylinder(bm, (1.25, 0.12, 0.50), 0.045, 0.30, 'x', 16)
+    cylinder(bm, (1.15, 0.14, 0.55), 0.045, 0.30, 'x', 16)
     outward(bm)
     new_object('exhaust', bm, ['metal'], smooth_angle=40)
 
@@ -641,7 +661,7 @@ def gear():
         hub = (MAIN['x'], side * MAIN['y'], MAIN['z'] - MAIN['r'])
         # spring leg: a flat tapered blade from the fuselage side to the axle
         bm = bmesh.new()
-        top = (0.62, side * 0.36, 0.40)
+        top = (0.62, side * 0.40, 0.50)
         bot = (hub[0], side * (MAIN['y'] - 0.07), hub[2])
         rings = []
         for f in (0.0, 0.25, 0.5, 0.75, 1.0):
@@ -781,16 +801,25 @@ def render(outdir):
     views = {
         'front34': ((6.5, -6.5, 1.6), (0, 0, 0.0), 40),
         'rear34': ((-8.0, 5.0, 3.0), (-1, 0, 0), 40),
-        'side': ((0.0, -12.0, 0.3), (-1.2, 0, 0.1), 40),
-        'top': ((-0.5, 0.0, 14.0), (-0.5, 0, 0), 45),
+        'side': ((-1.1, -12.0, 0.25), (-1.1, 0, 0.25), 'ortho'),
+        'top': ((-1.1, 0.0, 14.0), (-1.1, 0, 0), 'ortho'),
+        'front': ((12.0, 0.0, -0.3), (0, 0, -0.3), 'ortho'),
         'cockpit': (V(*EYE), V(2.0, 0, -0.75), 85),
         'cockpitTop': ((-0.3, -1.6, 2.3), (-0.3, 0, 0.0), 50),
     }
+    only = os.environ.get('VIEWS')
     for name, (eye, at, fov) in views.items():
+        if only and name not in only.split(','):
+            continue
         cam.location = Vector(eye)
         d = Vector(at) - Vector(eye)
         cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
-        cam.data.angle = math.radians(fov)
+        if fov == 'ortho':
+            cam.data.type = 'ORTHO'
+            cam.data.ortho_scale = 8.6
+        else:
+            cam.data.type = 'PERSP'
+            cam.data.angle = math.radians(fov)
         canopy_ob = bpy.data.objects.get('canopy')
         if canopy_ob:
             canopy_ob.hide_render = name.startswith('cockpit')
