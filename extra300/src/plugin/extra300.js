@@ -286,6 +286,8 @@ export class Extra300 extends ArrivalScript {
     this._attach = ArrivalSpace.attachPlayerToEntity?.(this.visual.root, {
       offset: { x: seat[1], y: -this.avatarSeatHeight, z: -this.avatarSeatForward },
       animations: { Idle: pose, Forward: pose, Backward: pose, Left: pose, Right: pose },
+      // the avatar faces the entity's +z; the airplane's nose is its −z: turn the avatar round
+      meshEuler: () => ({ x: 0, y: 180, z: 0 }),
       disableCollision: true,
       rate: 20,
       extra: () => ({ rpm: Math.round(this.ac.rpm), ias: Math.round(this.instruments.values.ias || 0) }),
