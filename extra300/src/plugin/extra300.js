@@ -19,6 +19,7 @@ import { AircraftVisual } from './aircraftVisual.js';
 import { SceneryVisual } from './sceneryVisual.js';
 import { Hud } from './hud.js';
 import { disposeMaterials, toMesh } from './pcMesh.js';
+import { disposeGroundTextures } from './groundMaterial.js';
 import { OsmVisual } from './osmVisual.js';
 import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
@@ -630,5 +631,6 @@ export class Extra300 extends ArrivalScript {
     this._sky?.destroy();
     this._worldRoot.destroy();
     disposeMaterials();
+    disposeGroundTextures();
   }
 }

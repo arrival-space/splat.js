@@ -92,6 +92,7 @@ function runway(world) {
   const paint = new MeshBuilder();
   const yel = new MeshBuilder();
   const L = rw.length, W = rw.width;
+  const taxi = new MeshBuilder();
   rwQuad(asphalt, rw, -L / 2 - 30, L / 2 + 30, -W / 2, W / 2, 0.03);
   // threshold bars: 12 stripes for a 150 ft runway, 150 ft long
   const stripeW = 5.75 * FT, n = 6, len = 150 * FT;
@@ -115,11 +116,29 @@ function runway(world) {
   // side stripes
   for (const side of [-1, 1]) rwQuad(paint, rw, -L / 2, L / 2, side * (W / 2 - 1.5), side * (W / 2 - 0.6), 0.05);
   // parallel taxiway on the west side and the apron by the terminal
-  rwQuad(asphalt, rw, -L / 2 + 40, L / 2 - 40, -W / 2 - 75, -W / 2 - 60, 0.03);
+  rwQuad(taxi, rw, -L / 2 + 40, L / 2 - 40, -W / 2 - 75, -W / 2 - 60, 0.03);
   rwQuad(yel, rw, -L / 2 + 40, L / 2 - 40, -W / 2 - 67.7, -W / 2 - 67.3, 0.05);
-  for (const at of [-L / 2 + 50, -60, L / 2 - 50]) rwQuad(asphalt, rw, at - 9, at + 9, -W / 2 - 75, -W / 2, 0.025);
-  rwQuad(asphalt, rw, 20, 230, -W / 2 - 160, -W / 2 - 75, 0.03);
-  return { asphalt, paint, yel };
+  for (const at of [-L / 2 + 50, -60, L / 2 - 50]) rwQuad(taxi, rw, at - 9, at + 9, -W / 2 - 75, -W / 2, 0.025);
+  rwQuad(taxi, rw, 20, 230, -W / 2 - 160, -W / 2 - 75, 0.03);
+  // the paved areas in runway coordinates (u across, v along), for the textures
+  const areas = [
+    { kind: 'runway', u: [-W / 2, W / 2], v: [-L / 2 - 30, L / 2 + 30] },
+    { kind: 'taxiway', u: [-W / 2 - 75, -W / 2 - 60], v: [-L / 2 + 40, L / 2 - 40] },
+    ...[-L / 2 + 50, -60, L / 2 - 50].map((at) => ({ kind: 'taxiway', u: [-W / 2 - 60, -W / 2], v: [at - 9, at + 9] })),
+    { kind: 'apron', u: [-W / 2 - 160, -W / 2 - 75], v: [20, 230] },
+  ];
+  for (const mb of [asphalt, taxi, paint, yel]) runwayUvs(mb, rw);
+  return { asphalt, taxi, paint, yel, areas };
+}
+
+/** Texture coordinates in runway metres: u across (east of the centreline +), v along (north +). */
+export function runwayUvs(mb, rw) {
+  mb.uvs = [];
+  for (let i = 0; i < mb.positions.length; i += 3) {
+    const n = -mb.positions[i + 2] - rw.centre[0], e = mb.positions[i] - rw.centre[1];
+    mb.uvs.push(-n * rw.dir[1] + e * rw.dir[0], n * rw.dir[0] + e * rw.dir[1]);
+  }
+  return mb;
 }
 
 function building(mb, l) {
@@ -240,7 +259,7 @@ export function buildScenery(world) {
   parts.push({ name: 'lake', color: PALETTE.water, mesh: water, layer: 'core' });
 
   parts.push({ name: 'mainland', color: PALETTE.land, mesh: flatPolygon(new MeshBuilder(), world.mainland, 0.5), layer: 'city' });
-  parts.push({ name: 'island', color: PALETTE.grass, mesh: flatPolygon(new MeshBuilder(), world.island, 0.0), layer: 'core', bias: -1 });
+  parts.push({ name: 'island', color: PALETTE.grass, mesh: runwayUvs(flatPolygon(new MeshBuilder(), world.island, 0.0), world.runway), layer: 'core', bias: -1, texture: 'grass' });
   const islandWalls = new MeshBuilder();
   wall(islandWalls, world.island, world.water - 0.5, 0.0);
   // walls are built two-sided (a quad each way): they need back-face culling, or the pair z-fights
@@ -252,9 +271,12 @@ export function buildScenery(world) {
   parts.push({ name: 'navyPierWall', color: PALETTE.pier, mesh: wall(new MeshBuilder(), world.pier, world.water - 0.5, 1.5), layer: 'city', cullBack: true });
 
   const rw = runway(world);
-  parts.push({ name: 'runway', color: PALETTE.asphalt, mesh: rw.asphalt, layer: 'core', bias: -2 });
-  parts.push({ name: 'markings', color: PALETTE.marking, mesh: rw.paint, layer: 'core', bias: -3 });
-  parts.push({ name: 'taxiLine', color: PALETTE.yellow, mesh: rw.yel, layer: 'core', bias: -3 });
+  parts.paved = rw.areas;
+  // textured: a detail layer for the grain and one big image each for the variation (see groundTextures.js)
+  parts.push({ name: 'runway', color: PALETTE.asphalt, mesh: rw.asphalt, layer: 'core', bias: -2, texture: 'runway' });
+  parts.push({ name: 'taxiways', color: PALETTE.asphalt, mesh: rw.taxi, layer: 'core', bias: -2, texture: 'taxiway' });
+  parts.push({ name: 'markings', color: PALETTE.marking, mesh: rw.paint, layer: 'core', bias: -3, texture: 'paint-runway', paint: PALETTE.marking });
+  parts.push({ name: 'taxiLine', color: PALETTE.yellow, mesh: rw.yel, layer: 'core', bias: -3, texture: 'paint-taxiway', paint: PALETTE.yellow });
 
   const byColor = new Map();
   for (const l of world.landmarks) {
