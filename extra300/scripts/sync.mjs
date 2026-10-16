@@ -14,6 +14,10 @@
 //   space/entities/extra300-meigs.json      the vibe's host entity + its params
 //   space/entities/spawn-runway36.json      where visitors appear: behind the airplane, facing north
 //   room.json keys in MANAGED_ROOM_KEYS     hub hidden, far clip for the skyline
+//   space/plugins/google-3d-tiles.mjs       the Arrival library's Google 3D Tiles vibe (from the pulled reference/)
+//   space/entities/google-3d-tiles.json     its host, centred on the parking spot; only its position and
+//                                           location params are ours — the API key etc. stay as set in the
+//                                           browser (this file is git-ignored: it holds the key)
 //
 // Every push pulls first, so changes made in the browser to anything else
 // survive; the CLI also snapshots the space server-side before applying.
@@ -23,12 +27,15 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, 
 import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildMeigs } from '../src/world/meigs.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = join(ROOT, 'arrival.json');
 const WORKSPACE = join(ROOT, 'space');           // the CLI workspace (space/, .arrival/, AGENTS.md …)
 const PLUGIN_NAME = 'extra300-meigs';
 const DIST = join(ROOT, 'dist', `${PLUGIN_NAME}.mjs`);
+export const TILES_ID = 'google-3d-tiles';
+const TILES_SRC = join(WORKSPACE, 'reference', 'examples', 'google-3d-tiles.mjs');
 
 export const MANAGED_ROOM_KEYS = {
   hideArchitecture: true,   // no hub: Northerly Island is the floor
@@ -111,6 +118,37 @@ export function stage(spaceDir, cfg, pluginSrc, params) {
   writeJson(roomPath, room);
 }
 
+/**
+ * The Google 3D Tiles vibe, set on Meigs: its origin is the vibe's (the parking spot), so its
+ * latitude / longitude are the parking spot's and its ground altitude the runway's height above
+ * the ellipsoid. Everything else on an existing host (the API key above all) is left alone.
+ * @param {{ lat: number, lon: number, ellipsoidH: number }} at
+ */
+export function stageGoogleTiles(spaceDir, cfg, tilesSrc, at, worldScale = 1) {
+  if (!tilesSrc) return false;
+  writeFileSync(join(spaceDir, 'plugins', `${TILES_ID}.mjs`), tilesSrc);
+  const path = join(spaceDir, 'entities', `${TILES_ID}.json`);
+  const old = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
+  const where = {
+    latitude: +at.lat.toFixed(6), longitude: +at.lon.toFixed(6), groundAltitude: +at.ellipsoidH.toFixed(1), tileScale: worldScale,
+  };
+  writeJson(path, {
+    id: TILES_ID,
+    type: 'UserModelEntity',
+    data: {
+      ...(old?.data || {}),
+      glbUrl: `plugins/${TILES_ID}.mjs`,
+      displayName: old?.data?.displayName || 'Google 3D Tiles — Chicago',
+      position: cfg.placement.position,
+      rotation: { x: 0, y: 0, z: 0 },
+      scale: 1,
+      // a new host asks whoever can edit the space for the API key (the welcome popup)
+      params: { ...(old ? {} : { showPanel: true }), ...(old?.data?.params || {}), ...where },
+    },
+  });
+  return true;
+}
+
 function writeJson(p, obj) {
   writeFileSync(p, `${JSON.stringify(obj, null, 2)}\n`);
 }
@@ -170,7 +208,18 @@ function pullFresh(cfg) {
 
 async function stageWorkspace(cfg) {
   execFileSync(process.execPath, [join(ROOT, 'scripts', 'build.mjs')], { stdio: 'inherit' });
-  stage(join(WORKSPACE, 'space'), cfg, readFileSync(DIST, 'utf8'), await pluginDefaults());
+  const spaceDir = join(WORKSPACE, 'space');
+  stage(spaceDir, cfg, readFileSync(DIST, 'utf8'), await pluginDefaults());
+  const room = JSON.parse(readFileSync(join(spaceDir, 'room.json'), 'utf8'));
+  stageGoogleTiles(spaceDir, cfg, existsSync(TILES_SRC) ? readFileSync(TILES_SRC, 'utf8') : null, parkingSpot(), room.data?.worldScale ?? 1);
+}
+
+/** Where the airplane parks, on the ellipsoid: the Google tiles' anchor. */
+function parkingSpot() {
+  const w = buildMeigs();
+  const s = w.startPosition();
+  const [lat, lon] = w.frame.toLatLon(s.n, s.e);
+  return { lat, lon, ellipsoidH: w.elevation + w.data.geoidM };
 }
 
 async function main() {

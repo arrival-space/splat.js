@@ -15,3 +15,6 @@ space/reference/
 data/osm/raw/
 # the staged copy of dist/ the sync writes into the workspace (a build output)
 space/space/plugins/
+
+# the Google 3D Tiles host holds the API key once it is set in the browser
+space/space/entities/google-3d-tiles.json

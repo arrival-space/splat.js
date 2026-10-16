@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { stage, MANAGED_ROOM_KEYS, loadConfig } from '../scripts/sync.mjs';
+import { stage, stageGoogleTiles, MANAGED_ROOM_KEYS, loadConfig, TILES_ID } from '../scripts/sync.mjs';
 
 function workspace() {
   const dir = mkdtempSync(join(tmpdir(), 'ws-'));
@@ -56,4 +56,36 @@ test('the spawn is within boarding distance of the parked airplane', () => {
   const cfg = loadConfig();
   const d = Math.hypot(cfg.placement.spawn.x - cfg.placement.position.x, cfg.placement.spawn.z - cfg.placement.position.z);
   assert.ok(d > 4 && d < 9, `spawn ${d.toFixed(1)} m from the airplane`);
+});
+
+test('Google 3D Tiles host: centred on the parking spot, and a key set in the browser survives the next push', () => {
+  const space = workspace();
+  const cfg = loadConfig();
+  stage(space, cfg, '', {});
+  const at = { lat: 41.8530123, lon: -87.6081234, ellipsoidH: 147.15 };
+  assert.equal(stageGoogleTiles(space, cfg, '// tiles', at, 1), true);
+  const path = join(space, 'entities', `${TILES_ID}.json`);
+  let host = read(path);
+  assert.equal(host.data.glbUrl, `plugins/${TILES_ID}.mjs`);
+  assert.deepEqual(host.data.position, cfg.placement.position);
+  assert.equal(host.data.params.latitude, 41.853012);
+  assert.equal(host.data.params.groundAltitude, 147.2);
+  assert.equal(host.data.params.showPanel, true, 'a new host asks for the key');
+  // the owner enters the key in the browser; the next push pulls it back and must keep it
+  host.data.params.apiKey = 'browser-entered';
+  host.data.params.showPanel = false;
+  host.data.params.detail = 4.5;
+  writeFileSync(path, JSON.stringify(host));
+  stageGoogleTiles(space, cfg, '// tiles v2', { ...at, lat: 41.86 }, 1);
+  host = read(path);
+  assert.equal(host.data.params.apiKey, 'browser-entered');
+  assert.equal(host.data.params.showPanel, false);
+  assert.equal(host.data.params.detail, 4.5);
+  assert.equal(host.data.params.latitude, 41.86, 'the location is ours');
+  assert.equal(stageGoogleTiles(space, cfg, null, at), false, 'no library copy pulled: nothing staged');
+});
+
+test('the Google tiles host is git-ignored (it holds the API key)', () => {
+  const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
+  assert.match(ignore, /^space\/space\/entities\/google-3d-tiles\.json$/m);
 });

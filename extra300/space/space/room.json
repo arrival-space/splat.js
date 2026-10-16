@@ -21,12 +21,13 @@
     "stageLightDirectionalShadowRange": 50
   },
   "state": {
-    "files": 1,
-    "memory": 677435,
-    "updated": 1792186411373,
-    "entities": 10,
+    "files": 2,
+    "memory": 804585,
+    "updated": 1792187577848,
+    "entities": 11,
     "entitySizes": {
-      "extra300-meigs": 677435
+      "extra300-meigs": 685329,
+      "google-3d-tiles": 119256
     },
     "screenshotTime": 1792184745244,
     "screenshotDataHash": "99ea59a13a3c645eb1804a710f7af5ed2fb739fd6f35a79b2b6969408c1ceda2"

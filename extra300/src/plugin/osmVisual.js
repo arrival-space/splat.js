@@ -4,6 +4,12 @@
 
 import { buildCity, groundLayer, ribbons, seawalls, FACADES } from '../render/buildings.js';
 import { material, meshEntity, toMesh } from './pcMesh.js';
+import { maskWaterRects } from '../world/meigs.js';
+
+// with Google's tiles: our water this far above the lake level (m), over Google's photographed
+// water [tune], and our land this far above it, under Google's ground
+const WATER_LIFT = 0.4;
+const LAND_SINK = 0.9;
 
 const textures = new Map();
 
@@ -79,14 +85,19 @@ export class OsmVisual {
     const osm = world.osm;
 
     // ground: land, parks, inland water, roads, rail, and the stone edge of the lake
-    meshEntity(app, this.root, 'land', groundLayer(osm.land, 0), material('#8b8d84'), { castShadows: false });
-    // past the box: the suburbs out to the horizon, west of the lakefront
-    if (world.farLand) meshEntity(app, this.root, 'farLand', groundLayer([world.farLand], 0), material('#7d8573'), { castShadows: false });
-    meshEntity(app, this.root, 'parks', groundLayer(osm.parks, 0.01), overlay('#5f8240', -1), { castShadows: false });
-    meshEntity(app, this.root, 'river', groundLayer(osm.water, 0.01), overlay('#355f78', -1), { castShadows: false });
-    meshEntity(app, this.root, 'roads', ribbons(osm.roads, 0.02), overlay('#4a4b4e', -2), { castShadows: false });
-    meshEntity(app, this.root, 'rail', ribbons(osm.rail, 0.03), overlay('#5c5149', -3), { castShadows: false });
-    meshEntity(app, this.root, 'shore', seawalls(osm.land, osm.header.box, world.water - 0.5, 0), material('#9b968a'), { castShadows: false });
+    const g = (name, mb, mat) => meshEntity(app, this.root, name, mb, mat, { castShadows: false });
+    this.ground = {
+      land: g('land', groundLayer(osm.land, 0), material('#8b8d84')),
+      // past the box: the suburbs out to the horizon, west of the lakefront
+      farLand: world.farLand ? g('farLand', groundLayer([world.farLand], 0), material('#7d8573')) : null,
+      parks: g('parks', groundLayer(osm.parks, 0.01), overlay('#5f8240', -1)),
+      river: g('river', groundLayer(osm.water, 0.01), overlay('#355f78', -1)),
+      roads: g('roads', ribbons(osm.roads, 0.02), overlay('#4a4b4e', -2)),
+      rail: g('rail', ribbons(osm.rail, 0.03), overlay('#5c5149', -3)),
+      shore: g('shore', seawalls(osm.land, osm.header.box, world.water - 0.5, 0), material('#9b968a')),
+    };
+    this.google = false;
+    this.water = null;
     this.build(opts);
   }
 
@@ -94,6 +105,7 @@ export class OsmVisual {
   build({ year = 2026, minHeight = 0 } = {}) {
     if (this.cityRoot) this.cityRoot.destroy();
     this.cityRoot = new pc.Entity('buildings');
+    this.cityRoot.enabled = !this.google;
     this.root.addChild(this.cityRoot);
     const parts = buildCity(this.world.osm.buildings, { year, minHeight });
     this.shown = parts.shown;
@@ -102,6 +114,7 @@ export class OsmVisual {
 
   /** Call once per frame: turns a few prepared tiles into GPU meshes. */
   tick(budgetMs = 6) {
+    if (this.google) return;   // nothing of ours to raise: Google's tiles are the city
     const t0 = performance.now();
     while (this.queue.length && performance.now() - t0 < budgetMs) {
       const p = this.queue.shift();
@@ -117,6 +130,27 @@ export class OsmVisual {
   }
 
   set visible(v) { this.root.enabled = v; }
+
+  /**
+   * Google's 3D tiles are the city: our buildings, roads and parks go, and our land sinks to just
+   * above the lake (only seen through a tile that hasn't streamed in yet). The lake and the river
+   * stay ours, shaped by OpenStreetMap, a little above Google's own water so theirs never shows.
+   */
+  setGoogle(on) {
+    this.google = on;
+    if (on && !this.water) {
+      const quad = ([e0, n0, e1, n1]) => [[e0, n0], [e1, n0], [e1, n1], [e0, n1]];
+      const polys = maskWaterRects(this.world.osm.mask, this.world.osm.header.box).map(quad);
+      if (this.world.farLake) polys.push(this.world.farLake);
+      const mat = overlay('#2f5d7c', -2);
+      this.water = meshEntity(this.app, this.root, 'osmWater', groundLayer(polys, this.world.water + WATER_LIFT), mat, { castShadows: false });
+    }
+    if (this.water) this.water.enabled = on;
+    const sink = on ? this.world.water + LAND_SINK : 0;
+    for (const k of ['land', 'farLand']) this.ground[k]?.setLocalPosition(0, sink, 0);
+    for (const k of ['parks', 'river', 'roads', 'rail', 'shore']) this.ground[k].enabled = !on;
+    if (this.cityRoot) this.cityRoot.enabled = !on;
+  }
 
   destroy() {
     this.root.destroy();

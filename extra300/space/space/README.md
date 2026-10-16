@@ -12,7 +12,9 @@
 - `space/room.json` — id `RoomInfo`, type `Simple`
 - `space/entities/spawn-runway36.json` — id `spawn-runway36`, type `SpawnPoint`, pos (-4, 0, -2)
 - `space/entities/extra300-meigs.json` — id `extra300-meigs`, type `UserModelEntity`, pos (0, 0, -8), scale 1, hosts `plugins/extra300-meigs.mjs`
+- `space/entities/google-3d-tiles.json` — id `google-3d-tiles`, type `UserModelEntity`, pos (0, 0, -8), scale 1, hosts `plugins/google-3d-tiles.mjs`
 
 ## Plugins
 
 - `plugins/extra300-meigs.mjs` — used by 1 entity(s)
+- `plugins/google-3d-tiles.mjs` — used by 1 entity(s)

@@ -56,3 +56,21 @@ test('triangulation covers a polygon exactly (area preserved)', () => {
   const sum = tris.reduce((s, t) => s + area(t.map((i) => poly[i])), 0);
   assert.ok(Math.abs(sum - area(poly)) < 1e-9);
 });
+
+test('the Google-tiles cut-out covers the runway and the island, and stops short of the Loop', async () => {
+  const { carveBox } = await import('../src/render/carve.js');
+  const w = buildMeigs();
+  const { local, half } = carveBox(w.airfieldBox(), w.water - 15, 400);
+  // render-metres point → box-local, by the transpose (the box is a pure rotation + offset)
+  const inside = (n, e, h = 0) => {
+    const p = [e - local[12], h - local[13], -n - local[14]];
+    const l = [0, 4, 8].map((c) => local[c] * p[0] + local[c + 1] * p[1] + local[c + 2] * p[2]);
+    return l.every((v, i) => Math.abs(v) <= half[i]);
+  };
+  const rw = w.runway;
+  assert.ok(inside(...rw.thr36) && inside(...rw.thr18) && inside(...rw.centre), 'the runway');
+  for (const [n, e] of w.island) assert.ok(inside(n, e), `island ${n.toFixed(0)}, ${e.toFixed(0)}`);
+  const sears = w.landmarks.find((l) => /Sears|Willis/.test(l.name));
+  if (sears) assert.ok(!inside(...sears.ne, 100));
+  assert.ok(!inside(rw.centre[0], rw.centre[1] - 1500), '1.5 km west: the mainland');
+});

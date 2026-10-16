@@ -20,11 +20,17 @@ export class SceneryVisual {
         mat.slopeDepthBias = part.bias;
         mat.update();
       }
-      meshEntity(app, part.layer === 'city' ? this.city : this.root, part.name, part.mesh, mat, { castShadows: !flat, receiveShadows: true });
+      const e = meshEntity(app, part.layer === 'city' ? this.city : this.root, part.name, part.mesh, mat, { castShadows: !flat, receiveShadows: true });
+      if (part.name === 'lake') this.lake = e;
     }
   }
   set visible(v) { this.root.enabled = v; }
   /** Hide the stand-in city once the OpenStreetMap one is up. */
   set standInCity(v) { this.city.enabled = v; }
+  /** With Google's tiles only Meigs itself stays: the OpenStreetMap-shaped water replaces the lake plane. */
+  setGoogle(on) {
+    this.city.enabled = !on && this.city.enabled;
+    if (this.lake) this.lake.enabled = !on;
+  }
   destroy() { this.root.destroy(); }
 }

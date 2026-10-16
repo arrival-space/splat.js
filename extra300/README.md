@@ -22,6 +22,24 @@ landing. Press any flight key to take over wherever it is.
 
 ![Runway 36, Meigs Field, from the cockpit](docs/img/cockpit-runway36.png)
 
+## Google Photorealistic 3D Tiles
+
+The space also carries the Arrival library's **Google 3D Tiles** vibe, centred on
+the parking spot. Enter a Google Maps API key with the Map Tiles API in its
+settings, and once the first tiles are in, Google's photographed Chicago becomes
+the city and the land. Two things stay ours:
+
+- **Meigs Field**, flat and paved as in the 1990s. A box around Northerly Island is
+  cut out of the tiles, so today's park doesn't show through.
+- **The water**: Lake Michigan and the river, shaped by OpenStreetMap and drawn
+  just above Google's own water.
+
+The OpenStreetMap buildings stay as invisible collision volumes. Without a key,
+or before the tiles arrive, the procedural OpenStreetMap city is drawn as before.
+The sync writes the tiles host (`space/space/entities/google-3d-tiles.json`) but
+leaves its key alone. That file is git-ignored, because it holds the key once one
+is set.
+
 ## What is modelled
 
 - **Flight dynamics**: one rigid body with a spinning propeller, stepped at a fixed 480 Hz.

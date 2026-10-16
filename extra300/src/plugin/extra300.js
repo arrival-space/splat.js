@@ -23,6 +23,7 @@ import { OsmVisual } from './osmVisual.js';
 import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
 import { buildSkyDome } from '../render/sky.js';
+import { carveBox } from '../render/carve.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane
 
@@ -163,6 +164,42 @@ export class Extra300 extends ArrivalScript {
     }
   }
 
+  // ── Google Photorealistic 3D Tiles (the "Google 3D Tiles" vibe in the same space) ──────
+  // Its tiles are the city and the land; we keep Meigs itself (cut out of the tiles), and the
+  // lake and the river from OpenStreetMap. Our buildings stay as the invisible collision volumes.
+  _googleTick(dt) {
+    // the vibe sets app.googleTilesLoading while its first tiles stream in and clears it when they are up
+    if (!this._google && this.app.googleTilesLoading === false && this.city) this._setGoogle(true);
+    // (re)publish the cut-out now and then: the tiles vibe may start after us, or be re-added
+    this._carveTimer = (this._carveTimer ?? 0) - dt;
+    if (this._carveTimer <= 0) {
+      this._carveTimer = 2;
+      this._publishCarve();
+      // with no API key yet the tiles vibe lays a 50 km green disc at the runway's height, over our lake
+      const ph = this.app.root.findByName('google-tiles-placeholder-ground');
+      if (ph?.enabled) ph.enabled = false;
+    }
+  }
+
+  _setGoogle(on) {
+    this._google = on;
+    this.city?.setGoogle(on);
+    this.scenery.setGoogle(on);
+    if (on) this.scenery.standInCity = false;
+    // the tiles vibe brings its own sky
+    if (this._sky) this._showSky(this._flying && !on);
+  }
+
+  _publishCarve() {
+    if (!this._worldRoot) return;
+    const { local, half } = carveBox(this.world.airfieldBox(), this.world.water - 15, 400);
+    const m = new pc.Mat4();
+    m.set(local);
+    const world = new pc.Mat4().mul2(this._worldRoot.getWorldTransform(), m);
+    const inv = world.invert();
+    this.app.fire('googletiles:patch-region', `extra300-meigs-${this.entity.getGuid()}`, { inv: Array.from(inv.data), half });
+  }
+
   _cityOptions() {
     let minHeight = { full: 0, 'mid-rise and up': 15, 'towers only': 45 }[this.cityDetail] ?? 0;
     // ~15,000 buildings is ~500k vertices: on a phone, 'full' leaves out the low-rise
@@ -229,7 +266,7 @@ export class Extra300 extends ArrivalScript {
     this.visual.setCockpitView(this.cameraRig.view === 'cockpit');
     this.sound.start();
     ArrivalSpace.setAppUIVisible?.(false);
-    this._showSky(true);
+    this._showSky(!this._google);
     this._pose = this.cameraRig.update(this.ac, 0, this.ac.cg);
     this.hud.showPrompt('');
     this.hud.setFlying(true, this._panelVisible);
@@ -424,6 +461,7 @@ export class Extra300 extends ArrivalScript {
   update(dt) {
     if (!this.isEnabled) return;
     this.hud.tick();
+    this._googleTick(dt);
     if (this.city && this.city.queue.length) {
       this.city.tick(this._flying ? 3 : 8);
       if (!this.city.queue.length) this.scenery.standInCity = false;
@@ -566,6 +604,7 @@ export class Extra300 extends ArrivalScript {
 
   destroy() {
     this._destroyed = true;
+    this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this._exit();
     window.removeEventListener('keydown', this._onKeyDown, true);
     window.removeEventListener('keyup', this._onKeyUp, true);

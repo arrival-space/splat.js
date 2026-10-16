@@ -19,6 +19,7 @@ export const MEIGS = {
   arp: [41.8586, -87.6083],          // [verify] aerodrome reference point
   elevationFt: 593,                  // field elevation
   lakeLevelFt: 578,                  // Lake Michigan long-term mean
+  geoidM: -33.6,                     // geoid above the WGS-84 ellipsoid here (EGM2008) [approx]: Google's 3D tiles are in ellipsoid heights
   magVar: -2.0,                      // degrees, west negative (late 1990s)
   runway: {
     ident: ['36', '18'],
@@ -92,24 +93,47 @@ export function maskShoreE(mask, box, j) {
 }
 
 /**
- * The land around the OSM box as one polygon [[e, n], ...] with the box cut out: west of the
- * lakefront, which leaves the box's north and south edges where the mask says and follows the
- * far shore points outward to FAR.
+ * The land and the lake around the OSM box, as two polygons [[e, n], ...] with the box cut out:
+ * the shore leaves the box's north and south edges where the mask says and follows the far shore
+ * points outward to FAR; past the last point it runs straight north, and east along the Indiana
+ * shore.
  */
-export function buildFarLand(mask, box, northNE, southNE, FAR = 40000) {
+export function buildFarSurroundings(mask, box, northNE, southNE, FAR = 40000) {
   const eTop = maskShoreE(mask, box, mask.ny - 1), eBot = maskShoreE(mask, box, 0);
   const north = northNE.map(([n, e]) => [e, n]).filter(([, n]) => n > box.y1);
   const south = southNE.map(([n, e]) => [e, n]).filter(([, n]) => n < box.y0);
-  // past the last point the shore runs straight out to the edge of the world
-  const extend = (pts, from, toN) => [...pts, [(pts[pts.length - 1] || from)[0], toN]];
-  const northLine = extend(north, [eTop, box.y1], FAR);
-  const southLine = extend(south, [eBot, box.y0], -FAR);
-  // counter-clockwise from the far south-west corner
-  return [
-    [-FAR, -FAR], ...[...southLine].reverse().map(([e, n]) => [Math.min(e, FAR), n]), [eBot, box.y0],
-    [box.x0, box.y0], [box.x0, box.y1], [eTop, box.y1],
-    ...northLine.map(([e, n]) => [Math.min(e, FAR), n]), [-FAR, FAR],
-  ];
+  const lastN = north[north.length - 1] || [eTop, box.y1], lastS = south[south.length - 1] || [eBot, box.y0];
+  const northLine = [...north, [lastN[0], FAR]];              // outward from the box
+  const southLine = [...south, [FAR, lastS[1]]];
+  const southIn = [...southLine].reverse();                   // inward to the box
+  return {
+    land: [[-FAR, -FAR], [FAR, -FAR], ...southIn, [eBot, box.y0], [box.x0, box.y0], [box.x0, box.y1], [eTop, box.y1], ...northLine, [-FAR, FAR]],
+    lake: [[eTop, box.y1], ...northLine, [FAR, FAR], ...southIn, [eBot, box.y0], [box.x1, box.y0], [box.x1, box.y1]],
+  };
+}
+
+/** The water inside the OSM box as quads [[e0, n0, e1, n1], ...]: the mask's water runs, row by row, merged down the rows. */
+export function maskWaterRects(mask, box) {
+  const out = [];
+  let open = new Map();   // "i0,i1" -> rect started on an earlier row
+  for (let j = 0; j < mask.ny; j++) {
+    const row = j * mask.nx, next = new Map();
+    for (let i = 0; i < mask.nx;) {
+      if (mask.data[row + i]) { i++; continue; }
+      let k = i;
+      while (k < mask.nx && !mask.data[row + k]) k++;
+      const key = `${i},${k}`;
+      const r = open.get(key) || [box.x0 + i * MASK_CELL, box.y0 + j * MASK_CELL, box.x0 + k * MASK_CELL, 0];
+      r[3] = box.y0 + (j + 1) * MASK_CELL;
+      next.set(key, r);
+      open.delete(key);
+      i = k;
+    }
+    for (const r of open.values()) out.push(r);
+    open = next;
+  }
+  for (const r of open.values()) out.push(r);
+  return out;
 }
 
 /** Build everything the sim and the renderer need, in metres in the local frame. */
@@ -141,7 +165,7 @@ export function buildMeigs(data = MEIGS) {
 
   /** Ground query used by the gear: height above the datum, normal (NED up), surface. */
   let isLand = null;   // OSM land/water raster, once attached
-  let farLand = null;  // [[e, n], ...] the land around the OSM box, out to the horizon
+  let farLand = null;  // [[e, n], ...] the land around the OSM box, out to the horizon (and world.farLake)
   let inBox = () => false;
   const ground = (n, e) => {
     const [al, ac] = runwayLocal(n, e);
@@ -184,7 +208,9 @@ export function buildMeigs(data = MEIGS) {
       isLand = maskLookup(osm.mask, osm.header.box);
       const b = osm.header.box;
       inBox = (e, n) => e >= b.x0 && e < b.x1 && n >= b.y0 && n < b.y1;
-      farLand = this.farLand = buildFarLand(osm.mask, b, data.farShore.north.map(toNE), data.farShore.south.map(toNE));
+      const far = buildFarSurroundings(osm.mask, b, data.farShore.north.map(toNE), data.farShore.south.map(toNE));
+      farLand = this.farLand = far.land;
+      this.farLake = far.lake;
       skylineYear = year;
       grid = new Map();
       osm.buildings.forEach((b, i) => {
@@ -212,6 +238,22 @@ export function buildMeigs(data = MEIGS) {
       return null;
     },
     runway: { centre: c, dir, length: len, width: wid, thr36, thr18, bearing: brg },
+    /**
+     * The airfield as a box aligned with the runway: Northerly Island and a margin. Google's tiles
+     * are cut away inside it so the flat 1990s field shows instead of today's park.
+     * @returns {{ centre: number[], dir: number[], halfAlong: number, halfAcross: number }}  (n, e)
+     */
+    airfieldBox(margin = 12) {
+      let a0 = Infinity, a1 = -Infinity, c0 = Infinity, c1 = -Infinity;
+      for (const [n, e] of island) {
+        const [al, ac] = runwayLocal(n, e);
+        a0 = Math.min(a0, al); a1 = Math.max(a1, al); c0 = Math.min(c0, ac); c1 = Math.max(c1, ac);
+      }
+      const am = (a0 + a1) / 2, cm = (c0 + c1) / 2;
+      // runwayLocal: along = d·dir, across = d × dir (east of the centreline for runway 36)
+      const centre = [c[0] + am * dir[0] - cm * dir[1], c[1] + am * dir[1] + cm * dir[0]];
+      return { centre, dir, halfAlong: (a1 - a0) / 2 + margin, halfAcross: (c1 - c0) / 2 + margin };
+    },
     island, mainland, shore, pier, landmarks,
     downtown: { ...data.downtown, sw: toNE([data.downtown.south, data.downtown.west]), ne: toNE([data.downtown.north, data.downtown.east]) },
     /** Classic start: lined up on runway 36 just past the numbers. */
