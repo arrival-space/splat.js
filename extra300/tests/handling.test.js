@@ -41,16 +41,16 @@ test('hands off at full power, 120 kt: wings stay within 5° for 3 s', () => {
   assert.ok(Math.abs(ac.euler.phi - phi0) < 5 * DEG, `bank ${((ac.euler.phi - phi0) / DEG).toFixed(1)}°`);
 });
 
-test('keyboard: a full pull at 170 kt is a pilot pull (~5 g), not an instant 9 g stall', () => {
+test('keyboard: a held pull at 170 kt is a firm pilot pull (~4 g), not an instant 9 g stall', () => {
   const ac = level(170);
   const m = new ControlMapper(); m.throttle = ac.controls.throttle;
   let g = 0, stall = 0;
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 150; i++) {
     m.update({ keys: new Set(['ArrowDown']) }, 1 / 60, ac.controls, flight(ac));
     ac.update(1 / 60);
     g = Math.max(g, ac.out.loadFactor); stall = Math.max(stall, ac.aero.wingStallFraction());
   }
-  assert.ok(g > 4 && g < 6.5, `${g.toFixed(1)} g`);
+  assert.ok(g > 3.3 && g < 5.5, `${g.toFixed(1)} g`);
   assert.equal(stall, 0);
 });
 
@@ -69,7 +69,7 @@ for (const entry of [140, 160]) {
       if (ac.aero.wingStallFraction() > 0.5) stalledFor += 1 / 60;
     }
     assert.ok(turned >= 2 * Math.PI, 'went all the way round');
-    assert.ok(t > 8 && t < 14, `${t.toFixed(1)} s`);
+    assert.ok(t > 8 && t < 16, `${t.toFixed(1)} s`);
     assert.ok(minKt > 55 && minKt < 95, `over the top at ${minKt.toFixed(0)} kt`);
     assert.ok(stalledFor < 0.3, `stalled for ${stalledFor.toFixed(1)} s`);
     let dpsi = (ac.euler.psi - psi0) / DEG; dpsi = ((dpsi + 540) % 360) - 180;

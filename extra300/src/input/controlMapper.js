@@ -49,6 +49,9 @@ export const KEY_AUTHORITY = {
 export const BUFFET_ALPHA = 15.5 * Math.PI / 180;
 const EASE_PER_RAD = 16;   // stick eased off per radian past the buffet [tune] tests/handling.test.js loops
 
+/** How much of its travel a held key may use without Shift. */
+export const KEY_CAP = { elevator: 0.75, aileron: 0.5, rudder: 0.65 };
+
 export function keyAuthority(axis, qbar, boost = 1) {
   const a = KEY_AUTHORITY[axis];
   return Math.min(1, boost / (a.c * Math.max(0, qbar) + a.k0));
@@ -62,8 +65,8 @@ const dead = (x, d) => (Math.abs(x) < d ? 0 : Math.sign(x) * (Math.abs(x) - d) /
 
 export class ControlMapper {
   constructor(opts = {}) {
-    this.rampIn = opts.rampIn ?? 1.6;     // full deflection in ~0.6 s while a key is held
-    this.rampOut = opts.rampOut ?? 3.0;   // springs back in ~0.3 s
+    this.rampIn = opts.rampIn ?? 0.7;     // a held key builds to its full pull in ~1.5 s …
+    this.rampOut = opts.rampOut ?? 4.0;   // … and springs back in ~0.25 s
     this.expo = opts.expo ?? 0.45;
     this.kb = { aileron: 0, elevator: 0, rudder: 0 };
     this.throttle = 0;
@@ -105,15 +108,18 @@ export class ControlMapper {
 
     const q = flight.qbar ?? 0;
     const boost = k.has('Shift') ? 2 : 1;
-    let ail = this.kb.aileron * keyAuthority('aileron', q, boost);
-    let ele = this.kb.elevator * keyAuthority('elevator', q, boost);
+    // gentle keys: the pull grows with the square of the hold (a tap is a nudge), and a held key
+    // stops short of full travel; Shift takes the cap off
+    const soft = (h, cap) => Math.sign(h) * h * h * (boost > 1 ? 1 : cap);
+    let ail = soft(this.kb.aileron, KEY_CAP.aileron) * keyAuthority('aileron', q, boost);
+    let ele = soft(this.kb.elevator, KEY_CAP.elevator) * keyAuthority('elevator', q, boost);
     // the keyboard pilot holds the pull at the buffet instead of pulling through it (Shift: through)
     const alpha = flight.alpha ?? 0;
     if (boost === 1 && q > 150) {
       if (ele > 0 && alpha > BUFFET_ALPHA) ele = Math.max(0, ele - EASE_PER_RAD * (alpha - BUFFET_ALPHA));
       if (ele < 0 && alpha < -BUFFET_ALPHA) ele = Math.min(0, ele - EASE_PER_RAD * (alpha + BUFFET_ALPHA));
     }
-    let rud = this.kb.rudder * keyAuthority('rudder', q, boost);
+    let rud = soft(this.kb.rudder, KEY_CAP.rudder) * keyAuthority('rudder', q, boost);
     // auto-rudder: right pedal for a sideslip from the right, damped by the yaw rate; any rudder
     // input from keys, pad or sticks takes over
     const target = this.autoRudder && !flight.onGround && q > 300

@@ -16,17 +16,19 @@
     "farClip": 40000,
     "defaultCamera": "third",
     "stageLightType": "directional",
-    "stageLightRotation": 255.6
+    "stageLightRotation": 255.6,
+    "stageLightDirectionalShadowCascades": 3,
+    "stageLightDirectionalShadowRange": 50
   },
   "state": {
     "files": 1,
-    "memory": 672012,
-    "updated": 1792184015062,
+    "memory": 672484,
+    "updated": 1792184713063,
     "entities": 10,
     "entitySizes": {
-      "extra300-meigs": 672012
+      "extra300-meigs": 672484
     },
-    "screenshotTime": 1792181793514,
-    "screenshotDataHash": "75db29a07b39258e2d2205367ed312ee187ddeae8586f2923f7b9dd3b26bcee0"
+    "screenshotTime": 1792184745244,
+    "screenshotDataHash": "99ea59a13a3c645eb1804a710f7af5ed2fb739fd6f35a79b2b6969408c1ceda2"
   }
 }
