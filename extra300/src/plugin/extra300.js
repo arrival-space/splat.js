@@ -227,7 +227,8 @@ export class Extra300 extends ArrivalScript {
     this._pose = this.cameraRig.update(this.ac, 0, this.ac.cg);
     this.hud.showPrompt('');
     this.hud.setFlying(true, this._panelVisible);
-    this.hud.flash('Extra 300L, Meigs Field runway 36 — H for the controls', 5);
+    // the controls card opens by itself the first time; H toggles it from then on
+    if (!this._helpShown) { this.hud.toggleHelp(true); this._helpShown = true; }
   }
 
   _exit() {
@@ -394,7 +395,7 @@ export class Extra300 extends ArrivalScript {
       });
     }
     const e = this.ac.euler;
-    this.hud.readout.textContent = `${this.cameraRig.view.toUpperCase()}  IAS ${Math.round(v.ias)} kt  ALT ${Math.round(v.altitude)} ft  HDG ${String(Math.round(v.compass)).padStart(3, '0')}  `
+    this.hud.readout.textContent = `H — controls   ${this.cameraRig.view.toUpperCase()}  IAS ${Math.round(v.ias)} kt  ALT ${Math.round(v.altitude)} ft  HDG ${String(Math.round(v.compass)).padStart(3, '0')}  `
       + `pitch ${(e.theta / DEG).toFixed(0)}°  bank ${(e.phi / DEG).toFixed(0)}°  ${Math.round(v.rpm)} rpm  ${v.g.toFixed(1)} g`;
   }
 

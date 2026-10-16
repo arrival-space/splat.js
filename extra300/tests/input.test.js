@@ -50,3 +50,11 @@ test('touch sticks: push forward = nose down, right stick up = more throttle', (
   assert.equal(c.elevator, -1);
   assert.ok(c.throttle > 0.5);
 });
+
+test('R / F work the throttle on keyboards without PgUp / PgDn', () => {
+  const m = new ControlMapper();
+  const c = step(m, { keys: new Set(['r']) }, 2.1);
+  assert.ok(c.throttle > 0.999, `${c.throttle}`);
+  step(m, { keys: new Set(['f']) }, 1, c);
+  assert.ok(Math.abs(c.throttle - 0.5) < 0.02);
+});

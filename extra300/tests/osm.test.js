@@ -137,3 +137,40 @@ test('world: OSM mask decides land and lake, buildings are solid for their skyli
   w.setSkylineYear(2026);
   assert.ok(w.buildingAt(30, -70, 100));
 });
+
+test('every triangle faces outward: winding agrees with its normal, and the normal points away from the building', () => {
+  const sq = (x, y, s) => [[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
+  const hex = (cx, cy, r) => [...Array(6).keys()].map((k) => [cx + r * Math.cos((k * Math.PI) / 3), cy + r * Math.sin((k * Math.PI) / 3)]);
+  const kinds = [
+    { name: 'flat + courtyard', b: { outer: sq(0, 0, 40), holes: [[[10, 10], [10, 30], [30, 30], [30, 10]]], h: 50, minH: 0, style: 'stone', roof: 0 } },
+    { name: 'raised part', b: { outer: sq(100, 0, 20), holes: [], h: 80, minH: 30, style: 'glass', roof: 0 } },
+    { name: 'gabled house', b: { outer: sq(200, 0, 10), holes: [], h: 9, minH: 0, style: 'house', roof: 0 } },
+    { name: 'pyramid', b: { outer: hex(300, 0, 12), holes: [], h: 30, minH: 0, style: 'stone', roof: 3 } },
+    { name: 'dome', b: { outer: hex(400, 0, 12), holes: [], h: 30, minH: 0, style: 'white', roof: 4 } },
+    { name: 'clockwise input', b: { outer: sq(500, 0, 15).reverse(), holes: [], h: 20, minH: 0, style: 'brick', roof: 0 } },
+  ];
+  for (const { name, b } of kinds) {
+    const centre = b.outer.reduce((s, p) => [s[0] + p[0] / b.outer.length, s[1] + p[1] / b.outer.length], [0, 0]);
+    const inside = [centre[0], (b.minH + b.h) / 2, -centre[1]];   // render space
+    // a clockwise outer ring is what the bake would fix; feed the generator what the bake produces
+    if (name === 'clockwise input') b.outer.reverse();
+    for (const part of buildCity([{ year: 0, colour: '', ...b }], { year: 2026 })) {
+      const { positions: P, normals: N, indices: I } = part.mesh;
+      for (let t = 0; t < I.length; t += 3) {
+        const [a, c, d] = [I[t], I[t + 1], I[t + 2]];
+        const u = [0, 1, 2].map((k) => P[c * 3 + k] - P[a * 3 + k]);
+        const v = [0, 1, 2].map((k) => P[d * 3 + k] - P[a * 3 + k]);
+        const f = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+        const n = [N[a * 3], N[a * 3 + 1], N[a * 3 + 2]];
+        const fn = f[0] * n[0] + f[1] * n[1] + f[2] * n[2];
+        assert.ok(fn > 0, `${name} ${part.kind}: triangle ${t / 3} wound against its normal`);
+        // the courtyard walls face into the courtyard, i.e. away from the solid ring around it
+        if (name === 'flat + courtyard' && part.kind === 'walls') continue;
+        const m = [0, 1, 2].map((k) => (P[a * 3 + k] + P[c * 3 + k] + P[d * 3 + k]) / 3 - inside[k]);
+        const out = m[0] * n[0] + m[1] * n[1] + m[2] * n[2];
+        if (part.kind === 'roofs' && b.minH > 0 && n[1] < 0) continue;   // the underside of a raised part faces down
+        assert.ok(out > -1e-9, `${name} ${part.kind}: triangle ${t / 3} faces into the building`);
+      }
+    }
+  }
+});

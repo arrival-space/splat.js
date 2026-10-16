@@ -55,8 +55,8 @@ function wallQuad(mb, a, b, y0, y1, u0, u1, f, color) {
   mb.vertex(P(b[0], b[1], y0), n, [u1, v0], color);
   mb.vertex(P(b[0], b[1], y1), n, [u1, v1], color);
   mb.vertex(P(a[0], a[1], y1), n, [u0, v1], color);
-  // counter-clockwise seen from outside
-  mb.indices.push(i, i + 2, i + 1, i, i + 3, i + 2);
+  // bottom-a, bottom-b, top-b, top-a is counter-clockwise seen from outside (tests/osm.test.js checks it)
+  mb.indices.push(i, i + 1, i + 2, i, i + 2, i + 3);
 }
 
 function walls(mb, ring, y0, y1, f, color) {
@@ -81,23 +81,34 @@ function flatRoof(mb, outer, holes, y, color, down = false) {
   const base = mb.vertexCount;
   const n = down ? [0, -1, 0] : [0, 1, 0];
   for (let i = 0; i < flat.length; i += 2) mb.vertex(P(flat[i], flat[i + 1], y), n, null, color);
-  for (let i = 0; i < tri.length; i += 3) {
-    // earcut keeps the (e, n) winding; flipping z mirrors it, so swap to stay CCW from above
-    if (down) mb.indices.push(base + tri[i], base + tri[i + 1], base + tri[i + 2]);
-    else mb.indices.push(base + tri[i], base + tri[i + 2], base + tri[i + 1]);
-  }
+  for (let i = 0; i < tri.length; i += 3) pushFacing(mb, base + tri[i], base + tri[i + 1], base + tri[i + 2], n);
 }
 
-function triFlat(mb, a, b, c, color) {
+/** Index a triangle so it is counter-clockwise seen from the side `facing` points to (earcut's
+ *  output winding is not guaranteed, so every roof triangle is oriented explicitly). */
+function pushFacing(mb, i0, i1, i2, facing) {
+  const p = mb.positions;
+  const ux = p[i1 * 3] - p[i0 * 3], uy = p[i1 * 3 + 1] - p[i0 * 3 + 1], uz = p[i1 * 3 + 2] - p[i0 * 3 + 2];
+  const vx = p[i2 * 3] - p[i0 * 3], vy = p[i2 * 3 + 1] - p[i0 * 3 + 1], vz = p[i2 * 3 + 2] - p[i0 * 3 + 2];
+  const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  if (nx * facing[0] + ny * facing[1] + nz * facing[2] >= 0) mb.indices.push(i0, i1, i2);
+  else mb.indices.push(i0, i2, i1);
+}
+
+/** A flat-shaded triangle facing away from `inside` (a point inside the building). */
+function triFlat(mb, a, b, c, color, inside) {
   const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
   const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
   let n = [uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx];
   const l = Math.hypot(...n) || 1;
   n = n.map((x) => x / l);
+  const cx = (a[0] + b[0] + c[0]) / 3 - inside[0], cy = (a[1] + b[1] + c[1]) / 3 - inside[1], cz = (a[2] + b[2] + c[2]) / 3 - inside[2];
+  const flip = n[0] * cx + n[1] * cy + n[2] * cz < 0;
+  if (flip) n = n.map((x) => -x);
   const i = mb.vertex(a, n, null, color);
   mb.vertex(b, n, null, color);
   mb.vertex(c, n, null, color);
-  mb.indices.push(i, i + 1, i + 2);
+  if (flip) mb.indices.push(i, i + 2, i + 1); else mb.indices.push(i, i + 1, i + 2);
 }
 
 /** Gable along the longer axis of a 4-corner footprint; walls stop at the eaves. */
@@ -114,11 +125,13 @@ function gabled(wallsMb, roofMb, ring, y0, h, f, wallColor, roofColor) {
   const m03 = mid(r[0], r[3]), m12 = mid(r[1], r[2]);
   const R0 = P(m03[0], m03[1], h), R1 = P(m12[0], m12[1], h);
   const E = (p) => P(p[0], p[1], eave);
+  const cen = mid(mid(r[0], r[2]), mid(r[1], r[3]));
+  const inside = P(cen[0], cen[1], y0 + 0.5 * (eave - y0));
   // two slopes and two gable triangles (gables in the wall colour)
-  triFlat(roofMb, E(r[0]), E(r[1]), R1, roofColor); triFlat(roofMb, E(r[0]), R1, R0, roofColor);
-  triFlat(roofMb, E(r[2]), E(r[3]), R0, roofColor); triFlat(roofMb, E(r[2]), R0, R1, roofColor);
-  triFlat(wallsMb, E(r[1]), E(r[2]), R1, wallColor);
-  triFlat(wallsMb, E(r[3]), E(r[0]), R0, wallColor);
+  triFlat(roofMb, E(r[0]), E(r[1]), R1, roofColor, inside); triFlat(roofMb, E(r[0]), R1, R0, roofColor, inside);
+  triFlat(roofMb, E(r[2]), E(r[3]), R0, roofColor, inside); triFlat(roofMb, E(r[2]), R0, R1, roofColor, inside);
+  triFlat(wallsMb, E(r[1]), E(r[2]), R1, wallColor, inside);
+  triFlat(wallsMb, E(r[3]), E(r[0]), R0, wallColor, inside);
 }
 
 function pointed(wallsMb, roofMb, ring, y0, h, f, wallColor, roofColor, dome) {
@@ -131,6 +144,7 @@ function pointed(wallsMb, roofMb, ring, y0, h, f, wallColor, roofColor, dome) {
   const eave = h - rise;
   walls(wallsMb, ring, y0, eave, f, wallColor);
   const steps = dome ? 4 : 1;
+  const inside = P(cx, cy, y0 + 0.5 * (eave - y0));
   let prev = ring.map((p) => [p[0], p[1], eave]);
   for (let s = 1; s <= steps; s++) {
     const t = s / steps;
@@ -141,8 +155,8 @@ function pointed(wallsMb, roofMb, ring, y0, h, f, wallColor, roofColor, dome) {
       const j = (i + 1) % ring.length;
       const A = P(prev[i][0], prev[i][1], prev[i][2]), Bq = P(prev[j][0], prev[j][1], prev[j][2]);
       const C = P(next[j][0], next[j][1], next[j][2]), D = P(next[i][0], next[i][1], next[i][2]);
-      triFlat(roofMb, A, C, Bq, roofColor);
-      if (s < steps) triFlat(roofMb, A, D, C, roofColor);
+      triFlat(roofMb, A, C, Bq, roofColor, inside);
+      if (s < steps) triFlat(roofMb, A, D, C, roofColor, inside);
     }
     prev = next;
   }
@@ -204,7 +218,7 @@ export function groundLayer(polys, y) {
     const tri = earcut(flat, null, 2);
     const base = mb.vertexCount;
     for (let i = 0; i < flat.length; i += 2) mb.vertex(P(flat[i], flat[i + 1], y), [0, 1, 0]);
-    for (let i = 0; i < tri.length; i += 3) mb.indices.push(base + tri[i], base + tri[i + 2], base + tri[i + 1]);
+    for (let i = 0; i < tri.length; i += 3) pushFacing(mb, base + tri[i], base + tri[i + 1], base + tri[i + 2], [0, 1, 0]);
   }
   return mb;
 }

@@ -5,20 +5,26 @@ import { Panel } from '../instruments/panel.js';
 
 export const CREDIT = 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago';
 
+const QUICK_START = [
+  'Hold <b>R</b> for full throttle, keep it straight with <b>Q</b> / <b>E</b>',
+  'At 60 kt ease back on <b>S</b> (or <b>↓</b>) and it flies',
+  '<b>W A S D</b> or the arrows fly it, <b>V</b> changes the view, <b>Esc</b> gets out',
+];
+
 const HELP = [
-  ['Pitch', '↑ / ↓  or  W / S'],
-  ['Roll', '← / →  or  A / D'],
-  ['Rudder', 'Q / E  (or Z / X)'],
-  ['Throttle', 'PgUp / PgDn,  + / -,  Home idle,  End full'],
-  ['Prop rpm', '[  /  ]'],
+  ['Pitch', 'S / ↓ nose up (pull)    W / ↑ nose down (push)'],
+  ['Roll', 'A / ←  left    D / →  right'],
+  ['Rudder', 'Q  left    E  right    (Z / X too)'],
+  ['Throttle', 'R  more    F  less    (also + / − or PgUp / PgDn)    Home idle    End full'],
+  ['Brakes', 'B or .  (hold)    ,  parking brake'],
   ['Trim', ';  nose down    \'  nose up'],
-  ['Brakes', '.  or  B  (hold)        ,  parking brake'],
-  ['Engine', 'M  mixture run / cut-off     K  starter (hold)'],
-  ['Views', 'V  cockpit / chase / tower / fly-by     C  centre view     drag to look'],
-  ['Panel', 'I  show / hide     G  reset g-meter     N  set altimeter'],
-  ['Mouse yoke', 'Y  toggle'],
-  ['Sim', 'P  pause     Backspace  back to runway 36     Esc  leave the airplane'],
-  ['Gamepad', 'left stick: stick   right stick: rudder / throttle   triggers: brakes'],
+  ['Prop rpm', '[  lower    ]  higher'],
+  ['Engine', 'M  mixture run / cut-off    K  starter (hold, if it stopped)'],
+  ['Views', 'V  cockpit · chase · tower · fly-by    drag the mouse to look    C  centre'],
+  ['Panel', 'I  show / hide    G  reset g-meter    N  set altimeter'],
+  ['Mouse yoke', 'Y  fly with the mouse (screen centre = neutral)'],
+  ['Sim', 'P  pause    Backspace  back to runway 36    Esc  leave the airplane'],
+  ['Gamepad', 'left stick flies, right stick rudder / throttle, triggers brake'],
 ];
 
 export class Hud {
@@ -56,8 +62,12 @@ export class Hud {
       borderRadius: '8px', zIndex: 22, display: 'none', pointerEvents: 'none',
     });
     this.help.innerHTML = `<div style="font-weight:700;margin-bottom:6px">Extra 300L — Meigs Field (CGX), runway 36</div>`
-      + HELP.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b}</div>`).join('')
-      + `<div style="margin-top:8px;color:#9d9a92;font-size:11px">${CREDIT}</div>`;
+      + `<div style="margin:0 0 8px;padding:6px 8px;background:rgba(255,255,255,0.07);border-radius:6px">`
+      + QUICK_START.map((t, i) => `<div>${i + 1}. ${t}</div>`).join('') + `</div>`
+      // the double spaces in HELP separate key groups; HTML would collapse them
+      + HELP.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b.replace(/ {2,}/g, ' <span style="color:#6f6c66">·</span> ')}</div>`).join('')
+      + `<div style="margin-top:8px;color:#9d9a92">H hides this card.</div>`
+      + `<div style="margin-top:4px;color:#9d9a92;font-size:11px">${CREDIT}</div>`;
     container.appendChild(this.help);
 
     // ODbL: the map data is credited wherever the city is on screen
@@ -132,7 +142,10 @@ export class Hud {
     if (!flying) this.help.style.display = 'none';
   }
 
-  toggleHelp() { this.help.style.display = this.help.style.display === 'none' ? 'block' : 'none'; }
+  toggleHelp(show) {
+    const on = show ?? this.help.style.display === 'none';
+    this.help.style.display = on ? 'block' : 'none';
+  }
 
   destroy() {
     for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, this.credit, ...Object.values(this.buttons)]) el.remove();

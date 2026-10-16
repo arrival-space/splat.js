@@ -46,6 +46,12 @@ await shot('06-inflight-cockpit', '?fly=1&view=cockpit', () => {
   ac.placeInFlight(-1500, 300, 180 + 300, 340 * Math.PI / 180, 65);
   window.vibe.mapper.throttle = 0.8;
 });
+// low between the Loop's towers (catches inside-out facades: the walls must be lit from outside)
+await shot('08-loop-lowpass', '?fly=1&view=chase', () => {
+  const ac = window.vibe.ac;
+  ac.placeInFlight(1900, -1500, 180 + 140, 340 * Math.PI / 180, 60);
+  window.vibe.mapper.throttle = 0.7;
+});
 
 // drive it through the real key handler: board with E, full throttle with End, hold the brakes off
 {
@@ -56,12 +62,13 @@ await shot('06-inflight-cockpit', '?fly=1&view=cockpit', () => {
   await page.keyboard.press('e');
   const boarded = await page.evaluate(() => window.vibe._flying);
   if (!boarded) errors.push('roll: pressing E beside the airplane did not board it');
-  await page.keyboard.down('End');
-  await page.waitForTimeout(6000);
+  await page.keyboard.down('r');
+  // software GL is slow with the whole city: wait on simulated time, not the wall clock
+  await page.waitForFunction(() => window.vibe.ac.time > 5, null, { timeout: 120000 });
   const s = await page.evaluate(() => ({ tas: window.vibe.ac.out.tas, rpm: window.vibe.ac.rpm, t: window.vibe.ac.time, dn: window.vibe.ac.state.pos[0] }));
-  await page.keyboard.up('End');
+  await page.keyboard.up('r');
   console.log(`takeoff roll in the browser: ${s.t.toFixed(1)} s simulated, ${s.rpm.toFixed(0)} rpm, ${(s.tas / 0.5144).toFixed(0)} kt`);
-  if (!(s.rpm > 2400 && s.tas > 8)) errors.push(`roll: full throttle did not get it rolling (${JSON.stringify(s)})`);
+  if (!(s.rpm > 2400 && s.tas > 10)) errors.push(`roll: full throttle did not get it rolling (${JSON.stringify(s)})`);
   await page.screenshot({ path: join(out, '07-takeoff-roll.png') });
   await page.close();
 }
