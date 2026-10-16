@@ -4,7 +4,10 @@ import { buildExtraModel } from '../render/extraModel.js';
 import { fromBody } from '../render/geometry.js';
 import { nedToRender, simToRenderQuat } from '../render/cameraRig.js';
 import { material, meshEntity } from './pcMesh.js';
-import { glassMaterial } from './glassMaterial.js';
+import { glassMaterial, metalMaterial, paintMaterial } from './finishes.js';
+
+// the exterior paint is glossy; cockpit trim, tyres, gauges and upholstery stay matte
+const PAINTED = new Set(['white', 'red', 'yellow', 'navRed', 'navGreen']);
 
 const STICK_THROW = 0.3;   // rad of stick travel at full deflection [est]
 
@@ -17,8 +20,11 @@ export class AircraftVisual {
     this._q2 = new pc.Quat();
     this.propAngle = 0;
     for (const part of buildExtraModel()) {
-      const mat = part.name === 'canopy' ? glassMaterial(app.graphicsDevice, part.color)
-        : material(part.color, part.transparent ? { transparent: true, opacity: part.kind === 'propDisc' ? 0 : 0.28 } : {});
+      const dev = app.graphicsDevice;
+      const mat = part.name === 'canopy' ? glassMaterial(dev, part.color)
+        : PAINTED.has(part.material) ? paintMaterial(dev, part.color)
+          : part.material === 'metal' || part.material === 'chrome' ? metalMaterial(dev, part.color, part.material === 'chrome')
+            : material(part.color, part.transparent ? { transparent: true, opacity: part.kind === 'propDisc' ? 0 : 0.28 } : {});
       if (!part.hinge) {
         meshEntity(app, this.root, part.name, part.mesh, mat);
         continue;

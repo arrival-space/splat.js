@@ -1,8 +1,7 @@
-// glassMaterial.js — the canopy: tinted, see-through acrylic with a mirror finish.
-// Reflections come from a small sky cube of our own (sky above, haze at the
-// horizon, ground below), so the canopy reflects the same sky whatever the space's
-// skybox is; specular is kept at full strength through the transparency, so the
-// reflection stays bright where the glass is clear — as it does on a real canopy.
+// finishes.js — the airplane's surfaces: glossy paint, metal, and the canopy's
+// tinted acrylic. Reflections come from a small sky cube of our own (sky above,
+// haze at the horizon, ground below), so the airplane reflects the same sky
+// whatever the space's skybox is.
 
 /** Sky colour (linear 0–1) seen along a direction; y is up. */
 export function skyColour(dx, dy, dz) {
@@ -39,6 +38,46 @@ function skyCube(device, S = 32) {
 }
 
 let cube = null;
+const cache = new Map();
+
+/**
+ * Aircraft paint: a polyurethane topcoat over the colour, glossy and clear-coated, the sky sliding
+ * across it as the airplane moves (white, red, the yellow prop tips, the spinner).
+ */
+export function paintMaterial(device, colour) {
+  const key = `paint${colour}`;
+  if (cache.has(key)) return cache.get(key);
+  cube ??= skyCube(device);
+  const m = new pc.StandardMaterial();
+  m.diffuse = new pc.Color().fromString(colour);
+  m.useMetalness = true;
+  m.metalness = 0;
+  m.gloss = 0.82;
+  m.clearCoat = 1;
+  m.clearCoatGloss = 0.93;
+  m.cubeMap = cube;
+  m.reflectivity = 1;
+  m.update();
+  cache.set(key, m);
+  return m;
+}
+
+/** Bare and polished metal: exhaust, wheel hubs, pedals (and chrome: buckles, bezels). */
+export function metalMaterial(device, colour, polished = false) {
+  const key = `metal${colour}${polished}`;
+  if (cache.has(key)) return cache.get(key);
+  cube ??= skyCube(device);
+  const m = new pc.StandardMaterial();
+  m.diffuse = new pc.Color().fromString(colour);
+  m.useMetalness = true;
+  m.metalness = 1;
+  m.gloss = polished ? 0.9 : 0.6;
+  m.cubeMap = cube;
+  m.update();
+  cache.set(key, m);
+  return m;
+}
+
 export function glassMaterial(device, tint) {
   cube ??= skyCube(device);
   const m = new pc.StandardMaterial();
@@ -57,7 +96,9 @@ export function glassMaterial(device, tint) {
   return m;
 }
 
-export function disposeGlass() {
+export function disposeFinishes() {
+  for (const m of cache.values()) m.destroy?.();
+  cache.clear();
   cube?.destroy?.();
   cube = null;
 }
