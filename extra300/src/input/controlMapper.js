@@ -65,8 +65,8 @@ const dead = (x, d) => (Math.abs(x) < d ? 0 : Math.sign(x) * (Math.abs(x) - d) /
 
 export class ControlMapper {
   constructor(opts = {}) {
-    this.rampIn = opts.rampIn ?? 0.7;     // a held key builds to its full pull in ~1.5 s …
-    this.rampOut = opts.rampOut ?? 4.0;   // … and springs back in ~0.25 s
+    this.rampIn = opts.rampIn ?? 2.5;     // a held key reaches its pull in ~0.4 s …
+    this.rampOut = opts.rampOut ?? 5.0;   // … and springs back in ~0.2 s
     this.expo = opts.expo ?? 0.45;
     this.kb = { aileron: 0, elevator: 0, rudder: 0 };
     this.throttle = 0;
@@ -108,9 +108,9 @@ export class ControlMapper {
 
     const q = flight.qbar ?? 0;
     const boost = k.has('Shift') ? 2 : 1;
-    // gentle keys: the pull grows with the square of the hold (a tap is a nudge), and a held key
-    // stops short of full travel; Shift takes the cap off
-    const soft = (h, cap) => Math.sign(h) * h * h * (boost > 1 ? 1 : cap);
+    // responsive but not slammed: the stick moves at once (steepest at the start of the press) and a
+    // held key stops short of full travel; Shift takes the cap off
+    const soft = (h, cap) => Math.sign(h) * Math.pow(Math.abs(h), 0.6) * (boost > 1 ? 1 : cap);
     let ail = soft(this.kb.aileron, KEY_CAP.aileron) * keyAuthority('aileron', q, boost);
     let ele = soft(this.kb.elevator, KEY_CAP.elevator) * keyAuthority('elevator', q, boost);
     // the keyboard pilot holds the pull at the buffet instead of pulling through it (Shift: through)

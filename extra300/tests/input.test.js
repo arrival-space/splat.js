@@ -8,11 +8,9 @@ const step = (m, raw, s, c = defaultControls()) => { for (let i = 0; i < s * 60;
 test('keyboard elevator ramps in while held and springs back when released', () => {
   const m = new ControlMapper();
   const c = defaultControls();
-  m.update({ keys: new Set(['ArrowDown']) }, 1 / 60, c);
-  assert.ok(c.elevator > 0 && c.elevator < 0.01, 'a tap is a nudge');
+  step(m, { keys: new Set(['ArrowDown']) }, 0.1, c);
+  assert.ok(c.elevator > 0.25 && c.elevator < 0.6, `responds at once: ${c.elevator} after 0.1 s`);
   step(m, { keys: new Set(['ArrowDown']) }, 0.5, c);
-  assert.ok(c.elevator < 0.15, `half a second in: ${c.elevator}`);
-  step(m, { keys: new Set(['ArrowDown']) }, 1.5, c);
   assert.ok(Math.abs(c.elevator - 0.75) < 1e-9, `held: ${c.elevator} (capped short of full travel)`);
   step(m, { keys: new Set(['ArrowDown', 'Shift']) }, 0.5, c);
   assert.equal(c.elevator, 1, 'Shift: full travel');
