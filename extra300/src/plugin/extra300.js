@@ -17,7 +17,11 @@ import { CockpitSound } from '../render/audio.js';
 import { AircraftVisual } from './aircraftVisual.js';
 import { SceneryVisual } from './sceneryVisual.js';
 import { Hud } from './hud.js';
-import { disposeMaterials } from './pcMesh.js';
+import { disposeMaterials, toMesh } from './pcMesh.js';
+import { OsmVisual } from './osmVisual.js';
+import { inflateOsm } from '../world/osmCodec.js';
+import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
+import { buildSkyDome } from '../render/sky.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane
 
@@ -34,6 +38,8 @@ export class Extra300 extends ArrivalScript {
   windFromDeg = 0;
   qnhInHg = 29.92;
   oatC = 15;
+  skylineYear = 2002;
+  cityDetail = 'full';
 
   static properties = {
     isEnabled: { title: 'Enabled' },
@@ -46,6 +52,8 @@ export class Extra300 extends ArrivalScript {
     windFromDeg: { title: 'Wind from (°true)', min: 0, max: 359, step: 1 },
     qnhInHg: { title: 'QNH (inHg)', min: 28.5, max: 31, step: 0.01 },
     oatC: { title: 'Sea-level temperature (°C)', min: -30, max: 45, step: 1 },
+    skylineYear: { title: 'Skyline year (Meigs closed 2003)', min: 1980, max: 2026, step: 1 },
+    cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
   };
 
   initialize() {
@@ -64,6 +72,8 @@ export class Extra300 extends ArrivalScript {
 
     this.scenery = new SceneryVisual(this.app, this._worldRoot, this.world);
     this.scenery.visible = this.showScenery;
+    this._loadCity();
+    this._sky = null;
 
     this.ac = new Aircraft(EXTRA, {
       ground: this.world.ground,
@@ -122,11 +132,37 @@ export class Extra300 extends ArrivalScript {
   }
 
   _placeWorldRoot() {
-    // the world root carries metres → space units and ignores the vibe's own rotation/scale
+    // The world root carries metres → space units and ignores the vibe's own rotation/scale.
+    // It is offset so the airplane's parking spot on runway 36 is where the vibe was placed.
     const ps = this.entity.getWorldTransform().getScale();
     const ws = this._ws;
     this._worldRoot.setLocalScale(ws / (ps.x || 1), ws / (ps.y || 1), ws / (ps.z || 1));
     this._worldRoot.setRotation(pc.Quat.IDENTITY);
+    const s = this.world.startPosition();
+    const a = fromNE(s.n, s.e, 0);
+    const p = this.entity.getPosition();
+    this._worldRoot.setPosition(p.x - a[0] * ws, p.y - a[1] * ws, p.z - a[2] * ws);
+  }
+
+  /** Decode the baked OpenStreetMap Chicago and start raising it; the stand-in city shows meanwhile. */
+  async _loadCity() {
+    try {
+      const osm = await inflateOsm(CHICAGO_OSM);
+      if (this._destroyed) return;
+      this.world.attachOsm(osm, this.skylineYear);
+      this.city = new OsmVisual(this.app, this._worldRoot, this.world, this._cityOptions());
+      this.city.visible = this.showScenery;
+      this.scenery.standInCity = false;
+    } catch (e) {
+      console.warn('[extra300] OpenStreetMap city unavailable, keeping the stand-in skyline:', e);
+    }
+  }
+
+  _cityOptions() {
+    let minHeight = { full: 0, 'mid-rise and up': 15, 'towers only': 45 }[this.cityDetail] ?? 0;
+    // ~15,000 buildings is ~500k vertices: on a phone, 'full' leaves out the low-rise
+    if (this.isMobile) minHeight = Math.max(minHeight, 15);
+    return { year: this.skylineYear, minHeight };
   }
 
   _weather() {
@@ -165,6 +201,10 @@ export class Extra300 extends ArrivalScript {
     this._flying = true;
     this.lockKeyboard();
     this._prevMode = ArrivalSpace.getCameraMode?.() || 'third';
+    // the client re-parents the camera per mode and keeps its world pose: remember the local
+    // pose under the current rig so leaving the airplane doesn't strand the camera
+    const cam0 = ArrivalSpace.getCamera?.();
+    this._camLocal = cam0 ? { parent: cam0.parent, p: cam0.getLocalPosition().clone(), r: cam0.getLocalRotation().clone() } : null;
     const seat = EXTRA.eye;
     this._attach = ArrivalSpace.attachPlayerToEntity?.(this.visual.root, {
       offset: { x: seat[1], y: -seat[2] - 0.75, z: -seat[0] },
@@ -176,12 +216,14 @@ export class Extra300 extends ArrivalScript {
     const cam = ArrivalSpace.getCamera?.();
     if (cam?.camera) {
       this._camSaved = { near: cam.camera.nearClip, far: cam.camera.farClip, fov: cam.camera.fov };
-      cam.camera.nearClip = 0.12 * this._ws;
+      cam.camera.nearClip = 0.35 * this._ws;   // the canopy is hidden in the cockpit; a far near plane keeps the ground layers from z-fighting
       cam.camera.farClip = 60000 * this._ws;
     }
     this._setAvatarVisible(this.cameraRig.view !== 'cockpit');
     this.visual.setCockpitView(this.cameraRig.view === 'cockpit');
     this.sound.start();
+    ArrivalSpace.setAppUIVisible?.(false);
+    this._showSky(true);
     this._pose = this.cameraRig.update(this.ac, 0, this.ac.cg);
     this.hud.showPrompt('');
     this.hud.setFlying(true, this._panelVisible);
@@ -197,11 +239,17 @@ export class Extra300 extends ArrivalScript {
     this._attach = null;
     ArrivalSpace.setCameraMode?.(this._prevMode || 'third');
     const cam = ArrivalSpace.getCamera?.();
+    if (cam && this._camLocal && cam.parent === this._camLocal.parent) {
+      cam.setLocalPosition(this._camLocal.p);
+      cam.setLocalRotation(this._camLocal.r);
+    }
     if (cam?.camera && this._camSaved) {
       cam.camera.nearClip = this._camSaved.near;
       cam.camera.farClip = this._camSaved.far;
       cam.camera.fov = this._camSaved.fov;
     }
+    ArrivalSpace.setAppUIVisible?.(true);
+    this._showSky(false);
     this._setAvatarVisible(true);
     this.visual.setCockpitView(false);
     this.sound.stop();
@@ -213,7 +261,13 @@ export class Extra300 extends ArrivalScript {
     const side = [p[0] + Math.sin(this.ac.euler.psi) * 5.5, p[1] - Math.cos(this.ac.euler.psi) * 5.5];
     const local = fromNE(side[0], side[1], 1.0);
     const o = this._worldRoot.getPosition();
-    ArrivalSpace.teleportPlayer?.({ x: o.x + local[0] * ws, y: o.y + local[1] * ws, z: o.z + local[2] * ws }, { azimuth: -(this.ac.euler.psi / DEG + 90) }); // face the airplane
+    const out = { x: o.x + local[0] * ws, y: o.y + local[1] * ws, z: o.z + local[2] * ws };
+    ArrivalSpace.teleportPlayer?.(out, { azimuth: -(this.ac.euler.psi / DEG + 90) }); // face the airplane
+    if (this._prevMode === 'free') {
+      // a free camera keeps whatever pose it had: put it beside the airplane, looking at it
+      const ap = this.visual.root.getPosition();
+      ArrivalSpace.setFreeCamPose?.({ x: out.x, y: out.y + 1.6 * ws, z: out.z }, { x: ap.x, y: ap.y, z: ap.z });
+    }
   }
 
   _setAvatarVisible(v) {
@@ -293,6 +347,7 @@ export class Extra300 extends ArrivalScript {
   update(dt) {
     if (!this.isEnabled) return;
     this.hud.tick();
+    if (this.city && this.city.queue.length) this.city.tick(this._flying ? 3 : 8);
     if (!this._flying) {
       this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? 'Extra 300L' : 'Press E to fly the Extra 300L') : '');
       return;
@@ -306,6 +361,7 @@ export class Extra300 extends ArrivalScript {
     };
     this.mapper.update(raw, dt, this.ac.controls);
     if (!this._paused) this.ac.update(dt);
+    this._checkBuildings();
     const v = this.instruments.update(this.ac, dt);
     this.visual.update(this.ac, this._paused ? 0 : dt);
 
@@ -353,10 +409,58 @@ export class Extra300 extends ArrivalScript {
     cam.setPosition(o.x + pose.pos[0] * ws, o.y + pose.pos[1] * ws, o.z + pose.pos[2] * ws);
     cam.setRotation(pose.rot[0], pose.rot[1], pose.rot[2], pose.rot[3]);
     if (cam.camera) cam.camera.fov = pose.fov;
+    this._placeSky();
+  }
+
+  /** Fly into a building and the flight ends there. */
+  _checkBuildings() {
+    if (!this.world.osm || this.ac.damage.crashed) return;
+    const p = this.ac.state.pos;
+    const h = -p[2];
+    if (h > 450) return;
+    if (this.world.buildingAt(p[0], p[1], h)) {
+      this.ac.damage.crashed = true;
+      this.ac.engine.running = false;
+      this.ac.state.vel = [0, 0, 0];
+      this.ac.state.omega = [0, 0, 0];
+      this.hud.flash('You hit a building. Backspace to reset', 5);
+    }
+  }
+
+  _showSky(on) {
+    if (on && !this._sky) {
+      const m = new pc.StandardMaterial();
+      m.useLighting = false;
+      m.diffuse = new pc.Color(0, 0, 0);
+      m.emissiveVertexColor = true;
+      m.emissive = new pc.Color(1, 1, 1);
+      m.cull = pc.CULLFACE_NONE;
+      m.useFog = false;
+      m.useSkybox = false;
+      m.update();
+      this._sky = new pc.Entity('SkyDome');
+      const mi = new pc.MeshInstance(toMesh(this.app.graphicsDevice, buildSkyDome()), m);
+      this._sky.addComponent('render', { meshInstances: [mi], castShadows: false, receiveShadows: false });
+      this.app.root.addChild(this._sky);   // world-space, follows the camera; destroyed in destroy()
+    }
+    if (this._sky) this._sky.enabled = on;
+  }
+
+  _placeSky() {
+    const cam = ArrivalSpace.getCamera?.();
+    if (!this._sky || !this._sky.enabled || !cam?.camera) return;
+    const r = cam.camera.farClip * 0.9;
+    const p = cam.getPosition();
+    this._sky.setPosition(p.x, p.y, p.z);
+    this._sky.setLocalScale(r, r, r);
   }
 
   onPropertyChanged(name) {
-    if (name === 'showScenery') this.scenery.visible = this.showScenery;
+    if (name === 'showScenery') { this.scenery.visible = this.showScenery; if (this.city) this.city.visible = this.showScenery; }
+    if ((name === 'skylineYear' || name === 'cityDetail') && this.city) {
+      this.world.setSkylineYear(this.skylineYear);
+      this.city.build(this._cityOptions());
+    }
     if (name === 'showPanel') { this._panelVisible = this.showPanel; this.hud.setFlying(this._flying, this._panelVisible); }
     if (['windKt', 'windFromDeg', 'qnhInHg', 'oatC'].includes(name)) this.ac.weather = this._weather();
     if (name === 'fuelLiters' || name === 'startRunway' || name === 'engineRunningAtStart') { if (!this._flying) this._resetToRunway(); }
@@ -366,6 +470,7 @@ export class Extra300 extends ArrivalScript {
   onEntityMoved() { this._placeWorldRoot(); }
 
   destroy() {
+    this._destroyed = true;
     this._exit();
     window.removeEventListener('keydown', this._onKeyDown, true);
     window.removeEventListener('keyup', this._onKeyUp, true);
@@ -380,6 +485,8 @@ export class Extra300 extends ArrivalScript {
     this.sound.stop();
     this.visual.destroy();
     this.scenery.destroy();
+    this.city?.destroy();
+    this._sky?.destroy();
     this._worldRoot.destroy();
     disposeMaterials();
   }

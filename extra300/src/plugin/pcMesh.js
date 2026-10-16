@@ -33,6 +33,8 @@ export function toMesh(device, mb) {
   const mesh = new pc.Mesh(device);
   mesh.setPositions(new Float32Array(mb.positions));
   mesh.setNormals(new Float32Array(mb.normals));
+  if (mb.uvs) mesh.setUvs(0, new Float32Array(mb.uvs));
+  if (mb.colors) mesh.setColors32(new Uint8Array(mb.colors));
   const idx = mb.vertexCount > 65535 ? new Uint32Array(mb.indices) : new Uint16Array(mb.indices);
   mesh.setIndices(idx);
   mesh.update(pc.PRIMITIVE_TRIANGLES);
@@ -42,6 +44,7 @@ export function toMesh(device, mb) {
 /** An entity rendering one MeshBuilder with one material, parented to `parent`. */
 export function meshEntity(app, parent, name, mb, mat, { castShadows = true, receiveShadows = true } = {}) {
   const e = new pc.Entity(name);
+  if (!mb.vertexCount) { parent.addChild(e); return e; }   // nothing to draw (e.g. no parks in the box)
   const mi = new pc.MeshInstance(toMesh(app.graphicsDevice, mb), mat);
   e.addComponent('render', { meshInstances: [mi], castShadows, receiveShadows });
   parent.addChild(e);

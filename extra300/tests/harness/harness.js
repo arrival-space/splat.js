@@ -14,7 +14,7 @@ const app = new pc.Application(canvas, { mouse: new pc.Mouse(canvas), keyboard: 
 app.setCanvasFillMode(pc.FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(pc.RESOLUTION_AUTO);
 window.addEventListener('resize', () => app.resizeCanvas());
-app.worldScale = 1;
+app.worldScale = Number(params.get('ws')) || 1;   // ?ws=0.7 like older Arrival spaces
 app.scene.ambientLight = new pc.Color(0.42, 0.45, 0.5);
 app.scene.skyboxIntensity = 1;
 

@@ -7,8 +7,17 @@
   "entityId": "extra300-meigs",
   "spawnId": "spawn-runway36",
   "placement": {
-    "position": { "x": 0, "y": 0, "z": -504.68 },
-    "spawn": { "x": -4, "y": 0, "z": -2 }
+    "position": {
+      "x": 0,
+      "y": 0,
+      "z": -8
+    },
+    "spawn": {
+      "x": -4,
+      "y": 0,
+      "z": -2
+    }
   },
-  "params": {}
+  "params": {},
+  "placement_note": "position = where the airplane parks (runway 36, past the numbers); the whole of Meigs and Chicago is laid out around it"
 }

@@ -9,6 +9,7 @@
 // today's Northerly Island, whose shoreline still follows the old fill.
 
 import { LocalFrame, pointInPolygon } from './geo.js';
+import { maskLookup } from './osmCodec.js';
 
 const FT = 0.3048;
 
@@ -93,14 +94,21 @@ export function buildMeigs(data = MEIGS) {
   };
 
   /** Ground query used by the gear: height above the datum, normal (NED up), surface. */
+  let isLand = null;   // OSM land/water raster, once attached
   const ground = (n, e) => {
     const [al, ac] = runwayLocal(n, e);
     if (Math.abs(al) <= len / 2 + 30 && Math.abs(ac) <= wid / 2) return { h: 0, normal: UP, surface: 'asphalt' };
     if (pointInPolygon(n, e, island)) return { h: 0, normal: UP, surface: 'grass' };
+    if (isLand) return isLand(e, n) ? { h: 0, normal: UP, surface: 'grass' } : { h: water, normal: UP, surface: 'water' };
     if (pointInPolygon(n, e, pier)) return { h: 1.5, normal: UP, surface: 'asphalt' };
     if (pointInPolygon(n, e, mainland)) return { h: 0.5, normal: UP, surface: 'grass' };
     return { h: water, normal: UP, surface: 'water' };
   };
+
+  // buildings, indexed on a 100 m grid for collision checks
+  const CELL = 100;
+  let grid = null;
+  let skylineYear = 2002;
 
   const landmarks = data.landmarks.map((l) => ({ ...l, ne: toNE(l.at) }));
 
@@ -118,6 +126,37 @@ export function buildMeigs(data = MEIGS) {
 
   return {
     data, frame, elevation, water, ground, shoreEastAt,
+    osm: null,
+    /** Hand the world the decoded OpenStreetMap scenery: land/water raster for the gear, buildings for collisions. */
+    attachOsm(osm, year = 2002) {
+      this.osm = osm;
+      isLand = maskLookup(osm.mask, osm.header.box);
+      skylineYear = year;
+      grid = new Map();
+      osm.buildings.forEach((b, i) => {
+        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+        for (const [x, y] of b.outer) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
+        for (let gx = Math.floor(x0 / CELL); gx <= Math.floor(x1 / CELL); gx++) {
+          for (let gy = Math.floor(y0 / CELL); gy <= Math.floor(y1 / CELL); gy++) {
+            const k = gx * 100003 + gy;
+            if (!grid.has(k)) grid.set(k, []);
+            grid.get(k).push(i);
+          }
+        }
+      });
+    },
+    setSkylineYear(year) { skylineYear = year; },
+    /** The building (if any) whose volume contains the point; height h above the datum. */
+    buildingAt(n, e, h) {
+      if (!grid) return null;
+      for (const i of grid.get(Math.floor(e / CELL) * 100003 + Math.floor(n / CELL)) || []) {
+        const b = this.osm.buildings[i];
+        if (b.year && b.year > skylineYear) continue;
+        if (h > b.h || h < b.minH) continue;
+        if (pointInPolygon(e, n, b.outer)) return b;
+      }
+      return null;
+    },
     runway: { centre: c, dir, length: len, width: wid, thr36, thr18, bearing: brg },
     island, mainland, shore, pier, landmarks,
     downtown: { ...data.downtown, sw: toNE([data.downtown.south, data.downtown.west]), ne: toNE([data.downtown.north, data.downtown.east]) },

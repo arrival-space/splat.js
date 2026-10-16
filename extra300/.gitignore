@@ -10,3 +10,6 @@ space/reference/
 
 # the repo root ignores scripts/; this project's build/serve/sync scripts are source
 !scripts/
+
+# raw OpenStreetMap / City of Chicago downloads (scripts/fetch-osm.mjs); the baked module in src/world/data is committed
+data/osm/raw/

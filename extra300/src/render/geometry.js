@@ -10,17 +10,22 @@ export const fromBody = (p) => [p[1], -p[2], -p[0]];
 export const fromNE = (n, e, up = 0) => [e, up, -n];
 
 export class MeshBuilder {
-  constructor() {
+  /** @param {{ uv?: boolean, color?: boolean }} [opts] optional texture coordinates and vertex colours */
+  constructor(opts = {}) {
     this.positions = [];
     this.normals = [];
     this.indices = [];
+    this.uvs = opts.uv ? [] : null;
+    this.colors = opts.color ? [] : null;
   }
 
   get vertexCount() { return this.positions.length / 3; }
 
-  vertex(p, n) {
+  vertex(p, n, uv = null, color = null) {
     this.positions.push(p[0], p[1], p[2]);
     this.normals.push(n[0], n[1], n[2]);
+    if (this.uvs) this.uvs.push(uv ? uv[0] : 0, uv ? uv[1] : 0);
+    if (this.colors) this.colors.push(color ? color[0] : 255, color ? color[1] : 255, color ? color[2] : 255, 255);
     return this.vertexCount - 1;
   }
 

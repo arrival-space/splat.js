@@ -3,6 +3,8 @@
 
 import { Panel } from '../instruments/panel.js';
 
+export const CREDIT = 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago';
+
 const HELP = [
   ['Pitch', '↑ / ↓  or  W / S'],
   ['Roll', '← / →  or  A / D'],
@@ -54,8 +56,18 @@ export class Hud {
       borderRadius: '8px', zIndex: 22, display: 'none', pointerEvents: 'none',
     });
     this.help.innerHTML = `<div style="font-weight:700;margin-bottom:6px">Extra 300L — Meigs Field (CGX), runway 36</div>`
-      + HELP.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b}</div>`).join('');
+      + HELP.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b}</div>`).join('')
+      + `<div style="margin-top:8px;color:#9d9a92;font-size:11px">${CREDIT}</div>`;
     container.appendChild(this.help);
+
+    // ODbL: the map data is credited wherever the city is on screen
+    this.credit = document.createElement('div');
+    this.credit.textContent = CREDIT;
+    css(this.credit, {
+      position: 'fixed', right: '8px', top: '6px', color: 'rgba(240,238,232,0.75)', font: '11px Arial, sans-serif',
+      textShadow: '0 1px 2px #000', zIndex: 21, display: 'none', pointerEvents: 'none',
+    });
+    container.appendChild(this.credit);
 
     this.readout = document.createElement('div');
     css(this.readout, {
@@ -115,6 +127,7 @@ export class Hud {
   setFlying(flying, panelVisible) {
     this.panelCanvas.style.display = flying && panelVisible ? 'block' : 'none';
     this.readout.style.display = flying ? 'block' : 'none';
+    this.credit.style.display = flying ? 'block' : 'none';
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (!flying) this.help.style.display = 'none';
   }
@@ -122,6 +135,6 @@ export class Hud {
   toggleHelp() { this.help.style.display = this.help.style.display === 'none' ? 'block' : 'none'; }
 
   destroy() {
-    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, ...Object.values(this.buttons)]) el.remove();
+    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, this.credit, ...Object.values(this.buttons)]) el.remove();
   }
 }

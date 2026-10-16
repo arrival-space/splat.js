@@ -1,4 +1,5 @@
-// sceneryVisual.js — Meigs Field and the lakefront as PlayCanvas entities.
+// sceneryVisual.js — Meigs Field itself, plus the hand-placed stand-in city
+// that shows until (or unless) the OpenStreetMap city is ready.
 
 import { buildScenery } from '../render/scenery.js';
 import { material, meshEntity } from './pcMesh.js';
@@ -7,12 +8,23 @@ export class SceneryVisual {
   constructor(app, parent, world) {
     this.root = new pc.Entity('MeigsScenery');
     parent.addChild(this.root);
+    this.city = new pc.Entity('StandInCity');
+    this.root.addChild(this.city);
     for (const part of buildScenery(world)) {
       if (!part.mesh.vertexCount) continue;
       const flat = ['lake', 'mainland', 'island', 'runway', 'markings', 'taxiLine'].includes(part.name);
-      meshEntity(app, this.root, part.name, part.mesh, material(part.color), { castShadows: !flat, receiveShadows: true });
+      let mat = material(part.color);
+      if (part.bias) {
+        mat = mat.clone();
+        mat.depthBias = part.bias;
+        mat.slopeDepthBias = part.bias;
+        mat.update();
+      }
+      meshEntity(app, part.layer === 'city' ? this.city : this.root, part.name, part.mesh, mat, { castShadows: !flat, receiveShadows: true });
     }
   }
   set visible(v) { this.root.enabled = v; }
+  /** Hide the stand-in city once the OpenStreetMap one is up. */
+  set standInCity(v) { this.city.enabled = v; }
   destroy() { this.root.destroy(); }
 }

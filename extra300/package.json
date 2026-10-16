@@ -9,10 +9,16 @@
     "build": "node scripts/build.mjs",
     "sync": "node scripts/sync.mjs",
     "serve": "node scripts/serve.mjs 8740",
-    "test:e2e": "node scripts/build.mjs && node tests/e2e/shots.mjs dist/shots"
+    "test:e2e": "node scripts/build.mjs && node tests/e2e/shots.mjs dist/shots",
+    "osm:fetch": "node scripts/fetch-osm.mjs",
+    "osm:bake": "node scripts/bake-osm.mjs",
+    "test:arrival": "node scripts/build.mjs && node tests/e2e/arrival-client.cjs"
   },
   "devDependencies": {
     "esbuild": "0.28.0",
     "playcanvas": "2.22.6"
+  },
+  "dependencies": {
+    "earcut": "3.0.1"
   }
 }

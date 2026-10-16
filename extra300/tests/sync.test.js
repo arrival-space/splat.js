@@ -51,11 +51,9 @@ test('stage merges only the managed room keys', () => {
   assert.ok(!existsSync(join(space, '.arrival')));
 });
 
-test('the spawn is within boarding distance of the parked airplane (worldScale 1)', async () => {
-  const { buildMeigs } = await import('../src/world/meigs.js');
+test('the spawn is within boarding distance of the parked airplane', () => {
+  // the vibe anchors the airplane's parking spot at its own position
   const cfg = loadConfig();
-  const s = buildMeigs().startPosition();
-  const aircraftZ = cfg.placement.position.z + -s.n;   // render z = -north
-  const d = Math.hypot(cfg.placement.spawn.x - (cfg.placement.position.x + s.e), cfg.placement.spawn.z - aircraftZ);
+  const d = Math.hypot(cfg.placement.spawn.x - cfg.placement.position.x, cfg.placement.spawn.z - cfg.placement.position.z);
   assert.ok(d > 4 && d < 9, `spawn ${d.toFixed(1)} m from the airplane`);
 });

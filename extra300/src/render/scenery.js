@@ -224,39 +224,49 @@ function downtown(world) {
   return { light, dark, glass };
 }
 
-/** Every static scenery part: { name, color, mesh }. */
+const MEIGS_BUILDINGS = new Set(['Meigs Terminal', 'Meigs Tower']);
+
+/**
+ * Every static scenery part: { name, color, mesh, layer }.
+ *   layer 'core'  Meigs itself (lake, island, runway, terminal, tower) — always drawn
+ *   layer 'city'  the hand-placed stand-in city and shore, drawn only when the
+ *                 OpenStreetMap city is unavailable
+ */
 export function buildScenery(world) {
   const parts = [];
   const water = new MeshBuilder();
   const S = 40000;
   water.quad([-S, world.water, S], [S, world.water, S], [S, world.water, -S], [-S, world.water, -S]);
-  parts.push({ name: 'lake', color: PALETTE.water, mesh: water });
+  parts.push({ name: 'lake', color: PALETTE.water, mesh: water, layer: 'core' });
 
-  const land = flatPolygon(new MeshBuilder(), world.mainland, 0.5);
-  parts.push({ name: 'mainland', color: PALETTE.land, mesh: land });
-  parts.push({ name: 'island', color: PALETTE.grass, mesh: flatPolygon(new MeshBuilder(), world.island, 0.0) });
-  const walls = new MeshBuilder();
-  wall(walls, world.island, world.water - 0.5, 0.0);
-  wall(walls, world.shore, world.water - 0.5, 0.5, false);
-  parts.push({ name: 'seawall', color: PALETTE.seawall, mesh: walls });
+  parts.push({ name: 'mainland', color: PALETTE.land, mesh: flatPolygon(new MeshBuilder(), world.mainland, 0.5), layer: 'city' });
+  parts.push({ name: 'island', color: PALETTE.grass, mesh: flatPolygon(new MeshBuilder(), world.island, 0.0), layer: 'core', bias: -1 });
+  const islandWalls = new MeshBuilder();
+  wall(islandWalls, world.island, world.water - 0.5, 0.0);
+  parts.push({ name: 'islandWall', color: PALETTE.seawall, mesh: islandWalls, layer: 'city' });
+  const shoreWalls = new MeshBuilder();
+  wall(shoreWalls, world.shore, world.water - 0.5, 0.5, false);
+  parts.push({ name: 'seawall', color: PALETTE.seawall, mesh: shoreWalls, layer: 'city' });
   const pier = flatPolygon(new MeshBuilder(), world.pier, 1.5);
   wall(pier, world.pier, world.water - 0.5, 1.5);
-  parts.push({ name: 'navyPier', color: PALETTE.pier, mesh: pier });
+  parts.push({ name: 'navyPier', color: PALETTE.pier, mesh: pier, layer: 'city' });
 
   const rw = runway(world);
-  parts.push({ name: 'runway', color: PALETTE.asphalt, mesh: rw.asphalt });
-  parts.push({ name: 'markings', color: PALETTE.marking, mesh: rw.paint });
-  parts.push({ name: 'taxiLine', color: PALETTE.yellow, mesh: rw.yel });
+  parts.push({ name: 'runway', color: PALETTE.asphalt, mesh: rw.asphalt, layer: 'core', bias: -2 });
+  parts.push({ name: 'markings', color: PALETTE.marking, mesh: rw.paint, layer: 'core', bias: -3 });
+  parts.push({ name: 'taxiLine', color: PALETTE.yellow, mesh: rw.yel, layer: 'core', bias: -3 });
 
   const byColor = new Map();
   for (const l of world.landmarks) {
-    if (!byColor.has(l.color)) byColor.set(l.color, new MeshBuilder());
-    building(byColor.get(l.color), l);
+    const layer = MEIGS_BUILDINGS.has(l.name) ? 'core' : 'city';
+    const k = `${layer}${l.color}`;
+    if (!byColor.has(k)) byColor.set(k, { layer, color: l.color, mesh: new MeshBuilder() });
+    building(byColor.get(k).mesh, l);
   }
-  for (const [color, mesh] of byColor) parts.push({ name: `landmarks${color}`, color, mesh });
+  for (const [k, v] of byColor) parts.push({ name: `landmarks${k}`, ...v });
   const dt = downtown(world);
-  parts.push({ name: 'loopLight', color: '#c9c3b6', mesh: dt.light });
-  parts.push({ name: 'loopDark', color: '#55524c', mesh: dt.dark });
-  parts.push({ name: 'loopGlass', color: PALETTE.glass, mesh: dt.glass });
+  parts.push({ name: 'loopLight', color: '#c9c3b6', mesh: dt.light, layer: 'city' });
+  parts.push({ name: 'loopDark', color: '#55524c', mesh: dt.dark, layer: 'city' });
+  parts.push({ name: 'loopGlass', color: PALETTE.glass, mesh: dt.glass, layer: 'city' });
   return parts;
 }

@@ -13,7 +13,8 @@ test('build produces a self-contained vibe module', async () => {
   const file = join(root, 'dist', 'extra300-meigs.mjs');
   const src = readFileSync(file, 'utf8');
   assert.ok(!/^\s*import\s/m.test(src), 'no imports left: Arrival loads a single file');
-  assert.ok(src.length < 400_000, `bundle size ${src.length}`);
+  // the baked OpenStreetMap city rides inside the bundle; keep it well under a few MB
+  assert.ok(src.length < 4_000_000, `bundle size ${src.length}`);
 
   // load it the way the client does, with the globals it provides
   class Script { constructor() {} }
