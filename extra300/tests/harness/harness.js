@@ -86,4 +86,20 @@ if (params.get('fly') === '1') {
   const view = params.get('view');
   if (view) { while (vibe.cameraRig.view !== view) vibe.cameraRig.cycle(); vibe._setAvatarVisible(view !== 'cockpit'); vibe.visual.setCockpitView(view === 'cockpit'); }
 }
+// ?flight=platzrunde — the scripted pilot (tests/lib/platzrunde.js) flies the real vibe;
+// call window.startFlight(speedup) once the city is up
+if (params.get('flight') === 'platzrunde') {
+  const { PatternPilot } = await import('../lib/platzrunde.js');
+  window.startFlight = (speedup = 1) => {
+    const pilot = new PatternPilot(vibe.ac, vibe.world);
+    window.pilot = pilot;
+    // the pilot replaces the keyboard; extra sim steps per frame keep slow software GL near real time
+    vibe.mapper.update = (raw, dt) => {
+      const h = Math.min(dt, 0.1);
+      for (let i = 1; i < window.flightSpeedup; i++) { pilot.step(h); vibe.ac.update(h); }
+      pilot.step(h);
+    };
+    window.flightSpeedup = speedup;
+  };
+}
 window.harnessReady = true;

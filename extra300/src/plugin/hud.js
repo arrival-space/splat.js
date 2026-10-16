@@ -12,9 +12,9 @@ const QUICK_START = [
 ];
 
 const HELP = [
-  ['Pitch', 'S / ↓ nose up (pull)    W / ↑ nose down (push)'],
+  ['Pitch', 'S / ↓ nose up (pull)    W / ↑ nose down (push)    + Shift: pull through the buffet'],
   ['Roll', 'A / ←  left    D / →  right'],
-  ['Rudder', 'Q  left    E  right    (Z / X too)'],
+  ['Rudder', 'Q  left    E  right    (Z / X too)    U  auto-rudder on / off'],
   ['Throttle', 'R  more    F  less    (also + / − or PgUp / PgDn)    Home idle    End full'],
   ['Brakes', 'B or .  (hold)    ,  parking brake'],
   ['Trim', ';  nose down    \'  nose up'],
@@ -24,6 +24,7 @@ const HELP = [
   ['Panel', 'I  show / hide    G  reset g-meter    N  set altimeter'],
   ['Mouse yoke', 'Y  fly with the mouse (screen centre = neutral)'],
   ['Sim', 'P  pause    Backspace  back to runway 36    Esc  leave the airplane'],
+  ['Demo', 'O  watch a Platzrunde flown for you    any flight key takes over'],
   ['Gamepad', 'left stick flies, right stick rudder / throttle, triggers brake'],
 ];
 
@@ -86,6 +87,24 @@ export class Hud {
     });
     container.appendChild(this.readout);
 
+    // the demo flight: always there, so a visitor can just watch
+    this.demoButton = document.createElement('button');
+    css(this.demoButton, {
+      position: 'fixed', right: '12px', top: '26px', zIndex: 24, padding: '9px 14px', borderRadius: '8px',
+      border: '1px solid rgba(255,255,255,0.25)', background: 'rgba(196,30,42,0.9)', color: '#fff',
+      font: '700 14px "Helvetica Neue", Arial, sans-serif', cursor: 'pointer', boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+    });
+    container.appendChild(this.demoButton);
+    this.setDemo(false);
+
+    this.demoStatus = document.createElement('div');
+    css(this.demoStatus, {
+      position: 'fixed', left: '50%', top: '40px', transform: 'translateX(-50%)', padding: '6px 14px',
+      background: 'rgba(12,13,16,0.72)', color: '#f1efe8', font: '600 15px "Helvetica Neue", Arial, sans-serif',
+      borderRadius: '6px', zIndex: 21, display: 'none', pointerEvents: 'none',
+    });
+    container.appendChild(this.demoStatus);
+
     this.buttons = {};
     if (isMobile) {
       const mk = (id, text, style) => {
@@ -124,6 +143,18 @@ export class Hud {
     if (this.buttons.board) this.buttons.board.style.display = text ? 'block' : 'none';
   }
 
+  /** Demo button label: start, or take over while the demo flies. */
+  setDemo(running) {
+    this.demoButton.textContent = running ? '✋ Take over' : '▶ Watch a Platzrunde';
+    this.demoButton.title = running ? 'Take the controls (or just press any flight key)' : 'Takeoff, a loop over the lake, and a landing — flown for you (O)';
+    this.demoButton.style.background = running ? 'rgba(30,60,140,0.92)' : 'rgba(196,30,42,0.9)';
+  }
+
+  showDemoStatus(text) {
+    this.demoStatus.textContent = text || '';
+    this.demoStatus.style.display = text ? 'block' : 'none';
+  }
+
   flash(text, seconds = 3) {
     this.message.textContent = text;
     this.message.style.display = 'block';
@@ -151,6 +182,6 @@ export class Hud {
   }
 
   destroy() {
-    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, this.credit, ...Object.values(this.buttons)]) el.remove();
+    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.readout, this.credit, this.demoButton, this.demoStatus, ...Object.values(this.buttons)]) el.remove();
   }
 }

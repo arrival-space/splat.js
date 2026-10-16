@@ -9,7 +9,8 @@ import { Aircraft } from '../sim/aircraft.js';
 import EXTRA from '../sim/aircraft/extra300l.js';
 import { DEG, INHG, KT } from '../sim/units.js';
 import { Instruments } from '../instruments/instruments.js';
-import { ControlMapper, ACTIONS } from '../input/controlMapper.js';
+import { ControlMapper, ACTIONS, BINDINGS, FLIGHT_KEYS } from '../input/controlMapper.js';
+import { PatternPilot } from '../autopilot/platzrunde.js';
 import { buildMeigs } from '../world/meigs.js';
 import { CameraRig } from '../render/cameraRig.js';
 import { fromNE } from '../render/geometry.js';
@@ -111,6 +112,7 @@ export class Extra300 extends ArrivalScript {
 
     // tap / click the airplane to board
     this._unsubClick = ArrivalSpace.onEntityClick?.(this.visual.root, () => { if (!this._flying) this._enter(); });
+    this.hud.demoButton.onclick = (ev) => { ev.stopPropagation(); this._demo ? this._stopDemo() : this._startDemo(); };
     if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._enter();
     if (this.hud.buttons.exit) this.hud.buttons.exit.onclick = () => this._exit();
     if (this.hud.buttons.view) this.hud.buttons.view.onclick = () => this._action('view');
@@ -233,6 +235,7 @@ export class Extra300 extends ArrivalScript {
 
   _exit() {
     if (!this._flying) return;
+    if (this._demo) this._stopDemo('Demo ended');
     this._flying = false;
     this.unlockKeyboard();
     this._keys.clear();
@@ -271,6 +274,62 @@ export class Extra300 extends ArrivalScript {
     }
   }
 
+  // ── demo flight ──────────────────────────────────────────────────────────
+  _startDemo() {
+    if (!this.isEnabled) return;
+    if (!this._flying) this._enter();
+    this._paused = false;
+    this._resetToRunway();
+    this.ac.engine.running = true;
+    this._demo = new PatternPilot(this.ac, this.world);
+    this._director = true;
+    this._helpAutoHidden = true;
+    this.hud.toggleHelp(false);
+    this.hud.setDemo(true);
+    this.hud.flash('Demo flight: watch, or press any flight key to take over', 4);
+  }
+
+  _stopDemo(message = 'You have control') {
+    if (!this._demo) return;
+    // hand over exactly as it is: the throttle and trim stay where the demo pilot left them
+    this.mapper.throttle = this.ac.controls.throttle;
+    this.mapper.trim = this.ac.controls.elevatorTrim || 0;
+    this.ac.controls.brakeL = this.ac.controls.brakeR = 0;
+    this._demo = null;
+    this.hud.setDemo(false);
+    this.hud.showDemoStatus('');
+    this.hud.flash(message, 2.5);
+  }
+
+  /** Which camera tells each part of the circuit best (until the viewer presses V). */
+  _directCamera() {
+    if (!this._director) return;
+    const want = {
+      takeoff: 'chase', climb: 'chase', crosswind: 'chase', downwind: 'chase', loopEntry: 'flyby', loop: 'flyby',
+      recover: 'chase', downwind2: 'chase', base: 'chase', final: 'cockpit', flare: 'cockpit', rollout: 'tower', stopped: 'tower',
+    }[this._demo.phase] || 'chase';
+    if (this.cameraRig.view === want) return;
+    while (this.cameraRig.view !== want) this.cameraRig.cycle();
+    this._setAvatarVisible(want !== 'cockpit');
+    this.visual.setCockpitView(want === 'cockpit');
+  }
+
+  static DEMO_TEXT = {
+    takeoff: 'Takeoff from runway 36 — full power, tail up at 35 kt',
+    climb: 'Climbing out over Northerly Island at 85 kt',
+    crosswind: 'Crosswind: right turn out over the lake',
+    downwind: 'Downwind at 1,000 ft — loop coming up',
+    loopEntry: 'Diving for 160 kt…',
+    loop: 'Loop — holding the stick back, easing at the buffet',
+    recover: 'Easing out of the loop',
+    downwind2: 'Back on downwind, slowing down',
+    base: 'Base: power back, descending',
+    final: 'Final, runway 36 — 72 kt over the fence',
+    flare: 'Flare — holding it off',
+    rollout: 'Touchdown — three-pointer, gentle brakes',
+    stopped: 'Stopped on runway 36. Press the button to fly it again, or take over.',
+  };
+
   _setAvatarVisible(v) {
     const mesh = ArrivalSpace.getPlayerMesh?.();
     if (mesh) mesh.enabled = v;
@@ -283,8 +342,11 @@ export class Extra300 extends ArrivalScript {
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (!this._flying) {
       if (key === 'e' && this._nearAircraft()) { this._enter(); e.preventDefault(); }
+      if (key === 'o') { this._startDemo(); e.preventDefault(); }
       return;
     }
+    // any flight control key takes the airplane back from the demo pilot
+    if (this._demo && FLIGHT_KEYS.some((b) => BINDINGS[b].includes(key))) this._stopDemo();
     if (!this._keys.has(key)) {
       for (const [name, keys] of Object.entries(ACTIONS)) if (keys.includes(key)) this._action(name);
     }
@@ -297,6 +359,7 @@ export class Extra300 extends ArrivalScript {
     const c = this.ac.controls;
     switch (name) {
       case 'view': {
+        this._director = false;   // the viewer picks the camera now
         const v = this.cameraRig.cycle();
         this._setAvatarVisible(v !== 'cockpit');
         this.visual.setCockpitView(v === 'cockpit');
@@ -304,16 +367,18 @@ export class Extra300 extends ArrivalScript {
         break;
       }
       case 'panel': this._panelVisible = !this._panelVisible; this.hud.setFlying(true, this._panelVisible); break;
-      case 'reset': this._resetToRunway(); this.hud.flash('Back on runway 36', 2); break;
+      case 'reset': if (this._demo) this._stopDemo('Demo ended'); this._resetToRunway(); this.hud.flash('Back on runway 36', 2); break;
       case 'pause': this._paused = !this._paused; break;
       case 'help': this.hud.toggleHelp(); break;
       case 'mixture': c.mixture = c.mixture > 0.5 ? 0 : 1; this.hud.flash(c.mixture ? 'Mixture rich' : 'Mixture cut-off', 1.5); break;
       case 'parkingBrake': c.parkingBrake = !c.parkingBrake; break;
       case 'gReset': this.instruments.resetG(); break;
       case 'kollsman': this.instruments.kollsman = this.ac.weather.qnh; this.hud.flash(`Altimeter ${(this.ac.weather.qnh / INHG).toFixed(2)}`, 1.5); break;
+      case 'autoRudder': this.mapper.autoRudder = !this.mapper.autoRudder; this.hud.flash(this.mapper.autoRudder ? 'Auto-rudder on (keeps the ball centred)' : 'Auto-rudder off: your feet', 2); break;
       case 'yoke': this._yoke = !this._yoke; this.hud.flash(this._yoke ? 'Mouse yoke on' : 'Mouse yoke off', 1.5); break;
       case 'lookCenter': this.cameraRig.centre(); break;
       case 'exit': this._exit(); break;
+      case 'demo': this._demo ? this._stopDemo() : this._startDemo(); break;
       default: break;
     }
   }
@@ -363,7 +428,17 @@ export class Extra300 extends ArrivalScript {
       right: this.isMobile ? this.getRightStick() : null,
       yoke: this._yoke ? { x: this._mouse.x, y: this._mouse.y } : null,
     };
-    this.mapper.update(raw, dt, this.ac.controls);
+    if (this._demo && raw.pad && raw.pad.axes.slice(0, 4).some((a) => Math.abs(a) > 0.35)) this._stopDemo();
+    if (this._demo) {
+      if (!this._paused) this._demo.step(Math.min(dt, 0.1));
+      this._directCamera();
+      this.hud.showDemoStatus(Extra300.DEMO_TEXT[this._demo.phase] || '');
+    } else {
+      this.mapper.update(raw, dt, this.ac.controls, {
+        qbar: this.ac.out.qbar, alpha: this.ac.out.alpha, beta: this.ac.out.beta,
+        yawRate: this.ac.state.omega[2], onGround: this.ac.gear.onGround,
+      });
+    }
     if (!this._paused) this.ac.update(dt);
     this._checkBuildings();
     // the controls card has done its job once the airplane is flying

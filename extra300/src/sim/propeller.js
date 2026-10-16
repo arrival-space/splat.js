@@ -84,8 +84,11 @@ export class Propeller {
     this.thrust = T;
     this.torque = Q;
     this.slipDv = 2 * vi * 0.85;          // fully developed wake, mixing losses
-    const Vs = Math.max(Vax + 2 * vi, 1);
-    const rEff = 0.6 * this.R;
-    this.swirl = clamp(Q / (rho * this.A * Vs * rEff), 0, 25);
+    // swirl from angular momentum: the torque turns the air the disc swallows,
+    // ṁ = ρ·A·(V + vi) through the whole swept disc, at ~0.7 R; by the tail the
+    // fuselage and the wing have taken out about half of it
+    const sweptArea = Math.PI * this.R * this.R;
+    const mdot = rho * sweptArea * Math.max(Vax + vi, 1);
+    this.swirl = clamp((0.5 * Q) / (mdot * 0.7 * this.R), 0, 15);
   }
 }

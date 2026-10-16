@@ -6,13 +6,15 @@ import { Engine } from '../src/sim/engine.js';
 import { atmosphere } from '../src/sim/atmosphere.js';
 import { HP, INHG } from '../src/sim/units.js';
 
-/** Engine run-up on the parking brake, the way a pilot checks the numbers. */
+/** Engine run-up on the parking brake, the way a pilot does it: stick held fully back, so the
+ *  slipstream over the raised elevator keeps the tail down against the thrust. */
 function runUp(throttle, seconds = 10) {
   const ac = new Aircraft(EXTRA);
   ac.placeOnGround(0, 0, 0);
   ac.engine.running = true;
   ac.rpm = 800;
   ac.controls.parkingBrake = true;
+  ac.controls.elevator = 1;
   ac.controls.throttle = throttle;
   for (let i = 0; i < 480 * seconds; i++) ac.step(1 / 480);
   return ac;

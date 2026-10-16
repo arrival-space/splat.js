@@ -9,6 +9,11 @@ Place the vibe where the airplane should park. Meigs Field, the lake and
 Chicago are laid out around it. Walk up to the airplane and press **E** (or
 tap it) to fly. Press **H** in the cockpit for the controls.
 
+To watch first, press **▶ Watch a Platzrunde** (or **O**). The airplane then
+flies one circuit by itself while the camera follows it: takeoff from 36, a
+loop over the lake, then the landing. Press any flight key, or the button,
+to take over wherever it is.
+
 ![Runway 36, Meigs Field, from the cockpit](docs/img/cockpit-runway36.png)
 
 ## What is modelled
@@ -49,6 +54,19 @@ The published numbers it is tested against:
 | roll rate, full aileron, 160 KCAS | 437 °/s | ~400 °/s |
 | idle / full static rpm | 700 / 2,620 | 700 / ~2,650 |
 | takeoff, lift-off | ~130 m, 65 kt | — |
+| loop from 160 kt, key held | 10.4 s, 85 kt over the top, no stall | ~10 s, 70–80 kt |
+| full circuit with loop and landing | touchdown 66 kt, 1.1 m/s, stop in ~370 m | — |
+
+**Flying it with a keyboard.** A real pilot pulls with a force, and the airflow
+pushes back harder the faster the airplane goes. A held key works the same
+way: it pulls about 5 g at 170 kt but uses nearly the whole elevator travel at
+70 kt. The keyboard pilot also feels the buffet, holding the pull just short
+of the stall, so holding the pitch key flies a clean loop. **Shift** pulls
+straight through the buffet for stalls, snaps and three-point landings.
+
+**Auto-rudder** keeps the ball centred in the air (**U** toggles it), and any
+rudder key overrides it. Analog inputs (gamepad, touch, mouse yoke) stay
+direct stick positions.
 
 ## Working on it
 

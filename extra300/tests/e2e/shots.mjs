@@ -72,6 +72,26 @@ await shot('08-loop-lowpass', '?fly=1&view=chase', () => {
   await page.screenshot({ path: join(out, '07-takeoff-roll.png') });
   await page.close();
 }
+// the demo button: one click, it flies itself; a flight key takes over
+{
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  page.on('pageerror', (e) => errors.push(`demo: ${e.message}`));
+  await page.goto('http://localhost:8741/tests/harness/?');
+  await page.waitForFunction(() => window.harnessReady === true, null, { timeout: 60000 });
+  await page.evaluate(() => window.vibe.hud.demoButton.click());
+  const started = await page.evaluate(() => !!window.vibe._demo && window.vibe._flying);
+  if (!started) errors.push('demo: the button did not start the demo flight');
+  await page.waitForFunction(() => window.vibe._demo && ['climb', 'crosswind'].includes(window.vibe._demo.phase), null, { timeout: 300000 });
+  await page.waitForTimeout(1500);
+  await page.screenshot({ path: join(out, '09-demo-climbing-out.png') });
+  const status = await page.evaluate(() => window.vibe.hud.demoStatus.textContent);
+  if (!/Climbing|Crosswind/.test(status)) errors.push(`demo: status line says "${status}"`);
+  await page.keyboard.press('w');
+  const tookOver = await page.evaluate(() => window.vibe._demo === null && window.vibe.hud.demoButton.textContent.includes('Watch'));
+  if (!tookOver) errors.push('demo: a flight key did not take over');
+  console.log(`demo: started, "${status}", take-over ${tookOver ? 'ok' : 'FAILED'}`);
+  await page.close();
+}
 await browser.close();
 server.close();
 if (errors.length) { console.error(errors.join('\n')); process.exit(1); }

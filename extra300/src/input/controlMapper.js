@@ -30,8 +30,32 @@ export const BINDINGS = {
 // one-shot actions handled by the plugin
 export const ACTIONS = {
   view: ['v'], panel: ['i'], reset: ['Backspace'], pause: ['p'], help: ['h', '?'],
-  mixture: ['m'], parkingBrake: [','], gReset: ['g'], kollsman: ['n'], exit: ['Escape'], yoke: ['y'], lookCenter: ['c'],
+  mixture: ['m'], parkingBrake: [','], autoRudder: ['u'], demo: ['o'], gReset: ['g'], kollsman: ['n'], exit: ['Escape'], yoke: ['y'], lookCenter: ['c'],
 };
+
+/**
+ * Keys are a pilot's force, not a stick position. The aerodynamic load on a
+ * control surface grows with dynamic pressure, so the same pull moves the
+ * stick less the faster you go: full key ≈ 5 g at 170 kt, most of the
+ * travel at 70 kt, all of it on the ground. deflection = force / (c·q + k0),
+ * c and k0 fitted to those two points per axis. Shift pulls twice as hard.
+ */
+export const KEY_AUTHORITY = {
+  elevator: { c: 0.000686, k0: 0.63 },
+  aileron: { c: 0.000314, k0: 0.75 },
+  rudder: { c: 0.000257, k0: 0.79 },
+};
+/** A pilot feels the buffet a couple of degrees before the stall and eases off there. */
+export const BUFFET_ALPHA = 15.5 * Math.PI / 180;
+const EASE_PER_RAD = 16;   // stick eased off per radian past the buffet [tune] tests/handling.test.js loops
+
+export function keyAuthority(axis, qbar, boost = 1) {
+  const a = KEY_AUTHORITY[axis];
+  return Math.min(1, boost / (a.c * Math.max(0, qbar) + a.k0));
+}
+
+/** Keys that move a control: pressing one during the demo flight takes over. */
+export const FLIGHT_KEYS = ['pitchDown', 'pitchUp', 'rollLeft', 'rollRight', 'yawLeft', 'yawRight', 'throttleUp', 'throttleDown', 'throttleFull', 'throttleIdle', 'brakes'];
 
 const expo = (x, e) => Math.sign(x) * (e * Math.abs(x) ** 3 + (1 - e) * Math.abs(x));
 const dead = (x, d) => (Math.abs(x) < d ? 0 : Math.sign(x) * (Math.abs(x) - d) / (1 - d));
@@ -45,6 +69,8 @@ export class ControlMapper {
     this.throttle = 0;
     this.prop = 1;
     this.trim = 0;
+    this.autoRudder = opts.autoRudder ?? true;   // the pilot's feet: keeps the ball centred in the air
+    this._autoRud = 0;
   }
 
   static pressed(keys, names) {
@@ -61,8 +87,11 @@ export class ControlMapper {
    * @param {{x:number,y:number}|null} [raw.yoke] mouse yoke, -1..1 from screen centre
    * @param {number} dt
    * @param {object} controls  aircraft controls object, written in place
+   * @param {{ qbar?: number, alpha?: number, beta?: number, yawRate?: number, onGround?: boolean }} [flight]
+   *   dynamic pressure (Pa), angle of attack and sideslip (rad), yaw rate (rad/s): for the keyboard's
+   *   pilot-force model, its feel for the buffet, and the auto-rudder
    */
-  update(raw, dt, controls) {
+  update(raw, dt, controls, flight = {}) {
     const k = raw.keys || new Set();
     const P = (b) => ControlMapper.pressed(k, BINDINGS[b]);
     const ramp = (cur, dir) => {
@@ -74,7 +103,23 @@ export class ControlMapper {
     this.kb.elevator = ramp(this.kb.elevator, (P('pitchUp') ? 1 : 0) - (P('pitchDown') ? 1 : 0));
     this.kb.rudder = ramp(this.kb.rudder, (P('yawRight') ? 1 : 0) - (P('yawLeft') ? 1 : 0));
 
-    let ail = this.kb.aileron, ele = this.kb.elevator, rud = this.kb.rudder;
+    const q = flight.qbar ?? 0;
+    const boost = k.has('Shift') ? 2 : 1;
+    let ail = this.kb.aileron * keyAuthority('aileron', q, boost);
+    let ele = this.kb.elevator * keyAuthority('elevator', q, boost);
+    // the keyboard pilot holds the pull at the buffet instead of pulling through it (Shift: through)
+    const alpha = flight.alpha ?? 0;
+    if (boost === 1 && q > 150) {
+      if (ele > 0 && alpha > BUFFET_ALPHA) ele = Math.max(0, ele - EASE_PER_RAD * (alpha - BUFFET_ALPHA));
+      if (ele < 0 && alpha < -BUFFET_ALPHA) ele = Math.min(0, ele - EASE_PER_RAD * (alpha + BUFFET_ALPHA));
+    }
+    let rud = this.kb.rudder * keyAuthority('rudder', q, boost);
+    // auto-rudder: right pedal for a sideslip from the right, damped by the yaw rate; any rudder
+    // input from keys, pad or sticks takes over
+    const target = this.autoRudder && !flight.onGround && q > 300
+      ? clamp(4 * (flight.beta ?? 0) - 0.4 * (flight.yawRate ?? 0), -1, 1) : 0;
+    this._autoRud += (target - this._autoRud) * Math.min(1, dt * 8);
+    if (this.kb.rudder === 0) rud = this._autoRud;
     let brake = P('brakes') ? 1 : 0;
     let brakeL = brake, brakeR = brake;
 

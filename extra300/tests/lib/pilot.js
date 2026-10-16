@@ -3,22 +3,10 @@
 // centred), so the performance tests measure the airframe, not the pilot.
 
 import { qToEuler } from '../../src/math/quat.js';
-import { casFromImpact, impactPressure } from '../../src/sim/atmosphere.js';
-import { clamp, KT } from '../../src/sim/units.js';
+import { clamp } from '../../src/sim/units.js';
 
-export class Pid {
-  constructor(kp, ki, kd, lo = -1, hi = 1) { Object.assign(this, { kp, ki, kd, lo, hi, i: 0, prev: null }); }
-  step(err, dt) {
-    const d = this.prev == null ? 0 : (err - this.prev) / dt;
-    this.prev = err;
-    const ni = this.i + err * dt;
-    const u = this.kp * err + this.ki * ni + this.kd * d;
-    if (u > this.lo && u < this.hi) this.i = ni; // anti-windup
-    return clamp(u, this.lo, this.hi);
-  }
-}
-
-export const casKt = (ac) => casFromImpact(impactPressure(ac.out.tas, ac.out.atm)) / KT;
+export { Pid, casKt } from '../../src/autopilot/pid.js';
+import { Pid, casKt } from '../../src/autopilot/pid.js';
 
 /** Wings level + ball centred + pitch toward a target pitch attitude. */
 export class Autopilot {

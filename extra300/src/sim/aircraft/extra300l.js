@@ -183,6 +183,10 @@ export const EXTRA_300L = {
     rpmRedline: 2700, mpMax: 30,
   },
 
+  // ground-adjustable trim tabs, set so it flies hands-off at cruise power [tune]
+  // tests/performance.test.js "hands off at cruise"
+  rigging: { aileron: 0.006, rudder: 0.03 },
+
   // where the pilot's eyes are (rear seat) for the cockpit camera [est]
   eye: [-1.0, 0, -0.95],
 };

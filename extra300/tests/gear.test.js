@@ -74,3 +74,13 @@ test('a prop strike on a nose-over stops the engine', () => {
   run(ac, 2);
   assert.equal(ac.engine.running, false);
 });
+
+test('full power on the brakes: stick back holds the tail down, no prop strike', () => {
+  const ac = parked();
+  ac.engine.running = true; ac.rpm = 800;
+  ac.controls.parkingBrake = true; ac.controls.elevator = 1; ac.controls.throttle = 1;
+  let minTail = Infinity;
+  for (let i = 0; i < 480 * 8; i++) { ac.step(1 / 480); minTail = Math.min(minTail, ac.gear.units[2].load); }
+  assert.ok(!ac.damage.propStrike);
+  assert.ok(minTail > 100, `tail load dipped to ${minTail.toFixed(0)} N`);
+});

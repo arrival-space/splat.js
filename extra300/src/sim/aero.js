@@ -141,8 +141,9 @@ export class Aero {
 
       let delta = 0;
       if (st.control) {
-        let input = controls[st.control.input] || 0;
-        if (st.control.input === 'elevator') input = clamp(input + 0.35 * (controls.elevatorTrim || 0), -1, 1);
+        let input = (controls[st.control.input] || 0) + (this.ac.rigging?.[st.control.input] || 0);
+        if (st.control.input === 'elevator') input += 0.35 * (controls.elevatorTrim || 0);
+        input = clamp(input, -1, 1);
         delta = st.control.sign * input * st.control.maxDefl;
       }
       st.deflection = delta;
