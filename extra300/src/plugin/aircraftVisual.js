@@ -6,6 +6,8 @@ import { nedToRender, simToRenderQuat } from '../render/cameraRig.js';
 import { material, meshEntity } from './pcMesh.js';
 import { glassMaterial } from './glassMaterial.js';
 
+const STICK_THROW = 0.3;   // rad of stick travel at full deflection [est]
+
 export class AircraftVisual {
   constructor(app, parent) {
     this.root = new pc.Entity('Extra300L');
@@ -82,6 +84,18 @@ export class AircraftVisual {
             continue;
           }
           break;
+        }
+        case 'stick': {
+          // the stick follows the controls: back for up elevator, sideways with the ailerons
+          const c = ac.controls;
+          // about body x (roll: top to the right for right aileron) and body y (pitch: top aft for a pull)
+          this._stickRoll ??= new pc.Vec3(...fromBody([1, 0, 0]));
+          this._stickPitch ??= new pc.Vec3(...fromBody([0, 1, 0]));
+          this._q.setFromAxisAngle(this._stickRoll, (c.aileron || 0) * STICK_THROW * RAD);
+          this._q2.setFromAxisAngle(this._stickPitch, (c.elevator || 0) * STICK_THROW * RAD);
+          this._q.mul(this._q2);
+          m.pivot.setLocalRotation(this._q);
+          continue;
         }
         default: break;
       }

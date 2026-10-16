@@ -12,7 +12,8 @@
     "test:e2e": "node scripts/build.mjs && node tests/e2e/shots.mjs dist/shots",
     "osm:fetch": "node scripts/fetch-osm.mjs",
     "osm:bake": "node scripts/bake-osm.mjs",
-    "test:arrival": "node scripts/build.mjs && node tests/e2e/arrival-client.cjs"
+    "test:arrival": "node scripts/build.mjs && node tests/e2e/arrival-client.cjs",
+    "model": "${BPY:-python3} scripts/blender/extra300l.py data/model/extra300l.json --glb dist/extra300l.glb --blend dist/extra300l.blend && node scripts/bake-model.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.0",

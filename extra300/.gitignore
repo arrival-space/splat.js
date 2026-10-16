@@ -18,3 +18,6 @@ space/space/plugins/
 
 # the Google 3D Tiles host holds the API key once it is set in the browser
 space/space/entities/google-3d-tiles.json
+
+# the Blender model's raw export (scripts/blender/extra300l.py); the baked module in src/render/data is committed
+data/model/

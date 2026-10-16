@@ -32,7 +32,7 @@
       "bloomThreshold": 0.9,
       "bloomBlurLevel": 4,
       "bloomDebug": false,
-      "ssaoType": "none",
+      "ssaoType": "lighting",
       "ssaoIntensity": 0.4,
       "ssaoRadius": 1,
       "ssaoPower": 6,
@@ -40,18 +40,21 @@
       "ssaoBlur": true,
       "ssaoDebug": false
     },
-    "skyboxHidden": true
+    "skyboxHidden": true,
+    "skyboxIntensity": 1.7749999999999986,
+    "envLightFinal": 1.7749999999999986,
+    "stageLightIntensity": 1.6874999999999998
   },
   "state": {
     "files": 2,
-    "memory": 817040,
-    "updated": 1792190027471,
+    "memory": 820491,
+    "updated": 1792190166704,
     "entities": 11,
     "entitySizes": {
-      "extra300-meigs": 697784,
+      "extra300-meigs": 701235,
       "google-3d-tiles": 119256
     },
-    "screenshotTime": 1792187708886,
-    "screenshotDataHash": "581271d4af325159a5f7e061678696d6641539dc71e89b12d0b95c3b0a6670c6"
+    "screenshotTime": 1792190186738,
+    "screenshotDataHash": "71d5775a92f9678cc2693174d1bf46e96c10579bad564a4177ec1530f3a1b47b"
   }
 }

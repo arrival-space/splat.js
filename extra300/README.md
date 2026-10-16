@@ -102,6 +102,7 @@ npm run test:e2e       # headless Chromium on the local stand-in: boards, rolls,
 npm run test:arrival   # the real arrival.space client, as a guest, read-only: loads the vibe, boards, flies, exits
 npm run osm:fetch      # download OSM + City of Chicago data (data/osm/raw/, not committed)
 npm run osm:bake       # → src/world/data/chicagoOsm.js, the compact city the vibe ships with
+BPY=bpyenv/bin/python npm run model   # Blender (pip install bpy) → src/render/data/extra300lModel.js, plus dist/extra300l.glb / .blend
 ```
 
 `test:arrival` opens a public space in headless Chromium and blocks every
@@ -140,7 +141,8 @@ src/sim/          flight model: atmosphere, aero, engine, propeller, gear, rigid
 src/sim/aircraft/ the airplane as data, every number tagged [pub] / [est] / [tune]
 src/instruments/  gauge physics and the canvas instrument panel
 src/world/        WGS-84 local frame, Meigs Field, the OSM codec and the baked city
-src/render/       engine-free geometry: the Extra, Meigs, procedural buildings, sky, camera maths, sound
+src/render/       engine-free geometry: the Extra (baked from Blender), Meigs, procedural buildings, ground textures, sky, camera maths, sound
+scripts/blender/  the Extra 300L modelled in Blender, by script: fuselage shell, cockpit, sunburst, tail, MT prop, gear
 src/input/        keyboard / gamepad / touch / mouse-yoke → controls
 src/plugin/       the Arrival.Space glue (the only code that touches pc / ArrivalSpace)
 tests/            node --test suites, the flight-test autopilot, the browser harness

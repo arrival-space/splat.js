@@ -13,7 +13,7 @@ test('model matches the published dimensions: 8.0 m span, ~7 m long', () => {
   const b = parts.filter((p) => !p.hinge).map((p) => p.mesh.bounds());
   const min = [0, 1, 2].map((k) => Math.min(...b.map((x) => x.min[k])));
   const max = [0, 1, 2].map((k) => Math.max(...b.map((x) => x.max[k])));
-  assert.ok(Math.abs(max[0] - min[0] - 8.0) < 0.02, `span ${max[0] - min[0]}`);
+  assert.ok(Math.abs(max[0] - min[0] - 8.0) < 0.03, `span ${max[0] - min[0]}`);   // nav lights included
   const length = max[2] - min[2];
   assert.ok(length > 6.9 && length < 7.2, `length ${length}`);
 });
@@ -28,7 +28,7 @@ test('every part has geometry and finite numbers', () => {
 
 test('the wheels sit on the gear model\'s contact points', () => {
   const parts = buildExtraModel();
-  for (const [i, name] of [[0, 'wheel-1'], [1, 'wheel1'], [2, 'tailwheel']]) {
+  for (const [i, name] of [[0, 'wheelL'], [1, 'wheelR'], [2, 'tailwheel']]) {
     const u = EXTRA.gear.units[i];
     const w = parts.find((p) => p.name === name);
     assert.ok(Math.abs(w.hinge[2] + u.tyre.radius - u.pos[2]) < 1e-9, `${name} hub + radius = contact`);
@@ -87,7 +87,8 @@ test('the airplane is lit from outside: every surface faces away from its part\'
     return out / (I.length / 3);
   };
   const parts = buildExtraModel();
-  for (const name of ['fuselage', 'stripes', 'spinner', 'pant1', 'pant-1', 'wheel1', 'tailwheel']) {
+  // closed bodies (the fuselage, pants and canopy are shells with an inside skin, so not these)
+  for (const name of ['spinner', 'wheelL', 'wheelR', 'tailwheel', 'wheelLHub', 'navL']) {
     const f = outward(parts.find((p) => p.name === name));
     assert.ok(f > 0.95, `${name}: ${(f * 100).toFixed(0)}% outward`);
   }
