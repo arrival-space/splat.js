@@ -189,21 +189,3 @@ test('world: past the OSM box the suburbs are land and the lake is lake, out to 
   assert.equal(at(42.0, -87.3), 'water', 'mid-lake');
   assert.ok(groundLayer([w.farLand], 0).vertexCount > 10, 'and it draws');
 });
-
-test('world: in-box water quads, the far land and the far lake tile the whole world exactly', async () => {
-  const { CHICAGO_OSM } = await import('../src/world/data/chicagoOsm.js');
-  const { maskWaterRects } = await import('../src/world/meigs.js');
-  const w = buildMeigs();
-  const osm = await inflateOsm(CHICAGO_OSM);
-  w.attachOsm(osm);
-  const area = (p) => { let A = 0; for (let i = 0; i < p.length; i++) { const [a, b] = p[i], [c, d] = p[(i + 1) % p.length]; A += a * d - c * b; } return Math.abs(A) / 2; };
-  const b = osm.header.box;
-  const FAR = 40000;
-  const boxA = (b.x1 - b.x0) * (b.y1 - b.y0);
-  assert.ok(Math.abs(area(w.farLand) + area(w.farLake) + boxA - (2 * FAR) ** 2) < 1e3, 'land + lake + box = the world');
-  const rects = maskWaterRects(osm.mask, b);
-  const waterCells = osm.mask.data.reduce((s, v) => s + (v ? 0 : 1), 0);
-  const rectA = rects.reduce((s, [e0, n0, e1, n1]) => s + (e1 - e0) * (n1 - n0), 0);
-  assert.ok(Math.abs(rectA - waterCells * 16) < 1, `quads ${rectA} m² vs mask ${waterCells * 16} m²`);
-  assert.ok(rects.length < 20000, `${rects.length} quads`);
-});

@@ -4,12 +4,6 @@
 
 import { buildCity, groundLayer, ribbons, seawalls, FACADES } from '../render/buildings.js';
 import { material, meshEntity, toMesh } from './pcMesh.js';
-import { maskWaterRects } from '../world/meigs.js';
-
-// with Google's tiles: our water this far above the lake level (m), over Google's photographed
-// water [tune], and our land this far above it, under Google's ground
-const WATER_LIFT = 0.4;
-const LAND_SINK = 0.9;
 
 const textures = new Map();
 
@@ -97,7 +91,6 @@ export class OsmVisual {
       shore: g('shore', seawalls(osm.land, osm.header.box, world.water - 0.5, 0), material('#9b968a')),
     };
     this.google = false;
-    this.water = null;
     this.build(opts);
   }
 
@@ -131,24 +124,10 @@ export class OsmVisual {
 
   set visible(v) { this.root.enabled = v; }
 
-  /**
-   * Google's 3D tiles are the city: our buildings, roads and parks go, and our land sinks to just
-   * above the lake (only seen through a tile that hasn't streamed in yet). The lake and the river
-   * stay ours, shaped by OpenStreetMap, a little above Google's own water so theirs never shows.
-   */
+  /** Google's 3D tiles are the city, its land and its water: all of ours goes but the collision volumes. */
   setGoogle(on) {
     this.google = on;
-    if (on && !this.water) {
-      const quad = ([e0, n0, e1, n1]) => [[e0, n0], [e1, n0], [e1, n1], [e0, n1]];
-      const polys = maskWaterRects(this.world.osm.mask, this.world.osm.header.box).map(quad);
-      if (this.world.farLake) polys.push(this.world.farLake);
-      const mat = overlay('#2f5d7c', -2);
-      this.water = meshEntity(this.app, this.root, 'osmWater', groundLayer(polys, this.world.water + WATER_LIFT), mat, { castShadows: false });
-    }
-    if (this.water) this.water.enabled = on;
-    const sink = on ? this.world.water + LAND_SINK : 0;
-    for (const k of ['land', 'farLand']) this.ground[k]?.setLocalPosition(0, sink, 0);
-    for (const k of ['parks', 'river', 'roads', 'rail', 'shore']) this.ground[k].enabled = !on;
+    for (const e of Object.values(this.ground)) if (e) e.enabled = !on;
     if (this.cityRoot) this.cityRoot.enabled = !on;
   }
 

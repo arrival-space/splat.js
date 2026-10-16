@@ -27,12 +27,9 @@ landing. Press any flight key to take over wherever it is.
 The space also carries the Arrival library's **Google 3D Tiles** vibe, centred on
 the parking spot. Enter a Google Maps API key with the Map Tiles API in its
 settings, and once the first tiles are in, Google's photographed Chicago becomes
-the city and the land. Two things stay ours:
-
-- **Meigs Field**, flat and paved as in the 1990s. A box around Northerly Island is
-  cut out of the tiles, so today's park doesn't show through.
-- **The water**: Lake Michigan and the river, shaped by OpenStreetMap and drawn
-  just above Google's own water.
+the city, the land and the lake. Only **Meigs Field** stays ours: a box around
+Northerly Island is cut out of the tiles, so the 1990s field shows flat and paved
+instead of today's park. Inside the box, our own lake fills in around the island.
 
 The OpenStreetMap buildings stay as invisible collision volumes. Without a key,
 or before the tiles arrive, the procedural OpenStreetMap city is drawn as before.

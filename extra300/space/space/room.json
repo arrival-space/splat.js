@@ -18,18 +18,40 @@
     "stageLightType": "directional",
     "stageLightRotation": 255.6,
     "stageLightDirectionalShadowCascades": 3,
-    "stageLightDirectionalShadowRange": 50
+    "stageLightDirectionalShadowRange": 50,
+    "framePosteffectParams": {
+      "hdrEnabled": true,
+      "toneMapping": 3,
+      "saturation": 1,
+      "contrast": 1,
+      "brightness": 1,
+      "sharpness": 1,
+      "gamma": 1,
+      "bloomEnabled": true,
+      "bloomIntensity": 0.14,
+      "bloomThreshold": 0.9,
+      "bloomBlurLevel": 4,
+      "bloomDebug": false,
+      "ssaoType": "none",
+      "ssaoIntensity": 0.4,
+      "ssaoRadius": 1,
+      "ssaoPower": 6,
+      "ssaoSamples": 12,
+      "ssaoBlur": true,
+      "ssaoDebug": false
+    },
+    "skyboxHidden": true
   },
   "state": {
     "files": 2,
-    "memory": 804585,
-    "updated": 1792187577848,
+    "memory": 804706,
+    "updated": 1792187625167,
     "entities": 11,
     "entitySizes": {
-      "extra300-meigs": 685329,
+      "extra300-meigs": 685450,
       "google-3d-tiles": 119256
     },
-    "screenshotTime": 1792184745244,
-    "screenshotDataHash": "99ea59a13a3c645eb1804a710f7af5ed2fb739fd6f35a79b2b6969408c1ceda2"
+    "screenshotTime": 1792187708886,
+    "screenshotDataHash": "581271d4af325159a5f7e061678696d6641539dc71e89b12d0b95c3b0a6670c6"
   }
 }

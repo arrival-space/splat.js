@@ -98,7 +98,7 @@ export function maskShoreE(mask, box, j) {
  * points outward to FAR; past the last point it runs straight north, and east along the Indiana
  * shore.
  */
-export function buildFarSurroundings(mask, box, northNE, southNE, FAR = 40000) {
+export function buildFarLand(mask, box, northNE, southNE, FAR = 40000) {
   const eTop = maskShoreE(mask, box, mask.ny - 1), eBot = maskShoreE(mask, box, 0);
   const north = northNE.map(([n, e]) => [e, n]).filter(([, n]) => n > box.y1);
   const south = southNE.map(([n, e]) => [e, n]).filter(([, n]) => n < box.y0);
@@ -106,34 +106,7 @@ export function buildFarSurroundings(mask, box, northNE, southNE, FAR = 40000) {
   const northLine = [...north, [lastN[0], FAR]];              // outward from the box
   const southLine = [...south, [FAR, lastS[1]]];
   const southIn = [...southLine].reverse();                   // inward to the box
-  return {
-    land: [[-FAR, -FAR], [FAR, -FAR], ...southIn, [eBot, box.y0], [box.x0, box.y0], [box.x0, box.y1], [eTop, box.y1], ...northLine, [-FAR, FAR]],
-    lake: [[eTop, box.y1], ...northLine, [FAR, FAR], ...southIn, [eBot, box.y0], [box.x1, box.y0], [box.x1, box.y1]],
-  };
-}
-
-/** The water inside the OSM box as quads [[e0, n0, e1, n1], ...]: the mask's water runs, row by row, merged down the rows. */
-export function maskWaterRects(mask, box) {
-  const out = [];
-  let open = new Map();   // "i0,i1" -> rect started on an earlier row
-  for (let j = 0; j < mask.ny; j++) {
-    const row = j * mask.nx, next = new Map();
-    for (let i = 0; i < mask.nx;) {
-      if (mask.data[row + i]) { i++; continue; }
-      let k = i;
-      while (k < mask.nx && !mask.data[row + k]) k++;
-      const key = `${i},${k}`;
-      const r = open.get(key) || [box.x0 + i * MASK_CELL, box.y0 + j * MASK_CELL, box.x0 + k * MASK_CELL, 0];
-      r[3] = box.y0 + (j + 1) * MASK_CELL;
-      next.set(key, r);
-      open.delete(key);
-      i = k;
-    }
-    for (const r of open.values()) out.push(r);
-    open = next;
-  }
-  for (const r of open.values()) out.push(r);
-  return out;
+  return [[-FAR, -FAR], [FAR, -FAR], ...southIn, [eBot, box.y0], [box.x0, box.y0], [box.x0, box.y1], [eTop, box.y1], ...northLine, [-FAR, FAR]];
 }
 
 /** Build everything the sim and the renderer need, in metres in the local frame. */
@@ -165,7 +138,7 @@ export function buildMeigs(data = MEIGS) {
 
   /** Ground query used by the gear: height above the datum, normal (NED up), surface. */
   let isLand = null;   // OSM land/water raster, once attached
-  let farLand = null;  // [[e, n], ...] the land around the OSM box, out to the horizon (and world.farLake)
+  let farLand = null;  // [[e, n], ...] the land around the OSM box, out to the horizon
   let inBox = () => false;
   const ground = (n, e) => {
     const [al, ac] = runwayLocal(n, e);
@@ -208,9 +181,7 @@ export function buildMeigs(data = MEIGS) {
       isLand = maskLookup(osm.mask, osm.header.box);
       const b = osm.header.box;
       inBox = (e, n) => e >= b.x0 && e < b.x1 && n >= b.y0 && n < b.y1;
-      const far = buildFarSurroundings(osm.mask, b, data.farShore.north.map(toNE), data.farShore.south.map(toNE));
-      farLand = this.farLand = far.land;
-      this.farLake = far.lake;
+      farLand = this.farLand = buildFarLand(osm.mask, b, data.farShore.north.map(toNE), data.farShore.south.map(toNE));
       skylineYear = year;
       grid = new Map();
       osm.buildings.forEach((b, i) => {
