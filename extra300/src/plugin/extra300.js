@@ -36,6 +36,7 @@ const CARVE_FLOOR = -0.3;
 
 export class Extra300 extends ArrivalScript {
   static scriptName = 'extra300Meigs';
+  static INTRO_LENGTH = INTRO_LENGTH;   // for tests/e2e/record-intro.cjs
 
   isEnabled = true;
   startRunway = '36';
@@ -52,7 +53,8 @@ export class Extra300 extends ArrivalScript {
   easyMode = false;
   playIntro = true;
   seatAnimation = 'driving.glb';
-  avatarSeatHeight = 0.50;    // the seated pose has its origin ~0.5 m under the hips: hips on the cushion, feet inside the floor
+  avatarLean = 20;            // degrees the avatar leans back into the reclined seat
+  avatarSeatHeight = 0.54;    // the seated pose has its origin ~0.5 m under the hips: hips on the cushion, feet inside the floor
   avatarSeatForward = -1.20;
 
   static properties = {
@@ -73,6 +75,7 @@ export class Extra300 extends ArrivalScript {
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
     avatarSeatHeight: { title: 'Pilot seat: avatar height (m, body z: + is down)', min: -1.5, max: 1.0, step: 0.01 },
     avatarSeatForward: { title: 'Pilot seat: avatar fore/aft (m, body x: + is forward)', min: -2.0, max: 0.5, step: 0.01 },
+    avatarLean: { title: 'Pilot seat: avatar leans back (degrees)', min: -10, max: 45, step: 1 },
   };
 
   initialize() {
@@ -292,7 +295,8 @@ export class Extra300 extends ArrivalScript {
       offset: { x: seat[1], y: -this.avatarSeatHeight, z: -this.avatarSeatForward },
       animations: { Idle: pose, Forward: pose, Backward: pose, Left: pose, Right: pose },
       // the avatar faces the entity's +z; the airplane's nose is its −z: turn the avatar round
-      meshEuler: () => ({ x: 0, y: 180, z: 0 }),
+      // and lean it back into the reclined seat (the car pose sits upright)
+      meshEuler: () => ({ x: -this.avatarLean, y: 180, z: 0 }),
       disableCollision: true,
       rate: 20,
       extra: () => ({ rpm: Math.round(this.ac.rpm), ias: Math.round(this.instruments.values.ias || 0) }),
