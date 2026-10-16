@@ -77,6 +77,15 @@ export class CameraRig {
     this.chasePos = null;
     this.flybyPos = null;
     this.fov = 70;
+    this.chaseScale = 1;            // mouse wheel: chase distance ×
+    this.fovScale = 1;              // mouse wheel: field of view × in the other views
+  }
+
+  /** Mouse wheel: steps > 0 zoom out (the chase camera backs off, the others widen), < 0 zoom in. */
+  zoom(steps) {
+    const f = Math.pow(1.12, steps);
+    if (this.view === 'chase') this.chaseScale = Math.max(0.35, Math.min(6, this.chaseScale * f));
+    else this.fovScale = Math.max(0.3, Math.min(1.3, this.fovScale * f));
   }
 
   cycle() {
@@ -106,7 +115,7 @@ export class CameraRig {
       const e = fromBody([this.eye[0] - cg[0], this.eye[1] - cg[1], this.eye[2] - cg[2]]);
       const eo = rotateVec(rot, e);
       const look = qmul(axisAngle(0, 1, 0, this.lookYaw), axisAngle(1, 0, 0, this.lookPitch));
-      return { pos: [pos[0] + eo[0], pos[1] + eo[1], pos[2] + eo[2]], rot: qmul(rot, look), fov: 72 };
+      return { pos: [pos[0] + eo[0], pos[1] + eo[1], pos[2] + eo[2]], rot: qmul(rot, look), fov: 72 * this.fovScale };
     }
     if (this.view === 'chase') {
       // behind along the velocity (or the nose when slow), a little above
@@ -114,7 +123,8 @@ export class CameraRig {
       const sp = Math.hypot(v[0], v[1], v[2]);
       const nose = rotateVec(rot, [0, 0, -1]);
       const dir = sp > 8 ? [v[0] / sp, v[1] / sp, v[2] / sp] : nose;
-      const want = [pos[0] - dir[0] * 14, pos[1] - dir[1] * 14 + 3.2, pos[2] - dir[2] * 14];
+      const D = 14 * this.chaseScale, H = 3.2 * this.chaseScale;
+      const want = [pos[0] - dir[0] * D, pos[1] - dir[1] * D + H, pos[2] - dir[2] * D];
       if (!this.chasePos) this.chasePos = want;
       const k = 1 - Math.exp(-dt * 4.5);
       for (let i = 0; i < 3; i++) this.chasePos[i] += (want[i] - this.chasePos[i]) * k;
@@ -133,7 +143,7 @@ export class CameraRig {
       const t = this.towerPos;
       const d = Math.hypot(pos[0] - t[0], pos[1] - t[1], pos[2] - t[2]);
       // zoom so the airplane stays a readable size: ~8 m span fills ~1/6 of the view at 8 deg
-      const fov = Math.max(4, Math.min(60, (2 * Math.atan(30 / Math.max(d, 1)) * 180) / Math.PI));
+      const fov = Math.max(2, Math.min(80, ((2 * Math.atan(30 / Math.max(d, 1)) * 180) / Math.PI) * this.fovScale));
       return { pos: t.slice(), rot: lookRotation(t, pos), fov };
     }
     // fly-by
@@ -145,6 +155,6 @@ export class CameraRig {
       const dir = sp > 5 ? [v[0] / sp, 0, v[2] / sp] : rotateVec(rot, [0, 0, -1]);
       this.flybyPos = [pos[0] + dir[0] * lead + dir[2] * 18, Math.max(1.5, pos[1] + 4), pos[2] + dir[2] * lead - dir[0] * 18];
     }
-    return { pos: this.flybyPos.slice(), rot: lookRotation(this.flybyPos, pos), fov: 50 };
+    return { pos: this.flybyPos.slice(), rot: lookRotation(this.flybyPos, pos), fov: 50 * this.fovScale };
   }
 }

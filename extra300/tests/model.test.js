@@ -144,3 +144,23 @@ test('chase view: dragging orbits round the airplane at the same distance, alway
   const above = rig.update(ac, 1 / 60).pos;
   assert.ok(above[1] > front[1] + 5);
 });
+
+test('mouse wheel: the chase camera backs off and closes in, the cockpit view zooms', async () => {
+  const { CameraRig, nedToRender } = await import('../src/render/cameraRig.js');
+  const ac = { state: { pos: [0, 0, -100], q: [1, 0, 0, 0], vel: [40, 0, 0] } };
+  const at = nedToRender(ac.state.pos);
+  const dist = (p) => Math.hypot(p[0] - at[0], p[1] - at[1], p[2] - at[2]);
+  const settle = (rig) => { let r; for (let i = 0; i < 600; i++) r = rig.update(ac, 1 / 60); return r; };
+  const rig = new CameraRig({ eye: EXTRA.eye, towerPos: [0, 0, 0] });
+  rig.view = 'chase';
+  const d0 = dist(settle(rig).pos);
+  rig.zoom(4);
+  const d1 = dist(settle(rig).pos);
+  rig.zoom(-10);
+  const d2 = dist(settle(rig).pos);
+  assert.ok(d1 > d0 * 1.4 && d2 < d0 * 0.8, `${d0.toFixed(1)} → ${d1.toFixed(1)} → ${d2.toFixed(1)} m`);
+  rig.view = 'cockpit';
+  const f0 = rig.update(ac, 1 / 60).fov;
+  rig.zoom(-3);
+  assert.ok(rig.update(ac, 1 / 60).fov < f0 * 0.8);
+});

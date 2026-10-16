@@ -21,7 +21,7 @@ const HELP = [
   ['Trim', ';  nose down    \'  nose up'],
   ['Prop rpm', '[  lower    ]  higher'],
   ['Engine', 'M  mixture run / cut-off    K  starter (hold, if it stopped)'],
-  ['Views', 'V  cockpit · chase · tower · fly-by    drag the mouse to look    C  centre'],
+  ['Views', 'V  cockpit · chase · tower · fly-by    drag the mouse to look (chase: orbit)    wheel: zoom    C  centre'],
   ['Panel', 'I  show / hide    G  reset g-meter    N  set altimeter'],
   ['Mouse yoke', 'Y  fly with the mouse (screen centre = neutral)'],
   ['Sim', 'P  pause    Backspace  back to runway 36    Esc  leave the airplane'],

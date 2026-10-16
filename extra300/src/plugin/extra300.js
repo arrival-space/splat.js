@@ -49,6 +49,9 @@ export class Extra300 extends ArrivalScript {
   skylineYear = 2026;
   cityDetail = 'full';
   easyMode = false;
+  seatAnimation = 'driving.glb';
+  avatarSeatHeight = 0.50;    // the seated pose has its origin ~0.5 m under the hips: hips on the cushion, feet inside the floor
+  avatarSeatForward = -1.20;
 
   static properties = {
     isEnabled: { title: 'Enabled' },
@@ -64,6 +67,9 @@ export class Extra300 extends ArrivalScript {
     skylineYear: { title: 'Skyline year (2026 = today, 2002 = the last Meigs year)', min: 1980, max: 2026, step: 1 },
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
+    seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
+    avatarSeatHeight: { title: 'Pilot seat: avatar height (m, body z: + is down)', min: -1.5, max: 1.0, step: 0.01 },
+    avatarSeatForward: { title: 'Pilot seat: avatar fore/aft (m, body x: + is forward)', min: -2.0, max: 0.5, step: 0.01 },
   };
 
   initialize() {
@@ -83,6 +89,7 @@ export class Extra300 extends ArrivalScript {
     this.scenery = new SceneryVisual(this.app, this._worldRoot, this.world);
     this.scenery.visible = this.showScenery;
     this._loadCity();
+    this._loadPoses();
     this._sky = null;
 
     this.ac = new Aircraft(EXTRA, {
@@ -117,6 +124,13 @@ export class Extra300 extends ArrivalScript {
     this._onPointerUp = () => { this._mouse.dragging = false; };
     this._onPointerMove = (e) => this._pointerMove(e);
     canvas.addEventListener('pointerdown', this._onPointerDown);
+    // mouse wheel: chase distance, or zoom in the other views
+    this._onWheel = (e) => {
+      if (!this._flying) return;
+      this.cameraRig.zoom(Math.sign(e.deltaY) * Math.min(3, Math.abs(e.deltaY) / 100 || 1));
+      e.preventDefault();
+    };
+    canvas.addEventListener('wheel', this._onWheel, { passive: false });
     window.addEventListener('pointerup', this._onPointerUp);
     window.addEventListener('pointermove', this._onPointerMove);
 
@@ -157,6 +171,15 @@ export class Extra300 extends ArrivalScript {
   }
 
   /** Decode the baked OpenStreetMap Chicago and start raising it; the stand-in city shows meanwhile. */
+  /** Offer the avatar animation catalog as the pilot-pose choices in the editor (as the vehicle demo does). */
+  async _loadPoses() {
+    try {
+      const cfg = await ArrivalSpace.getAvatarConfig?.();
+      const list = await ArrivalSpace.getAvatarAnimationCatalog?.(cfg?.gender === 'female' ? 'female' : 'male');
+      if (Array.isArray(list) && list.length) this.setParamOptions?.('seatAnimation', list, false);
+    } catch { /* the default pose still works */ }
+  }
+
   async _loadCity() {
     try {
       const osm = await inflateOsm(CHICAGO_OSM);
@@ -257,8 +280,12 @@ export class Extra300 extends ArrivalScript {
     const cam0 = ArrivalSpace.getCamera?.();
     this._camLocal = cam0 ? { parent: cam0.parent, p: cam0.getLocalPosition().clone(), r: cam0.getLocalRotation().clone() } : null;
     const seat = EXTRA.eye;
+    // the avatar sits in the rear seat in a seated pose (as the vehicle demo seats its driver): its
+    // root goes below the seat pan by the pose's hip height, so the hips land on the cushion
+    const pose = this.seatAnimation || 'driving.glb';
     this._attach = ArrivalSpace.attachPlayerToEntity?.(this.visual.root, {
-      offset: { x: seat[1], y: -seat[2] - 0.75, z: -seat[0] },
+      offset: { x: seat[1], y: -this.avatarSeatHeight, z: -this.avatarSeatForward },
+      animations: { Idle: pose, Forward: pose, Backward: pose, Left: pose, Right: pose },
       disableCollision: true,
       rate: 20,
       extra: () => ({ rpm: Math.round(this.ac.rpm), ias: Math.round(this.instruments.values.ias || 0) }),
@@ -622,6 +649,7 @@ export class Extra300 extends ArrivalScript {
     window.removeEventListener('pointerup', this._onPointerUp);
     window.removeEventListener('pointermove', this._onPointerMove);
     this.app.graphicsDevice.canvas.removeEventListener('pointerdown', this._onPointerDown);
+    this.app.graphicsDevice.canvas.removeEventListener('wheel', this._onWheel);
     this.app.off('prerender', this._onPrerender);
     if (typeof this._unsubClick === 'function') this._unsubClick();
     this.hud.destroy();

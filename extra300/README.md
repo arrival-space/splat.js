@@ -86,6 +86,10 @@ way: it pulls about 5 g at 170 kt but uses nearly the whole elevator travel at
 of the stall, so holding the pitch key flies a clean loop. **Shift** pulls
 straight through the buffet for stalls, snaps and three-point landings.
 
+**Views.** **V** cycles cockpit, chase, tower and fly-by. Dragging the mouse looks around, or orbits the
+airplane in the chase view; the wheel moves the chase camera in and out, and zooms the others. Your avatar
+rides in the rear seat in a seated pose (the vibe's *Pilot pose* setting picks the animation).
+
 **Auto-rudder** keeps the ball centred in the air (**U** toggles it), and any
 rudder key overrides it. Analog inputs (gamepad, touch, mouse yoke) stay
 direct stick positions.
