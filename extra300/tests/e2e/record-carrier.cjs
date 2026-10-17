@@ -3,6 +3,7 @@
 // on the water under the glide slope, the LSO platform for the trap, and an orbit of the stopped jet.
 //
 //   node tests/e2e/record-carrier.cjs [out.mp4]
+//   STRIDE=24 … renders every 24th frame only (a quick preview of the cuts); RESUME=1 carries on a stopped render
 //
 // The local harness (PlayCanvas + the Arrival stand-in, the OpenStreetMap city), rendered frame by frame
 // at a fixed step as record-intro.cjs does: the clock is frozen and the vibe stepped by exactly 1/FPS.
@@ -19,6 +20,7 @@ const FPS = Number(process.env.FPS || 24);
 const W = Number(process.env.W || 960), H = Number(process.env.H || 540);
 const FRAMES = path.join(path.dirname(OUT), 'carrier-frames');
 const TAIL = 9;   // seconds after the jet stops
+const STRIDE = Number(process.env.STRIDE || 1);
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 
 (async () => {
@@ -106,9 +108,10 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     log(`resuming at frame ${have}`);
   }
   let i = have;
+  let n = have;
   for (;; i++) {
     const st = await frame(1 / FPS, i);
-    await page.screenshot({ path: path.join(FRAMES, `f${String(i).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90 });
+    if (i % STRIDE === 0) await page.screenshot({ path: path.join(FRAMES, `f${String(n++).padStart(5, '0')}.jpg`), type: 'jpeg', quality: 90 });
     if (i % 48 === 0) log(`frame ${i} t ${st.t.toFixed(1)} ${st.phase}`);
     if ((st.stopT != null && st.t > st.stopT + TAIL) || st.t > 120) break;
   }
@@ -116,7 +119,7 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
   log('flight', JSON.stringify(summary));
   await browser.close();
   server.close();
-  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS), '-i', path.join(FRAMES, 'f%05d.jpg'),
+  execFileSync('ffmpeg', ['-y', '-loglevel', 'error', '-framerate', String(FPS / STRIDE), '-i', path.join(FRAMES, 'f%05d.jpg'),
     '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-crf', '21', '-movflags', '+faststart', OUT]);
   log(`video → ${OUT} (${i + 1} frames)`);
 })().catch((e) => { console.error(e); process.exit(1); });

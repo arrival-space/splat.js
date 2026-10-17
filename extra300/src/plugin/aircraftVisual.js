@@ -60,10 +60,13 @@ export class AircraftVisual {
     }
   }
 
-  /** Hide what the pilot's own eye shouldn't see through (canopy and windscreen from inside). */
+  /**
+   * Hide what the pilot's own eye shouldn't see through from inside: the canopy and windscreen, and the
+   * HUD's combiner glass (its symbols are drawn over the view instead).
+   */
   setCockpitView(inside) {
     this.inside = inside;
-    for (const e of this.root.find((n) => n.name === 'canopy' || n.name === 'windscreen')) e.enabled = !inside;
+    for (const e of this.root.find((n) => n.name === 'canopy' || n.name === 'windscreen' || n.name === 'hudGlass')) e.enabled = !inside;
   }
 
   /** Pose the whole airplane and its moving parts from the sim. */
