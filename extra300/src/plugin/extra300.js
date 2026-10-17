@@ -17,6 +17,7 @@ import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
 import { Lasers } from './lasers.js';
+import { CockpitDisplay } from './cockpitDisplay.js';
 import { CameraRig } from '../render/cameraRig.js';
 import { fromNE } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
@@ -206,8 +207,11 @@ export class Extra300 extends ArrivalScript {
     this.cameraRig.eye = spec.eye;
     this.cameraRig.size = profile.chaseSize;
     if (typeof this._unsubClick === 'function') this._unsubClick();
+    this.display?.destroy();
+    this.display = null;
     this.visual?.destroy();
     this.visual = new AircraftVisual(this.app, this._worldRoot, profile.buildModel(), profile.title);
+    if (profile.cockpitDisplay) this.display = new CockpitDisplay(this.app, this.visual.root, this.world);
     this.sound?.stop();
     this.sound = new profile.Sound();
     this.hud.setProfile(profile, nextProfile(profile));
@@ -819,6 +823,7 @@ export class Extra300 extends ArrivalScript {
     // the controls card has done its job once the airplane is flying
     if (!this._helpAutoHidden && this.ac.agl > 30) { this._helpAutoHidden = true; this.hud.showQuick(false); }
     const v = this.instruments.update(this.ac, dt);
+    this.display?.update(this.ac, v, dt, this.cameraRig.view === 'cockpit' && !this._intro);
     this.visual.update(this.ac, this._paused ? 0 : dt);
     if (this.showCarrier) this.carrierVisual.update(this.ac);
     if (this.profile.lasers) {
@@ -987,6 +992,7 @@ export class Extra300 extends ArrivalScript {
     this.city?.destroy();
     this.carrierVisual.destroy();
     this.lasers.destroy();
+    this.display?.destroy();
     this._sky?.destroy();
     this._worldRoot.destroy();
     disposeMaterials();

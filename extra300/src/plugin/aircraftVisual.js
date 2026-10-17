@@ -31,7 +31,10 @@ export class AircraftVisual {
     const byName = new Map();
     const dev = app.graphicsDevice;
     for (const part of parts) {
-      const mat = part.kind === 'abFlame' ? flameMaterial(part.color)
+      const mat = part.name === 'hudGlass' ? material('#b8ffd2', { transparent: true, opacity: 0.1 })
+        // the cockpit's screens and lamps light themselves
+        : /^(screen|lamp)/.test(part.material) ? material(part.color, { emissive: part.color })
+        : part.kind === 'abFlame' ? flameMaterial(part.color)
         : part.kind === 'engineGlow' ? flameMaterial('#ff6a48')
         : part.kind === 'propDisc' ? material('#202226', { transparent: true, opacity: 0.07 })
           : GLASS.has(part.material) || part.name === 'canopy' ? glassMaterial(dev, part.color)
@@ -62,12 +65,12 @@ export class AircraftVisual {
   }
 
   /**
-   * Hide what the pilot's own eye shouldn't see through from inside: the canopy and windscreen, and the
-   * HUD's combiner glass (its symbols are drawn over the view instead).
+   * Hide what the pilot's own eye shouldn't see through from inside: the canopy and windscreen. (The HUD's
+   * combiner glass stays, faint: its symbols are drawn over the view.)
    */
   setCockpitView(inside) {
     this.inside = inside;
-    for (const e of this.root.find((n) => n.name === 'canopy' || n.name === 'windscreen' || n.name === 'hudGlass')) e.enabled = !inside;
+    for (const e of this.root.find((n) => n.name === 'canopy' || n.name === 'windscreen')) e.enabled = !inside;
   }
 
   /** Pose the whole airplane and its moving parts from the sim. */
@@ -95,6 +98,7 @@ export class AircraftVisual {
         case 'rudder': angle = defl('rudder'); break;
         case 'speedbrake': angle = -SPEEDBRAKE_ANGLE * (ac.speedbrakePos || 0); break;
         case 'hook': angle = ac.hookAngle || 0; break;   // down from stowed, as far as the deck lets it
+        case 'throttle': angle = 0.35 - 0.6 * (ac.controls.throttle || 0); break;   // forward for more
         case 'sfoil': angle = -m.side * m.layer * (ac.spec.sfoils?.open || 0) * (ac.sfoilPos || 0); break;
         case 'engineGlow': {
           // the fusial engines' glow: there while they run, bigger with the power (and the boost)

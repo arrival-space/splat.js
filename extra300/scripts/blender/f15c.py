@@ -54,8 +54,10 @@ SILL_Z = -1.0
 COLORS = {
     'grey': '#8e969d', 'darkGrey': '#6b737b', 'radome': '#a3a8ab', 'nozzle': '#4b4541', 'burner': '#2a2622',
     'intake': '#26282b', 'tyre': '#151515', 'metal': '#a4a7ab', 'gearWhite': '#d9d9d4', 'panel': '#2b2d31',
-    'gauge': '#0c0d0f', 'seat': '#3a4031', 'strap': '#6d6342', 'glass': '#6b6754', 'floor': '#3a3c40',
+    'gauge': '#0c0d0f', 'seat': '#2d2f33', 'strap': '#6d6342', 'glass': '#6b6754', 'floor': '#3a3c40',
     'navRed': '#ff2a2a', 'navGreen': '#22d25a', 'black': '#151618', 'hud': '#3f6b54',
+    'cushion': '#4b5333', 'yellow': '#e2b21e', 'key': '#6f7276', 'consolePanel': '#121315', 'red': '#c2281f',
+    'screenBlue': '#203d73', 'screenGreen': '#1d6e3e', 'lampGreen': '#5dff8a', 'lampAmber': '#ffb238', 'cockpit': '#1a1b1e',
 }
 
 kit = Kit(COLORS)
@@ -81,6 +83,7 @@ FUS = [
     (17.9, -0.56, 0.52, 1.20, 3.0),
 ]
 CANOPY_ST0, CANOPY_BOW, CANOPY_ST1 = 3.6, 4.65, 7.45
+COCKPIT_X0, COCKPIT_X1 = 4.95, 6.84         # body x: the opening, from behind the seat to the coaming
 # canopy: station, top z, half-width at the sill
 CANOPY = [(3.60, -1.05, 0.42), (4.10, -1.27, 0.50), (4.65, -1.40, 0.55), (5.30, -1.46, 0.57), (6.00, -1.45, 0.56),
           (6.60, -1.37, 0.52), (7.10, -1.22, 0.42), (7.45, -1.06, 0.26)]
@@ -102,7 +105,13 @@ def fuselage():
     loft(bm, rings, cap=True)
     # the radome a lighter grey; the anti-glare panel ahead of the windscreen black
     bisect_paint(bm, [((xb(2.35), 0, 0), (1, 0, 0)), ((xb(CANOPY_ST0), 0, 0), (1, 0, 0)), ((0, 0, -0.80), (0, 0, 1)),
-                      ((0, 0.30, 0), (0, 1, 0)), ((0, -0.30, 0), (0, 1, 0))])
+                      ((0, 0.30, 0), (0, 1, 0)), ((0, -0.30, 0), (0, 1, 0)),
+                      ((COCKPIT_X0, 0, 0), (1, 0, 0)), ((COCKPIT_X1, 0, 0), (1, 0, 0)), ((0, 0.57, 0), (0, 1, 0)), ((0, -0.57, 0), (0, 1, 0)),
+                      ((0, 0, -0.78), (0, 0, 1))])
+    # the cockpit's opening under the canopy: the skin's top cut away between the coaming and the seat
+    kill = [f for f in bm.faces if COCKPIT_X0 < body(f.calc_center_median())[0] < COCKPIT_X1
+            and abs(body(f.calc_center_median())[1]) < 0.57 and body(f.calc_center_median())[2] < -0.78]
+    bmesh.ops.delete(bm, geom=kill, context='FACES')
     outward(bm)
     for f in bm.faces:
         x, y, z = body(f.calc_center_median())
@@ -237,61 +246,210 @@ def canopy():
     kit.new_object('canopyFrame', bm, ['black'], smooth_angle=40)
 
 
+# the large area display: where the plugin draws its live pages (src/plugin/cockpitDisplay.js has the same numbers)
+LAD = dict(c=(6.553, 0.0, -0.856), w=0.50, h=0.27, tilt=25)
+
+
 def cockpit():
-    """ACES II seat, centre stick, throttles on the left console, the panel with its displays, the HUD."""
-    seat_x = xb(5.75)
+    """The Advanced Eagle's cockpit (after the F-15EX photo): the big touchscreen across the panel under the
+    coaming, the up-front controller and the HUD on its posts above it, the standby displays either side,
+    side consoles with their panels, knobs, switches and lit lamps, the throttles on the left, the centre
+    stick, rudder pedals, and the ACES II seat with its olive cushion and yellow handles."""
+    tilt = Matrix.Rotation(math.radians(LAD['tilt']), 3, 'Y')      # the panel leans away, its face up to the eye
+    n = (-math.cos(math.radians(LAD['tilt'])), 0, -math.sin(math.radians(LAD['tilt'])))   # toward the pilot
+    u = (math.sin(math.radians(LAD['tilt'])), 0, -math.cos(math.radians(LAD['tilt'])))    # up the panel's face
+    def on_panel(du, dy, dn=0.0):
+        c = LAD['c']
+        return (c[0] + u[0] * du + n[0] * dn, dy, c[2] + u[2] * du + n[2] * dn)
+
+    # ── the main panel and the coaming over it ──
     bm = bmesh.new()
-    box(bm, (seat_x + 0.20, 0, -0.42), (0.48, 0.50, 0.12))                                      # pan
-    box(bm, (seat_x - 0.04, 0, -0.85), (0.14, 0.52, 0.85), Matrix.Rotation(math.radians(-14), 3, 'Y'))  # back
-    box(bm, (seat_x - 0.10, 0, -1.40), (0.18, 0.44, 0.28), Matrix.Rotation(math.radians(-14), 3, 'Y'))  # headbox
-    box(bm, (seat_x + 0.05, 0, -0.10), (0.55, 0.42, 0.5))                                       # bucket under the pan
+    box(bm, on_panel(-0.07, 0, -0.035), (0.06, 0.94, 0.52), tilt)
+    # the bezel round the display, its rows of option buttons above and below
+    for du in (LAD['h'] / 2 + 0.018, -LAD['h'] / 2 - 0.018):
+        box(bm, on_panel(du, 0, 0.004), (0.012, LAD['w'] + 0.05, 0.02), tilt)
+    for dy in (-LAD['w'] / 2 - 0.016, LAD['w'] / 2 + 0.016):
+        box(bm, on_panel(0, dy, 0.004), (0.012, 0.018, LAD['h'] + 0.05), tilt)
+    # the lower panel down to the floor between the knees
+    box(bm, (6.62, 0, -0.38), (0.08, 0.50, 0.40), Matrix.Rotation(math.radians(8), 3, 'Y'))
     outward(bm)
-    kit.new_object('seat', bm, ['seat'], smooth_angle=30)
+    kit.new_object('panel', bm, ['cockpit'], smooth_angle=30)
     bm = bmesh.new()
-    for y in (-0.12, 0.12):
-        box(bm, (seat_x + 0.02, y, -0.95), (0.03, 0.06, 0.75), Matrix.Rotation(math.radians(-14), 3, 'Y'))
-    box(bm, (seat_x - 0.12, 0, -1.30), (0.05, 0.10, 0.14))      # the ejection handle's yellow-black
+    rings = []
+    # (it starts at the panel's top edge, in front of the display, and runs forward under the windscreen)
+    for x in (6.62, 6.75, 6.95):
+        r = []
+        for k in range(17):
+            y = -0.54 + 1.08 * k / 16
+            r.append((x, y, -1.05 + 0.30 * (abs(y) / 0.54) ** 3 + (0.03 if x < 6.7 else 0)))
+        rings.append(r)
+    loft(bm, rings, close=False, cap=False)
     outward(bm)
-    kit.new_object('harness', bm, ['strap'], smooth_angle=30)
-    # floor, side consoles, the panel and glareshield
+    ob = kit.new_object('coaming', bm, ['cockpit'], smooth_angle=40)
+    ob.modifiers.new('thick', 'SOLIDIFY').thickness = 0.03
+    # option-button keys along the display's bezel
     bm = bmesh.new()
-    box(bm, (xb(5.2), 0, 0.05), (2.2, 1.0, 0.04))
-    for s in (-1, 1):
-        box(bm, (xb(5.55), s * 0.47, -0.62), (1.5, 0.20, 0.06))
-        box(bm, (xb(5.55), s * 0.50, -0.30), (1.5, 0.12, 0.62))
+    for k in range(12):
+        dy = -LAD['w'] / 2 + 0.03 + k * (LAD['w'] - 0.06) / 11
+        for du in (LAD['h'] / 2 + 0.018, -LAD['h'] / 2 - 0.018):
+            box(bm, on_panel(du, dy, 0.012), (0.008, 0.026, 0.012), tilt)
+    for k in range(6):
+        for dy in (-LAD['w'] / 2 - 0.016, LAD['w'] / 2 + 0.016):
+            box(bm, on_panel(-LAD['h'] / 2 + 0.03 + k * 0.042, dy, 0.012), (0.008, 0.012, 0.026), tilt)
     outward(bm)
-    kit.new_object('cockpitTub', bm, ['panel'], smooth_angle=30)
+    kit.new_object('ladKeys', bm, ['key'], smooth_angle=30)
+
+    # ── the standby displays either side and the warning lights ──
     bm = bmesh.new()
-    box(bm, (xb(4.45), 0, -0.72), (0.06, 1.0, 0.60), Matrix.Rotation(math.radians(12), 3, 'Y'))   # main panel
-    box(bm, (xb(4.32), 0, -0.965), (0.30, 0.90, 0.05))                                             # glareshield
+    box(bm, on_panel(-0.06, -0.37, 0.004), (0.006, 0.085, 0.085), tilt)     # standby attitude
+    bm2 = bmesh.new()
+    box(bm2, on_panel(-0.02, 0.37, 0.004), (0.006, 0.07, 0.16), tilt)       # engine monitor
+    outward(bm); outward(bm2)
+    kit.new_object('standbyAttitude', bm, ['screenBlue'], smooth_angle=30)
+    kit.new_object('engineMonitor', bm2, ['screenGreen'], smooth_angle=30)
+    bm = bmesh.new()
+    for i, dy in enumerate((-0.40, -0.35, 0.33, 0.38, 0.43)):
+        box(bm, on_panel(0.16, dy, 0.006), (0.006, 0.022, 0.014), tilt)
     outward(bm)
-    kit.new_object('panel', bm, ['panel'], smooth_angle=30)
+    kit.new_object('panelLamps', bm, ['lampGreen'], smooth_angle=30)
     bm = bmesh.new()
-    for y, z, w, h in ((0.0, -0.80, 0.30, 0.24), (-0.30, -0.66, 0.22, 0.22), (0.30, -0.66, 0.22, 0.22), (0.0, -0.52, 0.5, 0.12)):
-        box(bm, (xb(4.49), y, z), (0.02, w, h), Matrix.Rotation(math.radians(12), 3, 'Y'))
+    box(bm, on_panel(0.20, -0.30, 0.006), (0.006, 0.026, 0.026), tilt)
     outward(bm)
-    kit.new_object('displays', bm, ['gauge'], smooth_angle=30)
-    # the head-up display's combiner glass above the glareshield
+    kit.new_object('masterCaution', bm, ['red'], smooth_angle=30)
+
+    # ── the up-front controller: keypad, its little display, knobs either side ──
+    ufc = (6.60, 0, -1.04)
+    ut = Matrix.Rotation(math.radians(20), 3, 'Y')
     bm = bmesh.new()
-    box(bm, (xb(4.30), 0, -1.07), (0.012, 0.17, 0.13), Matrix.Rotation(math.radians(-30), 3, 'Y'))
+    box(bm, ufc, (0.10, 0.32, 0.13), ut)
+    outward(bm)
+    kit.new_object('ufc', bm, ['black'], smooth_angle=30)
+    face = (ufc[0] - 0.052 * math.cos(math.radians(20)), 0, ufc[2] - 0.052 * math.sin(math.radians(20)))
+    fu = (math.sin(math.radians(20)), 0, -math.cos(math.radians(20)))
+    at = lambda du, dy, dn=0.0: (face[0] + fu[0] * du - dn * math.cos(math.radians(20)), dy, face[2] + fu[2] * du - dn * math.sin(math.radians(20)))
+    bm = bmesh.new()
+    for row in range(4):
+        for col in range(5):
+            box(bm, at(-0.045 + row * 0.024, -0.06 + col * 0.03, 0.004), (0.008, 0.022, 0.018), ut)
+    outward(bm)
+    kit.new_object('ufcKeys', bm, ['key'], smooth_angle=30)
+    bm = bmesh.new()
+    box(bm, at(0.052, 0, 0.003), (0.004, 0.16, 0.014), ut)
+    outward(bm)
+    kit.new_object('ufcDisplay', bm, ['screenGreen'], smooth_angle=30)
+    bm = bmesh.new()
+    for dy in (-0.13, 0.13):
+        for du in (-0.035, 0.03):
+            c = at(du, dy, 0.012)
+            cylinder(bm, c, 0.014, 0.025, 'x', 10)
+    outward(bm)
+    kit.new_object('ufcKnobs', bm, ['black'], smooth_angle=40)
+
+    # ── the HUD: two posts up from the controller, the combiner glass between them, a bar over it ──
+    bm = bmesh.new()
+    for dy in (-0.115, 0.115):
+        box(bm, (6.66, dy, -1.20), (0.02, 0.022, 0.26), Matrix.Rotation(math.radians(-8), 3, 'Y'))
+    box(bm, (6.68, 0, -1.33), (0.02, 0.25, 0.014))
+    outward(bm)
+    kit.new_object('hudFrame', bm, ['black'], smooth_angle=30)
+    bm = bmesh.new()
+    box(bm, (6.665, 0, -1.215), (0.006, 0.21, 0.21), Matrix.Rotation(math.radians(-8), 3, 'Y'))
     outward(bm)
     kit.new_object('hudGlass', bm, ['hud'], smooth_angle=30, meta=dict(transparent=True))
+
+    # ── floor, the tub's walls, the side consoles with their panels ──
     bm = bmesh.new()
-    box(bm, (xb(4.24), 0, -0.995), (0.16, 0.20, 0.05))
+    box(bm, (5.95, 0, 0.02), (1.6, 0.96, 0.04))
+    for sgn in (-1, 1):
+        box(bm, (5.90, sgn * 0.47, -0.30), (1.90, 0.14, 0.62))         # console body
+        box(bm, (5.90, sgn * 0.555, -0.79), (1.90, 0.03, 0.40))        # wall up to the sill
+    box(bm, (4.97, 0, -0.50), (0.04, 1.12, 0.98))                      # the bulkhead behind the seat
     outward(bm)
-    kit.new_object('hudBase', bm, ['black'], smooth_angle=30)
-    # stick: from the floor between the knees, origin on its pivot
-    pivot = (xb(5.15), 0, -0.02)
+    kit.new_object('cockpitTub', bm, ['cockpit'], smooth_angle=30)
     bm = bmesh.new()
-    rod(bm, pivot, (pivot[0], 0, -0.50), 0.018)
-    box(bm, (pivot[0], 0, -0.58), (0.05, 0.06, 0.15))
+    for sgn in (-1, 1):
+        for i, (x0, w) in enumerate(((5.15, 0.22), (5.40, 0.24), (5.66, 0.22), (5.92, 0.24), (6.20, 0.26))):
+            box(bm, (x0, sgn * 0.47, -0.62), (w - 0.02, 0.13, 0.012))
+    outward(bm)
+    kit.new_object('consolePanels', bm, ['consolePanel'], smooth_angle=30)
+    bm, bk, bl, ba = bmesh.new(), bmesh.new(), bmesh.new(), bmesh.new()
+    import random
+    rnd = random.Random(15)
+    for sgn in (-1, 1):
+        for x0 in (5.15, 5.40, 5.66, 5.92, 6.20):
+            if sgn < 0 and x0 in (5.66, 5.92):
+                continue                                  # the throttle quadrant sits here
+            for _ in range(4):
+                x, y = x0 + rnd.uniform(-0.08, 0.08), sgn * (0.47 + rnd.uniform(-0.045, 0.045))
+                kind = rnd.random()
+                if kind < 0.4:
+                    cylinder(bk, (x, y, -0.64), 0.012, 0.03, 'z', 8)                      # knob
+                elif kind < 0.75:
+                    rod(bm, (x, y, -0.627), (x + 0.012, y, -0.665), 0.004, 5)              # toggle switch
+                elif kind < 0.9:
+                    box(bl, (x, y, -0.628), (0.018, 0.012, 0.006))                         # green lamp
+                else:
+                    box(ba, (x, y, -0.628), (0.018, 0.012, 0.006))                         # amber lamp
+    for b, nm, mat_ in ((bm, 'consoleSwitches', 'metal'), (bk, 'consoleKnobs', 'black'), (bl, 'consoleLampsG', 'lampGreen'), (ba, 'consoleLampsA', 'lampAmber')):
+        outward(b)
+        kit.new_object(nm, b, [mat_], smooth_angle=40)
+
+    # ── throttles on the left console, moving with the throttle (origin on their pivot) ──
+    pivot = (5.78, -0.46, -0.64)
+    bm = bmesh.new()
+    for dy in (-0.022, 0.022):
+        box(bm, (pivot[0], pivot[1] + dy, pivot[2] - 0.07), (0.035, 0.03, 0.14), Matrix.Rotation(math.radians(-10), 3, 'Y'))
+        box(bm, (pivot[0] + 0.02, pivot[1] + dy, pivot[2] - 0.15), (0.07, 0.034, 0.045))
+    outward(bm)
+    kit.new_object('throttles', bm, ['black'], origin=pivot, smooth_angle=30, meta=dict(kind='throttle', hinge=list(pivot), axis=[0, 1, 0]))
+    bm = bmesh.new()
+    box(bm, (5.78, -0.46, -0.627), (0.30, 0.09, 0.008))
+    outward(bm)
+    kit.new_object('throttleQuadrant', bm, ['consolePanel'], smooth_angle=30)
+
+    # ── stick and rudder pedals ──
+    pivot = (5.85, 0, -0.02)
+    bm = bmesh.new()
+    cylinder(bm, (pivot[0], 0, -0.06), 0.06, 0.08, 'z', 12)                      # the boot
+    rod(bm, pivot, (pivot[0] - 0.02, 0, -0.44), 0.016)
+    box(bm, (pivot[0] - 0.03, 0, -0.50), (0.05, 0.045, 0.13), Matrix.Rotation(math.radians(-12), 3, 'Y'))
+    box(bm, (pivot[0] - 0.01, 0, -0.575), (0.06, 0.05, 0.03))
     outward(bm)
     kit.new_object('stick', bm, ['black'], origin=pivot, smooth_angle=30, meta=dict(kind='stick', hinge=list(pivot), axis=[0, 1, 0]))
     bm = bmesh.new()
-    for y in (-0.47, -0.41):
-        box(bm, (xb(5.05), y, -0.72), (0.06, 0.04, 0.14), Matrix.Rotation(math.radians(10), 3, 'Y'))
+    for dy in (-0.17, 0.17):
+        box(bm, (6.35, dy, -0.20), (0.03, 0.10, 0.16), Matrix.Rotation(math.radians(-20), 3, 'Y'))
     outward(bm)
-    kit.new_object('throttles', bm, ['black'], smooth_angle=30)
+    kit.new_object('pedals', bm, ['metal'], smooth_angle=30)
+
+    # ── the ACES II seat ──
+    seat_x = 5.32
+    rot = Matrix.Rotation(math.radians(-14), 3, 'Y')
+    bm = bmesh.new()
+    box(bm, (seat_x + 0.06, 0, -0.18), (0.55, 0.50, 0.55))                       # the bucket
+    box(bm, (seat_x - 0.13, 0, -0.85), (0.12, 0.52, 0.85), rot)                  # the back
+    box(bm, (seat_x - 0.20, 0, -1.42), (0.20, 0.46, 0.30), rot)                  # the headbox
+    for dy in (-0.27, 0.27):
+        box(bm, (seat_x - 0.05, dy, -0.75), (0.10, 0.04, 0.85), rot)            # side rails
+    outward(bm)
+    kit.new_object('seat', bm, ['seat'], smooth_angle=30)
+    bm = bmesh.new()
+    box(bm, (seat_x + 0.12, 0, -0.50), (0.44, 0.44, 0.08))                       # cushion on the pan
+    box(bm, (seat_x - 0.06, 0, -0.85), (0.08, 0.42, 0.60), rot)                  # and on the back
+    outward(bm)
+    kit.new_object('seatCushion', bm, ['cushion'], smooth_angle=30)
+    bm = bmesh.new()
+    for dy in (-0.23, 0.23):
+        rod(bm, (seat_x + 0.30, dy, -0.47), (seat_x + 0.38, dy, -0.56), 0.016, 8)   # the ejection handles
+        rod(bm, (seat_x + 0.38, dy, -0.56), (seat_x + 0.28, dy, -0.62), 0.016, 8)
+    outward(bm)
+    kit.new_object('ejectionHandles', bm, ['yellow'], smooth_angle=40)
+    bm = bmesh.new()
+    for dy in (-0.12, 0.12):
+        box(bm, (seat_x - 0.02, dy, -0.95), (0.03, 0.05, 0.70), rot)
+    box(bm, (seat_x + 0.15, 0, -0.56), (0.30, 0.05, 0.02))
+    outward(bm)
+    kit.new_object('harness', bm, ['strap'], smooth_angle=30)
 
 
 # ── lifting surfaces ────────────────────────────────────────────────────────
@@ -467,6 +625,7 @@ if '--render' in args:
         'top': ((1.3, 0, 30), (1.3, 0, 0), 'ortho', 21),
         'front': ((30, 0, 0.5), (0, 0, 0.5), 'ortho', 14),
         'cockpit': (V(*EYE), V(xb(2.0), 0, -1.0), 80),
+        'cockpitWide': (V(EYE[0] - 0.25, 0, EYE[2] - 0.05), V(6.6, 0, -0.75), 95),
         'canopy': ((xb(5.0), -3.5, 2.3), (xb(5.3), 0, 0.9), 40),
     }
     kit.render(args[args.index('--render') + 1], views, gz)

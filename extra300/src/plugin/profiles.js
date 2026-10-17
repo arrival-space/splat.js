@@ -71,6 +71,7 @@ export const PROFILES = {
     buildModel: buildF15Model,
     intro: INTROS.f15c,
     display: 'hud',
+    cockpitDisplay: true,       // the large area display, live (plugin/cockpitDisplay.js)
     Sound: JetSound,
     chaseSize: 2.1,
     demo: 'carrier',           // the demo flight (O): a carrier landing
