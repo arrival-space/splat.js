@@ -19,6 +19,7 @@
       "isEnabled": true,
       "aircraft": "Extra 300L",
       "startRunway": "36",
+      "showCarrier": true,
       "engineRunningAtStart": true,
       "showPanel": true,
       "showScenery": true,
