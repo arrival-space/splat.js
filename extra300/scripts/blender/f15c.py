@@ -388,6 +388,19 @@ def speedbrake():
     ob.modifiers.new('thick', 'SOLIDIFY').thickness = 0.03
 
 
+def hook():
+    """The tail hook between the engines: a shank on a pivot, the hook point at its end, stowed flat under
+    the aft fuselage and swung down by the sim (src/sim/aircraft/f15c.js `hook`)."""
+    pivot = (xb(17.0), 0, 0.55)
+    L = 1.9
+    bm = bmesh.new()
+    rod(bm, pivot, (pivot[0] - L + 0.12, 0, pivot[2] + 0.02), 0.045, 8)
+    box(bm, (pivot[0] - L + 0.05, 0, pivot[2] + 0.06), (0.16, 0.10, 0.12))      # the hook point
+    box(bm, (pivot[0] + 0.05, 0, pivot[2]), (0.16, 0.14, 0.10))                  # the pivot fitting
+    outward(bm)
+    kit.new_object('hook', bm, ['gearWhite'], origin=pivot, smooth_angle=40, meta=dict(kind='hook', hinge=list(pivot), axis=[0, 1, 0]))
+
+
 # ── landing gear: folds forward into the fuselage ───────────────────────────
 def gear():
     for side in (-1, 1):
@@ -427,6 +440,7 @@ for s in (-1, 1):
 stabilators()
 fins()
 speedbrake()
+hook()
 gear()
 
 args = sys.argv[sys.argv.index('--') + 1:] if '--' in sys.argv else sys.argv[1:]

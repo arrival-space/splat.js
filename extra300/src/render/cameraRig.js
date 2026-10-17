@@ -5,11 +5,12 @@
 //   chase    a spring-lagged follow camera behind and above
 //   tower    Meigs tower cab, tracking the airplane and zooming with range
 //   flyby    parks ahead of the airplane and lets it pass, then re-parks
+//   deck     the carrier's LSO platform, by the landing area, tracking the airplane (when there is a carrier)
 
 import { qMul, qNormalize } from '../math/quat.js';
 import { fromBody } from './geometry.js';
 
-export const VIEWS = ['cockpit', 'chase', 'tower', 'flyby'];
+export const VIEWS = ['cockpit', 'chase', 'tower', 'flyby', 'deck'];
 
 /** Sim quaternion [w, x, y, z] (body→NED) to a render-space PlayCanvas quaternion [x, y, z, w]. */
 export function simToRenderQuat(q) {
@@ -72,6 +73,7 @@ export class CameraRig {
     this.eye = eye;                 // body-axes eye point
     this.size = size;               // the chase camera's distance, × the Extra's (the F-15 is twice its length)
     this.towerPos = towerPos;       // render-space tower cab
+    this.deckPos = null;            // render-space LSO platform on the carrier, if there is one
     this.view = 'cockpit';
     this.lookYaw = 0;
     this.lookPitch = 0;
@@ -90,7 +92,8 @@ export class CameraRig {
   }
 
   cycle() {
-    this.view = VIEWS[(VIEWS.indexOf(this.view) + 1) % VIEWS.length];
+    do this.view = VIEWS[(VIEWS.indexOf(this.view) + 1) % VIEWS.length];
+    while (this.view === 'deck' && !this.deckPos);
     this.chasePos = null;
     this.flybyPos = null;
     return this.view;
@@ -155,8 +158,8 @@ export class CameraRig {
       cam[1] = Math.max(cam[1], 1.0);
       return { pos: cam, rot: lookRotation(cam, pos), fov: 60 };
     }
-    if (this.view === 'tower') {
-      const t = this.towerPos;
+    if (this.view === 'tower' || (this.view === 'deck' && this.deckPos)) {
+      const t = this.view === 'deck' ? this.deckPos : this.towerPos;
       const d = Math.hypot(pos[0] - t[0], pos[1] - t[1], pos[2] - t[2]);
       // zoom so the airplane stays a readable size: ~8 m span fills ~1/6 of the view at 8 deg
       const fov = Math.max(2, Math.min(80, ((2 * Math.atan(30 / Math.max(d, 1)) * 180) / Math.PI) * this.fovScale));

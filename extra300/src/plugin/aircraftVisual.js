@@ -90,6 +90,7 @@ export class AircraftVisual {
         case 'stabilator': angle = defl('elevator', m.side); break;
         case 'rudder': angle = defl('rudder'); break;
         case 'speedbrake': angle = -SPEEDBRAKE_ANGLE * (ac.speedbrakePos || 0); break;
+        case 'hook': angle = ac.hookAngle || 0; break;   // down from stowed, as far as the deck lets it
         case 'gearLeg':
           // folds forward into its bay as the gear comes up; out of sight once stowed
           m.pivot.enabled = ac.gearPos > 0.02;

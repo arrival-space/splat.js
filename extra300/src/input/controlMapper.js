@@ -32,6 +32,7 @@ export const ACTIONS = {
   view: ['v'], panel: ['i'], reset: ['Backspace'], pause: ['p'], help: ['h', '?'],
   mixture: ['m'], parkingBrake: [','], autoRudder: ['u'], easy: ['l'], demo: ['o'], gReset: ['g'], kollsman: ['n'], exit: ['Escape'], yoke: ['y'], lookCenter: ['c'],
   gear: ['g'], speedbrake: ['j'],   // the jet's: G is the gear handle there (the Extra's G resets its g-meter)
+  hook: ['/'],                      // the tail hook, for the carrier's wires
 };
 
 /**
@@ -103,6 +104,7 @@ export class ControlMapper {
     this.trim = 0;
     this.speedbrake = false;   // the jet's speed brake switch (J); B holds it out in the air
     this.gear = 1;             // the gear handle (G), down
+    this.hook = 0;             // the hook handle (/), up
     this.autoRudder = opts.autoRudder ?? true;   // the pilot's feet: keeps the ball centred in the air
     this._autoRud = 0;
     this.easy = opts.easy ?? false;
@@ -267,11 +269,12 @@ export class ControlMapper {
     // easy mode works a retractable gear too: up once climbing away, down when coming back low and slow
     if (this.easy && flight.retractable && !flight.onGround) {
       const kt = Math.sqrt((2 * Math.max(0, q)) / 1.225) / 0.514444;
-      if (this.gear === 1 && flight.agl > 15 && flight.climbRate > 2) this.gear = 0;
-      else if (this.gear === 0 && flight.agl < 150 && flight.climbRate < -1 && kt < 220) this.gear = 1;
+      if (this.gear === 1 && flight.agl > 15 && flight.climbRate > 2) { this.gear = 0; this.hook = 0; }
+      else if (this.gear === 0 && flight.agl < 150 && flight.climbRate < -1 && kt < 220) { this.gear = 1; this.hook = flight.hasHook ? 1 : 0; }
     }
     if (flight.onGround) this.gear = 1;
     controls.gear = this.gear;
+    controls.hook = this.hook;
     return controls;
   }
 

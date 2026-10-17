@@ -27,7 +27,7 @@ export class JetHud {
 
   /**
    * @param {object} v  Instruments.values (ias, altitude, vsi, g, mach, aoa, pitch, bank, flightPath, drift, heading, n2, ftit, fuelFlow, fuelLb, ab)
-   * @param {object} s  { fov (vertical, deg), conformal (the cockpit view), throttle, abDetent, gearPos, speedbrake, flaps, parkingBrake, engineRunning, paused, stall, gMax }
+   * @param {object} s  { fov (vertical, deg), conformal (the cockpit view), throttle, abDetent, gearPos, speedbrake, flaps, hook, parkingBrake, engineRunning, paused, stall, gMax }
    */
   draw(v, s = {}) {
     const ctx = this.ctx;
@@ -190,6 +190,7 @@ export class JetHud {
     lamp(g > 0.99 ? '●●●' : g < 0.01 ? '○○○' : '◐◐◐', g > 0.01, g > 0.99 ? GREEN : '#ffb86b');
     lamp('SB', (s.speedbrake || 0) > 0.05, '#ffb86b');
     lamp('FLAP', (s.flaps || 0) > 0.05, GREEN);
+    lamp('HOOK', (s.hook || 0) > 0.05, '#ffb86b');
     lamp('PARK', !!s.parkingBrake, '#ffd166');
     if (!s.engineRunning) lamp('ENG OFF', true, '#ffd166');
     if (s.paused) lamp('PAUSED', true, '#7fb0ff');

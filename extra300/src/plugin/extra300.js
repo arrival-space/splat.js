@@ -11,7 +11,11 @@ import { DEG, INHG, KT } from '../sim/units.js';
 import { Instruments } from '../instruments/instruments.js';
 import { ControlMapper, ACTIONS, BINDINGS, FLIGHT_KEYS } from '../input/controlMapper.js';
 import { PatternPilot } from '../autopilot/platzrunde.js';
+import { CarrierPilot, CARRIER_APPROACH } from '../autopilot/carrierApproach.js';
 import { buildMeigs } from '../world/meigs.js';
+import { buildCarrier } from '../world/carrier.js';
+import { Arrestor } from '../sim/arrestor.js';
+import { CarrierVisual } from './carrierVisual.js';
 import { CameraRig } from '../render/cameraRig.js';
 import { fromNE } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
@@ -42,6 +46,7 @@ export class Extra300 extends ArrivalScript {
   isEnabled = true;
   aircraft = 'Extra 300L';
   startRunway = '36';
+  showCarrier = true;
   engineRunningAtStart = true;
   showPanel = true;
   showScenery = true;
@@ -63,7 +68,8 @@ export class Extra300 extends ArrivalScript {
   static properties = {
     isEnabled: { title: 'Enabled' },
     aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 on the address)', options: AIRCRAFT_OPTIONS },
-    startRunway: { title: 'Start runway', options: ['36', '18'] },
+    startRunway: { title: 'Start: runway 36, 18, or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
+    showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
     engineRunningAtStart: { title: 'Engine running at start' },
     showPanel: { title: 'Instrument panel' },
     showScenery: { title: 'Meigs & Chicago scenery' },
@@ -99,6 +105,11 @@ export class Extra300 extends ArrivalScript {
 
     this.scenery = new SceneryVisual(this.app, this._worldRoot, this.world);
     this.scenery.visible = this.showScenery;
+    // the carrier, anchored in the lake east of the island: its deck joins the ground
+    this.carrier = buildCarrier(this.world);
+    if (this.showCarrier) this.world.attachCarrier(this.carrier);
+    this.carrierVisual = new CarrierVisual(this.app, this._worldRoot, this.carrier, this.world.water);
+    this.carrierVisual.visible = this.showCarrier;
     this._loadCity();
     this._loadPoses();
     // film mode: ?intro (or #intro) on the space's address, or the setting — board by itself once
@@ -117,6 +128,7 @@ export class Extra300 extends ArrivalScript {
     this.mapper = new ControlMapper({ easy: this.easyMode });
     const tower = this.world.landmarks.find((l) => l.name === 'Meigs Tower');
     this.cameraRig = new CameraRig({ eye: this.profile.spec.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
+    this._placeDeckCamera();
     this.hud = new Hud(this.getUIContainer(), this.profile, this.isMobile, (tag, opts) => this.createUI(tag, opts));
     this._buildAircraft(this.profile);
     this.hud.setEasy(this.mapper.easy);
@@ -180,6 +192,8 @@ export class Extra300 extends ArrivalScript {
       weather: this._weather(),
     });
     this.instruments = new Instruments(spec, { kollsman: this.qnhInHg * INHG });
+    // a hook to catch the carrier's wires with
+    if (spec.hook) this.ac.arrestor = new Arrestor(this.carrier);
     this.mapper.setHandling(spec.handling);
     this.mapper.speedbrake = false;
     this.cameraRig.eye = spec.eye;
@@ -303,8 +317,18 @@ export class Extra300 extends ArrivalScript {
     return { qnh: this.qnhInHg * INHG, dT: this.oatC - 15, wind: [-Math.cos(from) * v, -Math.sin(from) * v, 0] };
   }
 
+  /** The LSO platform: on the port deck edge abeam the wires, a man's height up — the deck view. */
+  _placeDeckCamera() {
+    if (!this.showCarrier) { this.cameraRig.deckPos = null; return; }
+    const cv = this.carrier;
+    const [n, e] = cv.onLanding(cv.wires[0].along - 25, -cv.data.landing.halfWidth - 9);
+    this.cameraRig.deckPos = fromNE(n, e, cv.deckH + 1.8);
+  }
+
   _resetToRunway() {
     this.mapper.resetHolds();
+    // on final to the carrier only once aboard: parked, the airplane waits on runway 36
+    if (this._onFinalStart) { this._startOnFinal(); return; }
     const s = this.world.startPosition();
     let { n, e, heading } = s;
     if (this.startRunway === '18') {
@@ -322,9 +346,29 @@ export class Extra300 extends ArrivalScript {
     }
     this.mapper.throttle = 0;
     this.mapper.gear = 1;
+    this.mapper.hook = 0;
     this.instruments.resetG();
     // let it settle onto its gear before anyone sees it
     for (let i = 0; i < 480; i++) this.ac.step(1 / 480);
+  }
+
+  get _onFinalStart() { return this._flying && this.startRunway === 'Carrier approach' && this.showCarrier; }
+
+  /** On final to the carrier, on the glide slope, gear (and hook) down, on speed. */
+  _startOnFinal() {
+    const jet = this.ac.jet;
+    const cv = this.carrier;
+    // the Extra comes in slower and from closer in
+    const st = cv.approachStart(jet ? CARRIER_APPROACH.startDist : 1500);
+    const kt = jet ? CARRIER_APPROACH.approachKt : 72;
+    this.ac.placeInFlight(st.n, st.e, this.world.elevation + st.h, st.heading, kt * KT, (jet ? 8 : 6) * DEG);
+    const c = this.ac.controls;
+    c.gear = 1; this.ac.gearPos = 1;
+    if (jet) { c.flaps = 1; this.mapper.throttle = 0.47; } else this.mapper.throttle = 0.45;
+    if (this.ac.spec.hook) { c.hook = 1; this.ac.hookPos = 1; }
+    this.mapper.gear = 1;
+    this.mapper.hook = this.ac.spec.hook ? 1 : 0;
+    this.instruments.resetG();
   }
 
   // ── boarding ───────────────────────────────────────────────────────────
@@ -357,7 +401,12 @@ export class Extra300 extends ArrivalScript {
     this.hud.setFlying(true, this._panelVisible);
     // the first boarding plays the intro film; after it (and on later boardings) only the small
     // take-off card shows, the full table is behind Controls / H
-    if (this.playIntro && !this._introPlayed && !this._demo) this._startIntro();
+    if (this._onFinalStart && !this._demo) {
+      // straight onto final: no film, the carrier ahead
+      this._introPlayed = true;
+      this._resetToRunway();
+      this.hud.flash(this.ac.spec.hook ? 'On final to USS Nimitz: fly the ball, the hook is down (/)' : 'On final to USS Nimitz: land on the angled deck', 5);
+    } else if (this.playIntro && !this._introPlayed && !this._demo) this._startIntro();
     else this._showTakeoffCard();
   }
 
@@ -510,25 +559,35 @@ export class Extra300 extends ArrivalScript {
   // ── demo flight ──────────────────────────────────────────────────────────
   _startDemo() {
     if (!this.isEnabled) return;
-    if (!this.profile.demo) { this.hud.flash('The demo flight is the Extra\'s (T switches airplane)', 3); return; }
+    const kind = this.profile.demo;
+    if (!kind || (kind === 'carrier' && !this.showCarrier)) { this.hud.flash('No demo flight for this airplane here (T switches airplane)', 3); return; }
     this._introPlayed = true;
     if (this._intro) this._endIntro();
     if (!this._flying) this._enter();
     this._paused = false;
-    this._resetToRunway();
-    this.ac.setEngineRunning(true);
-    this._demo = new PatternPilot(this.ac, this.world);
+    if (kind === 'carrier') {
+      // a carrier landing: on final, the demo pilot flies the ball into the wires
+      this._startOnFinal();
+      this._demo = new CarrierPilot(this.ac, this.carrier);
+    } else {
+      this._resetToRunway();
+      this.ac.setEngineRunning(true);
+      this._demo = new PatternPilot(this.ac, this.world);
+    }
     this._director = true;
     this._helpAutoHidden = true;
     this.hud.toggleHelp(false);
+    this.hud.showQuick(false);
     this.hud.flash('Demo flight: watch, or press any flight key to take over', 4);
   }
 
   _stopDemo(message = 'You have control') {
     if (!this._demo) return;
     // hand over exactly as it is: the throttle and trim stay where the demo pilot left them
-    this.mapper.throttle = this.ac.controls.throttle;
+    this.mapper.throttle = Math.max(0, this.ac.controls.throttle);
     this.mapper.trim = this.ac.controls.elevatorTrim || 0;
+    this.mapper.gear = this.ac.controls.gear ?? 1;
+    this.mapper.hook = this.ac.controls.hook ?? 0;
     this.ac.controls.brakeL = this.ac.controls.brakeR = 0;
     this._demo = null;
     this.hud.showDemoStatus('');
@@ -538,6 +597,18 @@ export class Extra300 extends ArrivalScript {
   /** Which camera tells each part of the circuit best (until the viewer presses V). */
   _directCamera() {
     if (!this._director) return;
+    if (this._demo instanceof CarrierPilot) {
+      // the approach from behind, then the LSO's view of the last of it and the trap, then round it
+      const d = this._demo;
+      const behind = this.carrier.aimAlong - this.carrier.along(this.ac.state.pos[0], this.ac.state.pos[1]);
+      const want = d.phase === 'approach' ? (behind > 1100 ? 'chase' : 'deck') : d.phase === 'stopped' && d.phaseT > 3 ? 'chase' : d.phase === 'bolter' ? 'chase' : 'deck';
+      if (this.cameraRig.view !== want) {
+        while (this.cameraRig.view !== want) this.cameraRig.cycle();
+        this._setAvatarVisible(true);
+        this.visual.setCockpitView(false);
+      }
+      return;
+    }
     const want = {
       takeoff: 'chase', climb: 'chase', crosswind: 'chase', downwind: 'chase', loopEntry: 'flyby', loop: 'flyby',
       recover: 'chase', downwind2: 'chase', base: 'chase', final: 'cockpit', flare: 'cockpit', rollout: 'tower', stopped: 'tower',
@@ -547,6 +618,21 @@ export class Extra300 extends ArrivalScript {
     this._setAvatarVisible(want !== 'cockpit');
     this.visual.setCockpitView(want === 'cockpit');
   }
+
+  _demoText() {
+    const d = this._demo;
+    if (!(d instanceof CarrierPilot)) return Extra300.DEMO_TEXT[d.phase] || '';
+    if (d.phase === 'arrested' || (d.phase === 'stopped' && d.trap)) {
+      return d.phase === 'arrested' ? `Trap! The ${d.trap.wire}-wire has it at ${d.trap.kt} kt` : `Stopped, ${d.trap.wire}-wire. Hook up, the wire lets go. O flies it again, or take over`;
+    }
+    return Extra300.CARRIER_TEXT[d.phase] || '';
+  }
+
+  static CARRIER_TEXT = {
+    approach: 'On final to USS Nimitz: 138 kt, gear, flaps and hook down, flying the ball',
+    touchdown: 'Touchdown: full power, in case the hook skips the wires',
+    bolter: 'Bolter: the hook missed every wire. Full power, round again',
+  };
 
   static DEMO_TEXT = {
     takeoff: 'Takeoff from runway 36 — full power, tail up at 35 kt',
@@ -608,7 +694,11 @@ export class Extra300 extends ArrivalScript {
         break;
       }
       case 'panel': this._panelVisible = !this._panelVisible; this.hud.setFlying(true, this._panelVisible); break;
-      case 'reset': if (this._demo) this._stopDemo('Demo ended'); this._resetToRunway(); this.hud.flash('Back on runway 36', 2); break;
+      case 'reset':
+        if (this._demo) this._stopDemo('Demo ended');
+        this._resetToRunway();
+        this.hud.flash(this._onFinalStart ? 'Back on final to the carrier' : 'Back on runway 36', 2);
+        break;
       case 'pause': this._paused = !this._paused; break;
       case 'help': this.hud.toggleHelp(); break;
       case 'mixture':
@@ -629,6 +719,11 @@ export class Extra300 extends ArrivalScript {
         this.hud.flash(this.mapper.speedbrake ? 'Speed brake out' : 'Speed brake in', 1.2);
         break;
       case 'aircraft': this._switchAircraft(nextProfile(this.profile)); break;
+      case 'hook':
+        if (!this.ac.spec.hook) break;
+        this.mapper.hook = this.mapper.hook ? 0 : 1;
+        this.hud.flash(this.mapper.hook ? 'Hook down' : 'Hook up', 1.2);
+        break;
       case 'kollsman': this.instruments.kollsman = this.ac.weather.qnh; this.hud.flash(`Altimeter ${(this.ac.weather.qnh / INHG).toFixed(2)}`, 1.5); break;
       case 'easy':
         this._setEasy(!this.mapper.easy);
@@ -696,7 +791,7 @@ export class Extra300 extends ArrivalScript {
     } else if (this._demo) {
       if (!this._paused) this._demo.step(Math.min(dt, 0.1));
       this._directCamera();
-      this.hud.showDemoStatus(Extra300.DEMO_TEXT[this._demo.phase] || '');
+      this.hud.showDemoStatus(this._demoText());
     } else {
       this.mapper.update(raw, dt, this.ac.controls, this.ac.flightState());
     }
@@ -706,11 +801,15 @@ export class Extra300 extends ArrivalScript {
     if (!this._helpAutoHidden && this.ac.agl > 30) { this._helpAutoHidden = true; this.hud.showQuick(false); }
     const v = this.instruments.update(this.ac, dt);
     this.visual.update(this.ac, this._paused ? 0 : dt);
+    if (this.showCarrier) this.carrierVisual.update(this.ac);
 
     for (const ev of this.ac.events.splice(0)) {
       if (ev.e === 'propStrike') this.hud.flash('Prop strike! Backspace to reset', 4);
       if (ev.e === 'nozzleLStrike' || ev.e === 'nozzleRStrike') this.hud.flash('Tail strike: easy on the rotation', 3);
       if (/^belly/.test(ev.e)) this.hud.flash('Gear-up landing! Backspace to reset', 4);
+      if (ev.e === 'trap' && !this._demo) this.hud.flash(`Trap! ${ev.wire}-wire at ${Math.round(ev.kt)} kt`, 4);
+      if (ev.e === 'stopped' && !this._demo) this.hud.flash(`Stopped in ${Math.round(ev.runout)} m. Throttle idle, hook up (/) to let the wire go`, 5);
+      if (ev.e === 'bolter' && !this._demo) this.hud.flash('Bolter! Full power and go around', 3);
       if (ev.e === 'splash') this.hud.flash('In the lake. Backspace to reset', 4);
     }
 
@@ -733,7 +832,7 @@ export class Extra300 extends ArrivalScript {
       if (this.profile.display === 'hud') {
         this.hud.jetHud.draw(v, {
           fov: this._pose?.fov, throttle: c.throttle, abDetent: this.ac.spec.jet.abDetent, gearPos: this.ac.gearPos,
-          speedbrake: this.ac.speedbrakePos, flaps: c.flaps, parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running,
+          speedbrake: this.ac.speedbrakePos, flaps: c.flaps, hook: this.ac.hookPos, parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running,
           paused: this._paused, stall: v.stallWarning, gMax: this.ac.spec.limits.gPos, conformal: this.cameraRig.view === 'cockpit' && !this._intro,
         });
       } else {
@@ -762,20 +861,29 @@ export class Extra300 extends ArrivalScript {
     this._placeSky();
   }
 
-  /** Fly into a building and the flight ends there. */
+  /** Fly into a building (or the carrier's side, or its island) and the flight ends there. */
   _checkBuildings() {
+    if (this.showCarrier && !this.ac.damage.crashed) {
+      const p = this.ac.state.pos, h = -p[2];
+      if (this.carrier.hullContains(p[0], p[1], h - 1) || this.carrier.islandContains(p[0], p[1], h)) {
+        this._crash('You hit the ship. Backspace to reset');
+        return;
+      }
+    }
     // only the city we draw is solid: under Google's tiles the OpenStreetMap buildings aren't there
     if (!this.world.osm || this.ac.damage.crashed || this._google) return;
     const p = this.ac.state.pos;
     const h = -p[2];
     if (h > 450) return;
-    if (this.world.buildingAt(p[0], p[1], h)) {
-      this.ac.damage.crashed = true;
-      this.ac.setEngineRunning(false);
-      this.ac.state.vel = [0, 0, 0];
-      this.ac.state.omega = [0, 0, 0];
-      this.hud.flash('You hit a building. Backspace to reset', 5);
-    }
+    if (this.world.buildingAt(p[0], p[1], h)) this._crash('You hit a building. Backspace to reset');
+  }
+
+  _crash(message) {
+    this.ac.damage.crashed = true;
+    this.ac.setEngineRunning(false);
+    this.ac.state.vel = [0, 0, 0];
+    this.ac.state.omega = [0, 0, 0];
+    this.hud.flash(message, 5);
   }
 
   _showSky(on) {
@@ -808,6 +916,11 @@ export class Extra300 extends ArrivalScript {
 
   onPropertyChanged(name) {
     if (name === 'showScenery') { this.scenery.visible = this.showScenery; if (this.city) this.city.visible = this.showScenery; }
+    if (name === 'showCarrier') {
+      this.carrierVisual.visible = this.showCarrier;
+      this.world.attachCarrier(this.showCarrier ? this.carrier : null);
+      this._placeDeckCamera();
+    }
     if ((name === 'skylineYear' || name === 'cityDetail') && this.city) {
       this.world.setSkylineYear(this.skylineYear);
       this.city.build(this._cityOptions());
@@ -842,6 +955,7 @@ export class Extra300 extends ArrivalScript {
     this.visual.destroy();
     this.scenery.destroy();
     this.city?.destroy();
+    this.carrierVisual.destroy();
     this._sky?.destroy();
     this._worldRoot.destroy();
     disposeMaterials();

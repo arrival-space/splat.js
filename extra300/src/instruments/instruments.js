@@ -106,7 +106,7 @@ export class Instruments {
 
     // ── air data and attitude for a head-up display ─────────────────────
     v.mach = M;
-    v.aoa = o.alpha / DEG;
+    v.aoa = o.tas > 15 ? o.alpha / DEG : 0;   // the vane hangs loose when there is no air over it
     const eu = ac.euler;
     v.pitch = eu.theta / DEG;
     v.bank = eu.phi / DEG;

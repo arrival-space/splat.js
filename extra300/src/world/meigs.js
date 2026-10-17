@@ -136,11 +136,19 @@ export function buildMeigs(data = MEIGS) {
     return [dn * dir[0] + de * dir[1], -dn * dir[1] + de * dir[0]]; // along, across
   };
 
-  /** Ground query used by the gear: height above the datum, normal (NED up), surface. */
+  /**
+   * Ground query used by the gear: height above the datum, normal (NED up), surface. `d` (NED down,
+   * optional) is the point's own height: the carrier's deck only holds up what is near it.
+   */
   let isLand = null;   // OSM land/water raster, once attached
   let farLand = null;  // [[e, n], ...] the land around the OSM box, out to the horizon
   let inBox = () => false;
-  const ground = (n, e) => {
+  let carrier = null;
+  const ground = (n, e, d = null) => {
+    if (carrier) {
+      const deck = carrier.deckAt(n, e, d);
+      if (deck) return deck;
+    }
     const [al, ac] = runwayLocal(n, e);
     if (Math.abs(al) <= len / 2 + 30 && Math.abs(ac) <= wid / 2) return { h: 0, normal: UP, surface: 'asphalt' };
     if (pointInPolygon(n, e, island)) return { h: 0, normal: UP, surface: 'grass' };
@@ -197,6 +205,9 @@ export function buildMeigs(data = MEIGS) {
       });
     },
     setSkylineYear(year) { skylineYear = year; },
+    /** A ship to land on (world/carrier.js): its deck joins the ground. */
+    attachCarrier(c) { carrier = this.carrier = c; },
+    carrier: null,
     /** The building (if any) whose volume contains the point; height h above the datum. */
     buildingAt(n, e, h) {
       if (!grid) return null;

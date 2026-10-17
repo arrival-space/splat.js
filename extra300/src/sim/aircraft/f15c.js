@@ -214,6 +214,10 @@ export const F15C = {
     ],
   },
 
+  // tail hook under the aft fuselage, between the engines (the Eagle's is for runway arresting cables;
+  // here it catches a carrier's wires): pivot, arm length, how far down it swings [est]
+  hook: { pivot: [xb(17.0), 0, 0.55], length: 1.9, maxAngle: 55 * DEG },
+
   limits: {
     vso: 130, vs1: 130, vne: 800, mmo: 2.5,   // KCAS; [pub] Mach 2.5
     gPos: 9, gNeg: -3,                         // [pub]

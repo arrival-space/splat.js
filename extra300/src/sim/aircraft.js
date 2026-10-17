@@ -27,6 +27,7 @@ export function defaultControls() {
     throttle: 0, prop: 1, mixture: 1, magnetos: true, starter: false,
     brakeL: 0, brakeR: 0, parkingBrake: false,
     gear: 1, speedbrake: 0,          // handles: gear down, speed brake in (jets)
+    hook: 0,                         // tail hook handle: up
   };
 }
 
@@ -54,6 +55,9 @@ export class Aircraft {
     this.controls = defaultControls();
     this.gearPos = 1;            // 0 up .. 1 down and locked
     this.speedbrakePos = 0;
+    this.hookPos = 0;            // 0 stowed .. 1 down (on its stop)
+    this.hookAngle = 0;          // rad below the stowed position, where the deck lets it be
+    this.arrestor = null;        // a carrier's arresting gear (sim/arrestor.js), if there is one to land on
 
     this.state = { pos: [0, 0, 0], vel: [0, 0, 0], q: [1, 0, 0, 0], omega: [0, 0, 0] };
     this.rpm = 0;
@@ -110,6 +114,8 @@ export class Aircraft {
     this.aero.eps = 0;
     this.gearPos = 1; this.controls.gear = 1;
     this.speedbrakePos = 0; this.controls.speedbrake = 0;
+    this.hookPos = 0; this.controls.hook = 0;
+    this.arrestor?.reset();
     this.damage = { propStrike: false, gearCollapsed: false, crashed: false };
   }
 
@@ -118,12 +124,16 @@ export class Aircraft {
     const q = qFromEuler(0, alpha, heading);
     const vb = [tas * Math.cos(alpha), 0, tas * Math.sin(alpha)];
     this.state = { pos: [n, e, this.datumMsl - altMsl], vel: qRotate(q, vb), q, omega: [0, 0, 0] };
+    // nothing touches anything up here (until the next step says otherwise)
+    for (const u of this.gear.units) { u.onGround = false; u.load = 0; u.compression = 0; }
     if (this.jet) {
       this.engine.setRunning(true);
       this.engine.n2 = this.spec.jet.idleN2 + 0.8 * (this.spec.jet.milN2 - this.spec.jet.idleN2);
       this.rpm = this.engine.n2;
       // a jet in the air has its wheels up
       this.gearPos = this.controls.gear = this.retractable ? 0 : 1;
+      this.hookPos = this.controls.hook = 0;
+      this.arrestor?.reset();
     } else {
       this.engine.running = true;
       this.rpm = 2400;
@@ -166,6 +176,8 @@ export class Aircraft {
       const rate = h / (sp.gear.transitTime || 6);
       this.gearPos = clamp(this.gearPos + clamp(tgt - this.gearPos, -rate, rate), 0, 1);
     }
+    // the tail hook drops in about a second and a half
+    if (sp.hook) this.hookPos = clamp(this.hookPos + clamp((c.hook || 0) - this.hookPos, -h / 1.5, h / 1.5), 0, 1);
     const sbRate = h / 1.5;
     this.speedbrakePos = clamp(this.speedbrakePos + clamp((c.speedbrake || 0) - this.speedbrakePos, -sbRate, sbRate), 0, 1);
     c.gearPos = this.gearPos;
@@ -224,6 +236,38 @@ export class Aircraft {
       M[2] += -rT[1] * T;
       // the engine twists the airframe the other way
       M[0] += -rot * this.engine.torque;
+    }
+
+    // the tail hook: rides on the deck when it reaches it, and a caught wire pulls on its tip
+    if (sp.hook) {
+      const hk = sp.hook;
+      let a = hk.maxAngle * this.hookPos;
+      const tipAt = (ang) => {
+        const tb = [hk.pivot[0] - hk.length * Math.cos(ang) - this.cg[0], hk.pivot[1] - this.cg[1], hk.pivot[2] + hk.length * Math.sin(ang) - this.cg[2]];
+        const te = qRotate(st.q, tb);
+        return { tb, te: [st.pos[0] + te[0], st.pos[1] + te[1], st.pos[2] + te[2]] };
+      };
+      let tip = tipAt(a);
+      const under = this.ground(tip.te[0], tip.te[1], tip.te[2]);
+      const pen = tip.te[2] + under.h;            // below the surface by this much
+      if (pen > 0 && a > 0 && under.surface !== 'water') {
+        // it can't go through the deck: it swings up until the tip just touches
+        a = Math.max(0, a - pen / (hk.length * Math.max(0.3, Math.cos(a))));
+        tip = tipAt(a);
+      }
+      this.hookAngle = a;
+      this.hookTip = tip.te;
+      if (this.arrestor) {
+        const pull = this.arrestor.update(tip.te, st.vel, this.mass, this.hookPos > 0.95, h);
+        for (const ev of this.arrestor.events.splice(0)) this.events.push({ t: this.time, ...ev });
+        if (pull) {
+          // the hook is free to swing on its pivot, so the wire's pull reaches the airframe along the
+          // shank, at the pivot: mostly aft, a little down (the tip lifts off the deck as it pulls)
+          const fb = qRotateInv(st.q, [pull[0], pull[1], 0.15 * Math.hypot(pull[0], pull[1])]);
+          add(F, fb, F);
+          add(M, cross([hk.pivot[0] - this.cg[0], hk.pivot[1] - this.cg[1], hk.pivot[2] - this.cg[2]], fb), M);
+        }
+      }
     }
 
     const gear = this.gear.compute(st, this.cg, c, this.ground, h);
@@ -306,7 +350,7 @@ export class Aircraft {
     return {
       qbar: o.qbar, alpha: o.alpha, beta: o.beta, loadFactor: o.loadFactor,
       yawRate: w[2], rollRate: w[0], pitchRate: w[1], heading: e.psi, bank: e.phi, pitch: e.theta,
-      onGround: this.gear.onGround, agl: this.agl, climbRate: -this.state.vel[2], retractable: this.retractable,
+      onGround: this.gear.onGround, agl: this.agl, climbRate: -this.state.vel[2], retractable: this.retractable, hasHook: !!this.spec.hook,
     };
   }
 

@@ -51,6 +51,28 @@ setting, or `?aircraft=f15` on the space's address. It lines up on runway 36 in 
 | stall, gear and flaps down, 17.2 t | 98 KCAS, no departure | — |
 | burner take-off, lift-off | ~350 m, 10 s | ~270 m (900 ft) |
 
+## The aircraft carrier
+
+USS Nimitz (CVN-68) rides at anchor in the lake, 3.4 km east of Meigs. Its angled deck points
+360°, like runway 36.
+
+- **Ship:** 332.8 m long with a 76.8 m flight deck, 18.5 m above the water. It has the island and its mast and the deck markings: landing-area edges, centre line, foul lines, catapult tracks, elevators and the hull number.
+- **Physics:** the deck is a surface the gear rolls on. The hull and the island are solid; flying into them ends the flight.
+- **Arresting wires:** four wires across the landing area, about 12 m apart. A wire is caught when the tail hook's tip, low enough to sweep the deck, crosses it. The wire then pulls back along both halves, in a V to the deck-edge sheaves that also centres the jet. Its pull is set for the jet's weight and speed, as a Mk 7 engine is, so it stops in about 100 m at under 3 g even with the engines at military power. A hook that skips every wire is a **bolter**.
+- **Fresnel lens:** on the port sponson. The amber ball rides above or below the green datum bars as you are high or low on the 3.5° glide slope, and it turns red when you are dangerously low.
+- **Flying it:**
+  - Set *Start* to **Carrier approach**: Backspace then always puts you 3.2 km out on the glide slope, gear and hook down, on speed.
+  - **/** lowers the F-15's hook. Easy mode lowers it with the gear.
+  - **V** gains a **deck** view from the LSO platform.
+  - In the F-15, **O** watches the demo pilot fly it into the 3-wire.
+  - The Extra has no hook. It just lands on the deck, which is long enough for it.
+- **Film:** `node tests/e2e/record-carrier.cjs` renders the demo landing as a film: chase, cockpit and HUD, a camera under the glide slope, the LSO's view of the trap, then an orbit of the stopped jet.
+
+| | model | published |
+|---|---|---|
+| demo approach, 3.2 km final | within 0.5° of the glide slope, catches the 3-wire at ~139 kt | 3-wire is the target |
+| trap at 135 kt, military power | stopped in ~95–120 m, ~2.8 g | ~100 m run-out, 3–4 g |
+
 ## Google Photorealistic 3D Tiles
 
 The space also carries the Arrival library's **Google 3D Tiles** vibe, centred on

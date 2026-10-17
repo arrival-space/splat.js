@@ -28,7 +28,7 @@ export const PROFILES = {
     display: 'gauges',
     Sound: CockpitSound,
     chaseSize: 1,
-    demo: true,                // the Platzrunde demo flight (O)
+    demo: 'platzrunde',        // the demo flight (O): a circuit with a loop
     // the avatar in the rear seat: the plugin's avatarSeat* settings apply to this one
     seat: null,
     quick: [
@@ -56,6 +56,7 @@ export const PROFILES = {
       VIEWS_HELP,
       ['Panel', 'I  show / hide    G  reset g-meter    N  set altimeter'],
       ['Demo', 'O  watch a Platzrunde flown for you    any flight key takes over'],
+      ['Carrier', 'Start: Carrier approach (settings): land on USS Nimitz\'s angled deck, no hook needed for the Extra    V  deck view'],
       ...COMMON_TAIL,
       ['Gamepad', 'left stick flies, right stick rudder / throttle, triggers brake'],
     ],
@@ -70,7 +71,7 @@ export const PROFILES = {
     display: 'hud',
     Sound: JetSound,
     chaseSize: 2.1,
-    demo: false,
+    demo: 'carrier',           // the demo flight (O): a carrier landing
     // the avatar on the ACES II seat, upright under the bubble: body x of its root, body z, lean back (°)
     seat: { forward: F15.eye[0] + 0.22, height: F15.eye[2] + 1.12, lean: 10 },
     quick: [
@@ -92,6 +93,7 @@ export const PROFILES = {
       ['Rudder', 'Q  left    E  right    (Z / X too)    U  auto-rudder on / off'],
       ['Throttle', 'R  more    F  less    Home idle    End full burner    (past 80 %: afterburner)'],
       ['Gear', 'G  up / down    J  speed brake out / in    B in the air: speed brake while held'],
+      ['Carrier', '/  tail hook down / up    fly the ball (amber light on the lens), catch a wire    O  watch a carrier landing    V  deck view'],
       ['Brakes', 'B or .  (hold, on the ground)    ,  parking brake'],
       ['Trim', ';  nose down    \'  nose up'],
       ['Engines', 'M  fuel off / on    K  jet fuel starter (hold, if they flamed out)'],

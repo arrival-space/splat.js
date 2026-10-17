@@ -54,7 +54,7 @@ export class Gear {
       rb[0] = u.pos[0] - cg[0]; rb[1] = u.pos[1] - cg[1]; rb[2] = u.pos[2] - cg[2];
       qRotate(st.q, rb, re);
       const pn = st.pos[0] + re[0], pe = st.pos[1] + re[1], pd = st.pos[2] + re[2];
-      const gnd = ground(pn, pe);
+      const gnd = ground(pn, pe, pd);
       const nUp = gnd.normal;                    // NED, pointing up (z negative)
       // penetration of the fully extended wheel below the surface, along the surface normal
       const depth = (pd + gnd.h) * -nUp[2];      // ground surface at d = -h
@@ -138,7 +138,7 @@ export class Gear {
       rb[0] = s.pos[0] - cg[0]; rb[1] = s.pos[1] - cg[1]; rb[2] = s.pos[2] - cg[2];
       qRotate(st.q, rb, re);
       const pd = st.pos[2] + re[2];
-      const gnd = ground(st.pos[0] + re[0], st.pos[1] + re[1]);
+      const gnd = ground(st.pos[0] + re[0], st.pos[1] + re[1], pd);
       const depth = pd + gnd.h;
       if (depth <= 0) { s.touching = false; s.load = 0; continue; }
       cross(st.omega, rb, vp);
