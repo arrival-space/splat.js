@@ -340,6 +340,7 @@ export class Extra300 extends ArrivalScript {
       far: { texture: far.texture, inv: this._waterXf.farInv },
       level: this.world.water,
       scale: this._waterXf.scale,
+      origin: (({ x, y, z }) => [x, y, z])(this._worldRoot.getPosition()),
     });
     // the lake's mirror: screen-space reflections over the same mask
     if (!this._ssr) {

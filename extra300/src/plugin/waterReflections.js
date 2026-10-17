@@ -76,7 +76,7 @@ void main(void) {
     float inNear = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0);
     float water = smoothstep(0.3, 0.7, mix(texture2D(uWaterFar, qf).r, texture2D(uWaterNear, q.xy).r, inNear));
     vec2 wp = vPositionW.xz * uWaterScale;
-    float fw = max(length(dFdx(wp)), length(dFdy(wp)));
+    float fw = sqrt(length(dFdx(wp)) * length(dFdy(wp)));   // as the tiles' water: narrow across, long in depth
     if (water < 0.01) discard;
 
     vec3 toCam = view_position - vPositionW;
