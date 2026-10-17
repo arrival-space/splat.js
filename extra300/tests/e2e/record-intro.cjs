@@ -13,11 +13,14 @@ const { execFileSync } = require('child_process');
 let chromium;
 try { ({ chromium } = require('playwright')); } catch { ({ chromium } = require('/opt/node22/lib/node_modules/playwright')); }
 
-const SPACE = process.argv[2] || '42485456_1041';
+// a public space: a guest can't open a Closed one. Where the vibe isn't placed (any space but ours),
+// the built bundle is injected at the guest's feet, as tests/e2e/arrival-client.cjs does.
+const SPACE = process.argv[2] || '42485456_9715';
+const BUNDLE = process.env.BUNDLE || path.join(__dirname, '..', '..', 'dist', 'extra300-meigs.mjs');
 const OUT = process.argv[3] || path.join(__dirname, '..', '..', 'dist', 'intro.mp4');
-const FPS = Number(process.env.FPS || 30);
+const FPS = Number(process.env.FPS || 24);
 const TAIL = Number(process.env.TAIL || 2.0);     // seconds of cockpit after the film
-const W = Number(process.env.W || 1280), H = Number(process.env.H || 720);
+const W = Number(process.env.W || 960), H = Number(process.env.H || 540);
 const FRAMES = path.join(path.dirname(OUT), 'intro-frames');
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 
@@ -36,13 +39,29 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
   await page.goto(`https://arrival.space/${SPACE}`, { waitUntil: 'domcontentloaded', timeout: 180000 });
   await page.waitForFunction(() => window.ArrivalSpace && window.pc && (window.pc.app || window.pc.AppBase?.getApplication?.()) && window.ArrivalSpace.getCamera?.(),
     null, { timeout: 300000, polling: 1000 });
-  // the vibe placed in the space: its script instance
-  await page.waitForFunction(() => {
+  await page.waitForTimeout(15000);
+  // the vibe placed in the space, or else inject the bundle
+  const how = await page.evaluate(async (src) => {
     const app = window.pc.app || window.pc.AppBase.getApplication();
+    window.__app = app;
     const sc = app.root.findComponents('script').find((s) => s.extra300Meigs);
-    if (sc) { window.__app = app; window.vibe = sc.extra300Meigs; }
-    return !!sc && window.vibe.world && window.vibe.city && !window.vibe.city.queue.length;
-  }, null, { timeout: 400000, polling: 2000 });
+    if (sc) { window.vibe = sc.extra300Meigs; return 'placed'; }
+    const mod = await import(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
+    const host = new window.pc.Entity('extra300-film');
+    const pl = window.ArrivalSpace.getPlayer?.();
+    if (pl) { const q = pl.getPosition(); host.setPosition(q.x, q.y, q.z); }
+    app.root.addChild(host);
+    host.addComponent('script');
+    window.vibe = host.script.create(mod.Extra300);
+    // the film is of our airfield: switch off the host space's own models and splats
+    const ours = (e) => { for (let n = e; n; n = n.parent) if (n === host || n === pl || n.name === 'Extra300World') return true; return false; };
+    for (const type of ['render', 'model', 'gsplat']) {
+      for (const c of app.root.findComponents(type)) if (!ours(c.entity) && !c.entity.findComponent?.('camera')) c.enabled = false;
+    }
+    return 'injected';
+  }, fs.readFileSync(BUNDLE, 'utf8'));
+  log('vibe', how);
+  await page.waitForFunction(() => window.vibe.world && window.vibe.city && !window.vibe.city.queue.length, null, { timeout: 400000, polling: 2000 });
   log('vibe found and the city is up');
 
   await page.evaluate(() => {
@@ -64,6 +83,7 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     // back to the very start of the film, engine still, then freeze the client's clock
     v._intro = { t: 0 };
     v.ac.engine.running = false; v.ac.rpm = 0;
+    v.hud.skipButton.style.visibility = 'hidden';   // a film, not the live screen
     window.__app.timeScale = 0;
   });
 
