@@ -18,6 +18,7 @@
     "params": {
       "isEnabled": true,
       "aircraft": "Extra 300L",
+      "destination": "Chicago Meigs (KCGX)",
       "startRunway": "36",
       "showCarrier": true,
       "waterReflections": true,
