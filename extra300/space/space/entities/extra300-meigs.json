@@ -17,6 +17,7 @@
     "scale": 1,
     "params": {
       "isEnabled": true,
+      "aircraft": "Extra 300L",
       "startRunway": "36",
       "engineRunningAtStart": true,
       "showPanel": true,
