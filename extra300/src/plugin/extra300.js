@@ -33,6 +33,7 @@ import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
 import { buildSkyDome } from '../render/sky.js';
 import { carveBox } from '../render/carve.js';
+import { buildWaterMasks, maskTransform } from './waterMask.js';
 import { INTRO_LENGTH, introAt } from '../render/intro.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane (more for a bigger one)
@@ -295,6 +296,7 @@ export class Extra300 extends ArrivalScript {
     if (this._carveTimer <= 0) {
       this._carveTimer = 2;
       this._publishCarve();
+      this._publishWater();
       // with no API key yet the tiles vibe lays a 50 km green disc at the runway's height, over our lake
       const ph = this.app.root.findByName('google-tiles-placeholder-ground');
       if (ph?.enabled) ph.enabled = false;
@@ -319,6 +321,21 @@ export class Extra300 extends ArrivalScript {
     const world = new pc.Mat4().mul2(this._worldRoot.getWorldTransform(), m);
     const inv = world.invert();
     this.app.fire('googletiles:patch-region', `extra300-meigs-${this.entity.getGuid()}`, { inv: Array.from(inv.data), half });
+  }
+
+  /** The lake from OpenStreetMap's land/water raster, for the tiles vibe to shade as water (waterMask.js). */
+  _publishWater() {
+    if (!this._worldRoot || !this.world.osm) return;
+    this._water ??= buildWaterMasks(this.app.graphicsDevice, this.world);
+    if (!this._water) return;
+    const root = this._worldRoot.getWorldTransform();
+    const { near, far } = this._water;
+    this.app.fire('googletiles:water-mask', `extra300-meigs-${this.entity.getGuid()}`, {
+      near: { texture: near.texture, inv: maskTransform(root, near.box) },
+      far: { texture: far.texture, inv: maskTransform(root, far.box) },
+      level: this.world.water,
+      scale: 1 / this._ws,
+    });
   }
 
   _cityOptions() {
@@ -990,6 +1007,8 @@ export class Extra300 extends ArrivalScript {
   destroy() {
     this._destroyed = true;
     this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
+    this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`);
+    if (this._water) { this._water.near.texture.destroy(); this._water.far.texture.destroy(); this._water = null; }
     this._exit();
     window.removeEventListener('keydown', this._onKeyDown, true);
     window.removeEventListener('keyup', this._onKeyUp, true);

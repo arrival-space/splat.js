@@ -14,7 +14,8 @@
 //   space/entities/extra300-meigs.json      the vibe's host entity + its params
 //   space/entities/spawn-runway36.json      where visitors appear: behind the airplane, facing north
 //   room.json keys in MANAGED_ROOM_KEYS     hub hidden, far clip for the skyline
-//   space/plugins/google-3d-tiles.mjs       the Arrival library's Google 3D Tiles vibe (from the pulled reference/)
+//   space/plugins/google-3d-tiles.mjs       the Arrival library's Google 3D Tiles vibe (from the pulled reference/),
+//                                           patched with the lake's water shading (scripts/tilesWater.mjs)
 //   space/entities/google-3d-tiles.json     its host, centred on the parking spot; only its position and
 //                                           location params are ours — the API key etc. stay as set in the
 //                                           browser (this file is git-ignored: it holds the key)
@@ -28,6 +29,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildMeigs } from '../src/world/meigs.js';
+import { patchTilesWater } from './tilesWater.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = join(ROOT, 'arrival.json');
@@ -211,7 +213,14 @@ async function stageWorkspace(cfg) {
   const spaceDir = join(WORKSPACE, 'space');
   stage(spaceDir, cfg, readFileSync(DIST, 'utf8'), await pluginDefaults());
   const room = JSON.parse(readFileSync(join(spaceDir, 'room.json'), 'utf8'));
-  stageGoogleTiles(spaceDir, cfg, existsSync(TILES_SRC) ? readFileSync(TILES_SRC, 'utf8') : null, parkingSpot(), room.data?.worldScale ?? 1);
+  // the library's vibe, with the lake shaded as water from our OSM mask (scripts/tilesWater.mjs)
+  let tilesSrc = existsSync(TILES_SRC) ? readFileSync(TILES_SRC, 'utf8') : null;
+  if (tilesSrc) {
+    const patched = patchTilesWater(tilesSrc);
+    if (!patched.ok) console.warn('google-3d-tiles: the library changed, staged without the water shading (scripts/tilesWater.mjs)');
+    tilesSrc = patched.src;
+  }
+  stageGoogleTiles(spaceDir, cfg, tilesSrc, parkingSpot(), room.data?.worldScale ?? 1);
 }
 
 /** Where the airplane parks, on the ellipsoid: the Google tiles' anchor. */
