@@ -25,8 +25,11 @@ const FRAMES = path.join(path.dirname(OUT), 'intro-frames');
 const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`, ...a);
 
 (async () => {
-  fs.rmSync(FRAMES, { recursive: true, force: true });
+  // RESUME=1 keeps the frames already rendered and carries on after the last one
+  const RESUME = process.env.RESUME === '1';
+  if (!RESUME) fs.rmSync(FRAMES, { recursive: true, force: true });
   fs.mkdirSync(FRAMES, { recursive: true });
+  const have = RESUME ? fs.readdirSync(FRAMES).filter((f) => /^f\d{5}\.jpg$/.test(f)).length : 0;
   const browser = await chromium.launch({
     executablePath: process.env.PW_CHROMIUM || undefined, headless: true,
     args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
@@ -89,7 +92,13 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
 
   const total = Math.ceil((await page.evaluate(() => window.vibe.constructor.INTRO_LENGTH || 24.5) + TAIL) * FPS);
   log(`rendering ${total} frames at ${FPS} fps`);
-  for (let i = 0; i < total; i++) {
+  if (have) {
+    // replay the film's first frames without drawing them: the airplane (engine start and all) ends up
+    // exactly where it was when frame `have` was due
+    await page.evaluate(({ n, dt }) => { for (let i = 0; i < n; i++) window.vibe.update(dt); }, { n: have, dt: 1 / FPS });
+    log(`resuming at frame ${have}`);
+  }
+  for (let i = have; i < total; i++) {
     await page.evaluate((dt) => new Promise((done) => {
       window.vibe.update(dt);
       requestAnimationFrame(() => requestAnimationFrame(done));
