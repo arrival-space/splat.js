@@ -171,16 +171,16 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
   const rw = areas.find((a) => a.kind === 'runway');
   if (rw) {
     for (const end of [-1, 1]) {
-      for (let k = 0; k < 90; k++) {
+      for (let k = 0; k < 46; k++) {
         const r = (q) => hash(k * 7 + q, end + 5, seed + 21);
-        const fromThr = 90 + 480 * r(0) ** 1.6;               // most in the first few hundred metres
+        const fromThr = 150 + 380 * r(0) ** 1.4;              // past the aiming point, most in the first few hundred metres
         const v0 = end * (L2 - fromThr);                      // touch-down point
         const track = 1.6 + r(1) * 4.4;                       // main-gear track: light aircraft to bizjets
-        const off = (r(2) - 0.5) * 7;                         // landed off the centreline
-        const len = 6 + r(3) * 38;
-        const ang = (r(4) - 0.5) * 0.035;                     // drifting a touch on contact
-        const wid = 0.16 + r(5) * 0.22;
-        const dark = 34 + r(6) * 46;
+        const off = (r(2) - 0.5) * 6;                         // landed off the centreline
+        const len = 18 + r(3) * 55;                           // long, fading streaks
+        const ang = (r(4) - 0.5) * 0.02;                      // drifting a touch on contact
+        const wid = 0.14 + r(5) * 0.16;
+        const dark = 22 + r(6) * 30;
         for (const side of [-1, 1]) {
           const u0 = off + side * track / 2;
           // along the landing direction: toward the far end (v decreasing for the north end)
@@ -249,6 +249,22 @@ export function grassMacro({ u, v, width }, w = 512, h = 1024, seed = 5) {
   });
 }
 
+/**
+ * A tileable normal map for the asphalt's grain, from the same stones as asphaltDetail: the sun picks out
+ * the aggregate, and the paint over it keeps a little of the texture.
+ */
+export function asphaltNormal(S = 256, seed = 7, strength = 2.2) {
+  const hgt = (i, j) => {
+    const x = (((i % S) + S) % S) / S * 32, y = (((j % S) + S) % S) / S * 32;
+    return vnoise(x * 2, y * 2, seed, 64) * 0.7 + vnoise(x * 8, y * 8, seed + 3, 256) * 0.3;
+  };
+  return image(S, S, (i, j) => {
+    const dx = (hgt(i + 1, j) - hgt(i - 1, j)) * strength, dy = (hgt(i, j + 1) - hgt(i, j - 1)) * strength;
+    const l = Math.hypot(dx, dy, 1);
+    return [128 + (-dx / l) * 127, 128 + (dy / l) * 127, 128 + (1 / l) * 127];
+  });
+}
+
 /** Mean brightness of an image (0–255), for tests. */
 export function meanLuma(img, x0 = 0, y0 = 0, x1 = img.width, y1 = img.height) {
   let s = 0, n = 0;
@@ -272,10 +288,10 @@ export function paintWear(under, seed = 13) {
     const luma = 0.299 * under.data[k] + 0.587 * under.data[k + 1] + 0.114 * under.data[k + 2];
     // clean asphalt here is ~105: anything darker is rubber, stains or sealant and shows on the paint too
     let f = Math.min(1, Math.pow(luma / 105, 1.6));
-    f = 0.25 + 0.75 * f;
+    f = 0.78 + 0.22 * f;                       // paint holds its white better than the asphalt round it
     const scuff = fbm(i / 9, j / 9, seed, 3);
     f *= 0.9 + 0.1 * scuff;
-    if (vnoise(i / 1.7, j / 1.7, seed + 1) > 0.83) f *= 0.5;   // flaked: asphalt shows through
+    if (vnoise(i / 1.7, j / 1.7, seed + 1) > 0.86) f *= 0.7;   // flaked: asphalt shows through
     const v = 255 * f;
     return [v, v, v];
   });

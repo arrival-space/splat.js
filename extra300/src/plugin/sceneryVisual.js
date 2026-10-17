@@ -4,6 +4,7 @@
 import { buildScenery } from '../render/scenery.js';
 import { material, meshEntity } from './pcMesh.js';
 import { groundMaterial } from './groundMaterial.js';
+import { glassMaterial, metalMaterial } from './finishes.js';
 
 export class SceneryVisual {
   constructor(app, parent, world) {
@@ -12,11 +13,14 @@ export class SceneryVisual {
     this.city = new pc.Entity('StandInCity');
     this.root.addChild(this.city);
     const parts = buildScenery(world);
+    this.tower = parts.tower;            // the beacon's and the obstruction light's places, for the lights
     const textured = [];
     for (const part of parts) {
       if (!part.mesh.vertexCount) continue;
       const flat = ['lake', 'mainland', 'island', 'runway', 'markings', 'taxiLine'].includes(part.name);
-      let mat = material(part.color);
+      let mat = part.finish === 'glass' ? glassMaterial(app.graphicsDevice, part.color)
+        : part.finish === 'metal' ? metalMaterial(app.graphicsDevice, part.color)
+          : part.finish === 'mirror' ? metalMaterial(app.graphicsDevice, part.color, true) : material(part.color);
       if (part.bias || part.cullBack) {
         mat = mat.clone();
         if (part.bias) { mat.depthBias = part.bias; mat.slopeDepthBias = part.bias; }

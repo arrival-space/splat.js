@@ -18,6 +18,7 @@ import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
 import { Lasers } from './lasers.js';
 import { CockpitDisplay } from './cockpitDisplay.js';
+import { LightsVisual } from './lightsVisual.js';
 import { CameraRig } from '../render/cameraRig.js';
 import { fromNE } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
@@ -107,6 +108,8 @@ export class Extra300 extends ArrivalScript {
 
     this.scenery = new SceneryVisual(this.app, this._worldRoot, this.world);
     this.scenery.visible = this.showScenery;
+    this.lights = new LightsVisual(this.app, this._worldRoot, this.world, this.scenery.tower);
+    this.lights.visible = this.showScenery;
     // the carrier, anchored in the lake east of the island: its deck joins the ground
     this.carrier = buildCarrier(this.world);
     if (this.showCarrier) this.world.attachCarrier(this.carrier);
@@ -790,6 +793,7 @@ export class Extra300 extends ArrivalScript {
   update(dt) {
     if (!this.isEnabled) return;
     this.hud.tick();
+    this._lightsTick(dt);
     this._googleTick(dt);
     if (this.city && this.city.queue.length) {
       this.city.tick(this._flying ? 3 : 8);
@@ -879,6 +883,18 @@ export class Extra300 extends ArrivalScript {
     }
   }
 
+  /** The airfield's changing lights: the PAPIs need to know where the eye is. */
+  _lightsTick(dt) {
+    if (!this.showScenery) return;
+    const cam = ArrivalSpace.getCamera?.();
+    let eye = null;
+    if (cam) {
+      const p = cam.getPosition(), o = this._worldRoot.getPosition(), ws = this._ws;
+      eye = [(p.x - o.x) / ws, (p.y - o.y) / ws, (p.z - o.z) / ws];
+    }
+    this.lights.update(dt, eye);
+  }
+
   postUpdate() {
     if (this._flying) this._applyCamera();
   }
@@ -950,7 +966,7 @@ export class Extra300 extends ArrivalScript {
   }
 
   onPropertyChanged(name) {
-    if (name === 'showScenery') { this.scenery.visible = this.showScenery; if (this.city) this.city.visible = this.showScenery; }
+    if (name === 'showScenery') { this.scenery.visible = this.showScenery; this.lights.visible = this.showScenery; if (this.city) this.city.visible = this.showScenery; }
     if (name === 'showCarrier') {
       this.carrierVisual.visible = this.showCarrier;
       this.world.attachCarrier(this.showCarrier ? this.carrier : null);
@@ -991,6 +1007,7 @@ export class Extra300 extends ArrivalScript {
     this.scenery.destroy();
     this.city?.destroy();
     this.carrierVisual.destroy();
+    this.lights.destroy();
     this.lasers.destroy();
     this.display?.destroy();
     this._sky?.destroy();

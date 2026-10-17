@@ -2,7 +2,7 @@
 // the variation (sRGB) under a small tileable detail layer for the grain
 // (overlay, grey-centred), both mapped in runway metres (see render/groundTextures.js).
 
-import { asphaltDetail, grassDetail, grassMacro, paintWear, runwayMacro } from '../render/groundTextures.js';
+import { asphaltDetail, asphaltNormal, grassDetail, grassMacro, paintWear, runwayMacro } from '../render/groundTextures.js';
 
 function upload(device, img, { srgb, repeat }) {
   const c = document.createElement('canvas');
@@ -37,7 +37,10 @@ function pavedMacro(kind, L, W, paved) {
 
 const details = new Map();
 function detail(device, kind) {
-  if (!details.has(kind)) details.set(kind, upload(device, kind === 'grass' ? grassDetail() : asphaltDetail(), { srgb: false, repeat: true }));
+  if (!details.has(kind)) {
+    const img = kind === 'grass' ? grassDetail() : kind === 'asphaltNormal' ? asphaltNormal() : asphaltDetail();
+    details.set(kind, upload(device, img, { srgb: false, repeat: true }));
+  }
   return details.get(kind);
 }
 
@@ -69,9 +72,15 @@ export function groundMaterial(device, kind, rw, paved, bias = 0, paint = null) 
   m.diffuseDetailMap = detail(device, base === 'grass' ? 'grass' : 'asphalt');
   m.diffuseDetailMapTiling = new pc.Vec2(1 / period, 1 / period);
   m.diffuseDetailMode = pc.DETAILMODE_OVERLAY;
+  if (base !== 'grass') {
+    // the aggregate's relief, at the detail layer's scale: the sun glints off it
+    m.normalMap = detail(device, 'asphaltNormal');
+    m.normalMapTiling = new pc.Vec2(1 / period, 1 / period);
+    m.bumpiness = paint ? 0.35 : 0.7;
+  }
   m.useMetalness = true;
   m.metalness = 0;
-  m.gloss = base === 'grass' ? 0.2 : paint ? 0.4 : 0.3;
+  m.gloss = base === 'grass' ? 0.2 : paint ? 0.45 : 0.36;
   m.cull = pc.CULLFACE_NONE;
   if (bias) { m.depthBias = bias; m.slopeDepthBias = bias; }
   m.update();

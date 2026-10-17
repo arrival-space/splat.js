@@ -71,8 +71,8 @@ export const MEIGS = {
     { name: 'Adler Planetarium', at: [41.8663, -87.6068], h: 22, w: 50, d: 50, kind: 'dome', color: '#c8b48c' },
     { name: 'Soldier Field', at: [41.8623, -87.6167], h: 30, w: 170, d: 260, kind: 'stadium', color: '#cfcac0' },
     { name: 'McCormick Place Lakeside', at: [41.8512, -87.6155], h: 25, w: 250, d: 220, kind: 'box', color: '#2b2b2b' },
-    { name: 'Meigs Terminal', at: [41.8597, -87.6096], h: 8, w: 70, d: 22, kind: 'box', color: '#d8d4cb' },
-    { name: 'Meigs Tower', at: [41.8605, -87.6097], h: 22, w: 7, d: 7, kind: 'tower', color: '#d8d4cb' },
+    // the control tower (render/tower.js models it): its cab's eye height, for the tower view
+    { name: 'Meigs Tower', at: [41.85865, -87.60981], h: 18, w: 7, d: 7, kind: 'tower', color: '#d8d4cb' },
   ],
   // where the Loop's fabric of mid-rises goes (procedural blocks) [approx]
   downtown: { south: 41.8730, north: 41.8960, west: -87.6420, east: -87.6190, minH: 25, maxH: 210, seed: 1982 },

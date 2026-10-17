@@ -4,6 +4,7 @@
 
 import { triangulate } from '../world/geo.js';
 import { fromNE, MeshBuilder, rng } from './geometry.js';
+import { buildTower } from './tower.js';
 
 export const PALETTE = {
   water: '#2f5d7c',
@@ -57,31 +58,56 @@ function rwQuad(mb, rw, a0, a1, c0, c1, y) {
   mb.quad(P(a0, c0), P(a0, c1), P(a1, c1), P(a1, c0));
 }
 
-// 7-segment-ish runway numerals: segments as [x0, y0, x1, y1] in a 4 × 7 cell
-const SEG = {
-  a: [0, 7, 4, 7], b: [4, 7, 4, 3.5], c: [4, 3.5, 4, 0], d: [0, 0, 4, 0], e: [0, 0, 0, 3.5], f: [0, 3.5, 0, 7], g: [0, 3.5, 4, 3.5],
+// Runway designators in the FAA's numeral shapes (AC 150/5340-1: 60 ft high, 20 ft wide, 5 ft strokes):
+// each digit a few stroked paths in a 20 × 60 ft cell (x across, y along from its base), arcs as ellipses
+const ell = (cx, cy, rx, ry, a0, a1, n = 20) => Array.from({ length: n + 1 }, (_, k) => {
+  const a = ((a0 + ((a1 - a0) * k) / n) * Math.PI) / 180;
+  return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)];
+});
+const GLYPHS = {
+  1: [[[10, 2.5], [10, 57.5], [4, 51]], [[4.5, 2.5], [15.5, 2.5]]],
+  3: [[[3, 55.5], [17, 57.5], [9.5, 34]], ell(10, 17.5, 7.5, 15, 75, -200)],
+  6: [ell(10, 16, 7.5, 13.5, 0, 360, 28), [[2.5, 16], [2.5, 30], [10, 47], [15.5, 57.5]]],
+  8: [ell(10, 45, 6.6, 12.5, 0, 360, 26), ell(10, 17, 7.5, 14.5, 0, 360, 28)],
+  0: [ell(10, 30, 7.5, 27.5, 0, 360, 36)],
+  2: [[...ell(10, 45, 7.5, 12.5, 160, -20), [2.5, 2.5], [17.5, 2.5]]],
+  4: [[[13, 2.5], [13, 57.5], [2.5, 20], [17.5, 20]]],
+  5: [[[16.5, 57.5], [4, 57.5], [3, 33], ...ell(9.5, 18, 8, 15.5, 115, -200)]],
+  7: [[[2.5, 57.5], [17.5, 57.5], [7, 2.5]]],
+  9: [ell(10, 44, 7.5, 13.5, 0, 360, 28), [[17.5, 44], [17.5, 30], [10, 13], [4.5, 2.5]]],
 };
-const DIGITS = {
-  0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg',
-};
+
+/** A painted stroke along a polyline of runway-local points [along, across] (m). */
+function strokeOn(mb, rw, pts, width, y) {
+  const P = (al, ac) => {
+    const n = rw.centre[0] + al * rw.dir[0] - ac * rw.dir[1];
+    const e = rw.centre[1] + al * rw.dir[1] + ac * rw.dir[0];
+    return fromNE(n, e, y);
+  };
+  for (let i = 0; i < pts.length - 1; i++) {
+    const [a0, c0] = pts[i], [a1, c1] = pts[i + 1];
+    const l = Math.hypot(a1 - a0, c1 - c0) || 1;
+    // extended a little at both ends so the joints of a curve close
+    const ea = ((a1 - a0) / l) * width * 0.25, ec = ((c1 - c0) / l) * width * 0.25;
+    const na = (-(c1 - c0) / l) * width / 2, nc = ((a1 - a0) / l) * width / 2;
+    const A = P(a0 - ea + na, c0 - ec + nc), B = P(a0 - ea - na, c0 - ec - nc);
+    const C = P(a1 + ea - na, c1 + ec - nc), D = P(a1 + ea + na, c1 + ec + nc);
+    // facing up whichever way the path runs
+    const up = (B[0] - A[0]) * (C[2] - A[2]) - (B[2] - A[2]) * (C[0] - A[0]) < 0;
+    if (up) mb.quad(A, B, C, D); else mb.quad(A, D, C, B);
+  }
+}
 
 /** Paint a runway designator; `at` = along-runway position of the numbers' base, facing `facing` (+1 = 36). */
 function numerals(mb, rw, text, at, facing, y) {
-  const h = 60 * FT, w = 20 * FT, stroke = 5 * FT, gap = 10 * FT;
+  const w = 20 * FT, gap = 10 * FT, stroke = 5 * FT;
   const total = text.length * w + (text.length - 1) * gap;
   [...text].forEach((ch, i) => {
     const x0 = -total / 2 + i * (w + gap);
-    for (const s of DIGITS[ch]) {
-      const [sx0, sy0, sx1, sy1] = SEG[s];
-      // cell → runway-local; across = x (right of the landing direction), along = y
-      const ac0 = x0 + (sx0 / 4) * w, ac1 = x0 + (sx1 / 4) * w;
-      const al0 = (sy0 / 7) * h, al1 = (sy1 / 7) * h;
-      const vertical = ac0 === ac1;
-      const A0 = vertical ? ac0 - stroke / 2 : Math.min(ac0, ac1) - stroke / 2;
-      const A1 = vertical ? ac0 + stroke / 2 : Math.max(ac0, ac1) + stroke / 2;
-      const L0 = vertical ? Math.min(al0, al1) : al0 - stroke / 2;
-      const L1 = vertical ? Math.max(al0, al1) : al0 + stroke / 2;
-      rwQuad(mb, rw, at + facing * L0, at + facing * L1, facing * A0, facing * A1, y);
+    for (const path of GLYPHS[ch]) {
+      // cell feet → runway-local metres: across = x (right of the landing direction), along = y
+      const pts = path.map(([x, yy]) => [at + facing * yy * FT, facing * (x0 + x * FT)]);
+      strokeOn(mb, rw, pts, stroke, y);
     }
   });
 }
@@ -94,31 +120,56 @@ function runway(world) {
   const L = rw.length, W = rw.width;
   const taxi = new MeshBuilder();
   rwQuad(asphalt, rw, -L / 2 - 30, L / 2 + 30, -W / 2, W / 2, 0.03);
-  // threshold bars: 12 stripes for a 150 ft runway, 150 ft long
-  const stripeW = 5.75 * FT, n = 6, len = 150 * FT;
+  // FAA markings for a 150 ft non-precision runway (AC 150/5340-1): threshold stripes, designators,
+  // aiming points, centre line, side stripes; yellow chevrons on the blast pads beyond each end
+  const stripeW = 5.75 * FT, n = 6, len = 150 * FT, thr = 6;             // the threshold this far in from the pavement's end
   for (const end of [-1, 1]) {
-    const a0 = end * (L / 2 - 6), a1 = end * (L / 2 - 6 - len);
+    const a0 = end * (L / 2 - thr), a1 = end * (L / 2 - thr - len);
     for (let i = 0; i < n; i++) {
       for (const side of [-1, 1]) {
-        const c0 = side * (3 + i * (stripeW * 2)), c1 = c0 + side * stripeW;
+        // 12 stripes, 5.75 ft wide and as far apart, the middle pair either side of the centre line
+        const c0 = side * (5.75 * FT / 2 + 5.75 * FT * 0.5 + i * stripeW * 2), c1 = c0 + side * stripeW;
         rwQuad(paint, rw, Math.min(a0, a1), Math.max(a0, a1), Math.min(c0, c1), Math.max(c0, c1), 0.05);
       }
     }
+    // the runway's end: a 10 ft bar right across at the threshold
+    rwQuad(paint, rw, Math.min(end * (L / 2 - thr), end * (L / 2 - thr + 3)), Math.max(end * (L / 2 - thr), end * (L / 2 - thr + 3)), -W / 2 + 0.6, W / 2 - 0.6, 0.05);
+    // aiming points: 400 ft in (landing distance under 4,200 ft), 150 ft long, 30 ft wide, 72 ft apart inside
+    const ap0 = end * (L / 2 - thr - 400 * FT), ap1 = end * (L / 2 - thr - 550 * FT);
+    for (const side of [-1, 1]) {
+      const c0 = side * 36 * FT, c1 = side * 66 * FT;
+      rwQuad(paint, rw, Math.min(ap0, ap1), Math.max(ap0, ap1), Math.min(c0, c1), Math.max(c0, c1), 0.05);
+    }
+    // blast pad chevrons beyond the end, pointing at the runway
+    for (let k = 0; k < 2; k++) {
+      const tip = end * (L / 2 + 3 + k * 14), arm = end * (L / 2 + 3 + k * 14 + 12);
+      for (const side of [-1, 1]) strokeOn(yel, rw, [[tip, 0], [arm, side * (W / 2 - 1.5)]], 3 * FT, 0.05);
+    }
   }
-  // designators: 36 at the south end (read landing north), 18 at the north end
-  numerals(paint, rw, '36', -L / 2 + 6 + len + 20, 1, 0.05);
-  numerals(paint, rw, '18', L / 2 - 6 - len - 20, -1, 0.05);
-  // centreline: 120 ft stripes, 80 ft gaps
-  const start = -L / 2 + 6 + len + 20 + 60 * FT + 20;
-  for (let a = start; a + 120 * FT < L / 2 - 6 - len - 20 - 60 * FT - 20; a += 200 * FT) {
-    rwQuad(paint, rw, a, a + 120 * FT, -0.45, 0.45, 0.05);
-  }
-  // side stripes
-  for (const side of [-1, 1]) rwQuad(paint, rw, -L / 2, L / 2, side * (W / 2 - 1.5), side * (W / 2 - 0.6), 0.05);
+  // designators: 36 at the south end (read landing north), 18 at the north end, 20 ft past the stripes
+  numerals(paint, rw, '36', -L / 2 + thr + len + 20 * FT, 1, 0.05);
+  numerals(paint, rw, '18', L / 2 - thr - len - 20 * FT, -1, 0.05);
+  // centre line: 120 ft stripes, 80 ft gaps, 3 ft wide, from the designators' tops to the far ones
+  const cl0 = -L / 2 + thr + len + 100 * FT, cl1 = L / 2 - thr - len - 100 * FT;
+  for (let a = cl0; a + 120 * FT <= cl1; a += 200 * FT) rwQuad(paint, rw, a, a + 120 * FT, -0.45, 0.45, 0.05);
+  // side stripes, 3 ft, along both edges
+  for (const side of [-1, 1]) rwQuad(paint, rw, -L / 2 + thr, L / 2 - thr, side * (W / 2 - 1.5), side * (W / 2 - 0.6), 0.05);
   // parallel taxiway on the west side and the apron by the terminal
   rwQuad(taxi, rw, -L / 2 + 40, L / 2 - 40, -W / 2 - 75, -W / 2 - 60, 0.03);
   rwQuad(yel, rw, -L / 2 + 40, L / 2 - 40, -W / 2 - 67.7, -W / 2 - 67.3, 0.05);
-  for (const at of [-L / 2 + 50, -60, L / 2 - 50]) rwQuad(taxi, rw, at - 9, at + 9, -W / 2 - 75, -W / 2, 0.025);
+  for (const at of [-L / 2 + 50, -60, L / 2 - 50]) {
+    rwQuad(taxi, rw, at - 9, at + 9, -W / 2 - 75, -W / 2, 0.025);
+    // the connector's centre line, and its hold-short marking 125 ft from the runway's centre line:
+    // two solid lines on the taxiway side, two dashed on the runway side
+    rwQuad(yel, rw, at - 0.2, at + 0.2, -W / 2 - 67.5, -W / 2 - 0.5, 0.05);
+    const hold = -125 * FT;
+    for (let k = 0; k < 4; k++) {
+      const c = hold - 0.15 - k * 0.3 - (k > 1 ? 0.3 : 0);
+      // (k counts away from the runway)
+      if (k >= 2) rwQuad(yel, rw, at - 8.5, at + 8.5, c - 0.15, c, 0.052);
+      else for (let d = -8.5; d < 8.5; d += 1.8) rwQuad(yel, rw, at + d, at + Math.min(8.5, d + 0.9), c - 0.15, c, 0.052);
+    }
+  }
   rwQuad(taxi, rw, 20, 230, -W / 2 - 160, -W / 2 - 75, 0.03);
   // the paved areas in runway coordinates (u across, v along), for the textures
   const areas = [
@@ -243,7 +294,8 @@ function downtown(world) {
   return { light, dark, glass };
 }
 
-const MEIGS_BUILDINGS = new Set(['Meigs Terminal', 'Meigs Tower']);
+// modelled in detail (render/tower.js), not as a landmark box
+const MODELLED = new Set(['Meigs Tower']);
 
 /**
  * Every static scenery part: { name, color, mesh, layer }.
@@ -279,8 +331,13 @@ export function buildScenery(world) {
   parts.push({ name: 'taxiLine', color: PALETTE.yellow, mesh: rw.yel, layer: 'core', bias: -3, texture: 'paint-taxiway', paint: PALETTE.yellow });
 
   const byColor = new Map();
+  const tw = world.landmarks.find((l) => l.name === 'Meigs Tower');
+  const tower = buildTower(tw.ne);
+  for (const p of tower.parts) parts.push({ ...p, layer: 'core' });
+  parts.tower = tower;
   for (const l of world.landmarks) {
-    const layer = MEIGS_BUILDINGS.has(l.name) ? 'core' : 'city';
+    if (MODELLED.has(l.name)) continue;
+    const layer = 'city';
     const k = `${layer}${l.color}`;
     if (!byColor.has(k)) byColor.set(k, { layer, color: l.color, mesh: new MeshBuilder() });
     building(byColor.get(k).mesh, l);
