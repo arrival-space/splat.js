@@ -6,8 +6,10 @@
 
 import { buildCarrierModel, lensLights } from '../render/carrierModel.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
+import { deckMacro, DECK_UV, hullTexture } from '../render/carrierTextures.js';
 import { material, meshEntity } from './pcMesh.js';
 import { paintMaterial } from './finishes.js';
+import { detail, upload } from './groundMaterial.js';
 
 const WIRE_R = 0.06;    // m: a 1 3/8 in cross-deck pendant, drawn a little thicker to be seen
 
@@ -38,13 +40,11 @@ export class CarrierVisual {
     this.root.setLocalPosition(o[0], o[1], o[2]);
     this.root.setLocalEulerAngles(0, (-carrier.heading * 180) / Math.PI, 0);
     const dev = app.graphicsDevice;
+    this._owned = [];
     for (const part of buildCarrierModel(carrier, water)) {
-      const mat = part.name === 'hull' || part.name === 'island' || part.name === 'mast' ? paintMaterial(dev, part.color, true) : material(part.color);
-      // the markings lie on the deck: pull them forward in depth so they never flicker into it
-      const flat = part.name.startsWith('deck') && !part.deck;
-      let m = mat;
-      if (flat) { m = mat.clone(); m.depthBias = -2; m.slopeDepthBias = -2; m.update(); }
-      meshEntity(app, this.root, part.name, part.mesh, m, { castShadows: !part.name.startsWith('deck'), receiveShadows: true });
+      const m = this._material(dev, part, carrier, water);
+      const flat = part.finish === 'mark';
+      meshEntity(app, this.root, part.name, part.mesh, m, { castShadows: !flat && part.finish !== 'deck', receiveShadows: true });
     }
     // the wires: two halves each, so a caught one can be drawn as a V
     const wireMat = material('#2b2d30');
@@ -74,6 +74,53 @@ export class CarrierVisual {
     this._v = new pc.Vec3();
     this._q = new pc.Quat();
     this.update(null);
+  }
+
+  /** The material for one of the model's parts, by its finish. */
+  _material(dev, part, carrier, water) {
+    const own = (m) => { this._owned.push(m); return m; };
+    switch (part.finish) {
+      case 'hull': {
+        // the hull's strip of plating, repeating along the ship, the boot top at the waterline
+        const m = new pc.StandardMaterial();
+        const tex = upload(dev, hullTexture({ along: 64, height: carrier.deckH - water + 2, below: 2 }), { srgb: true, repeat: true });
+        tex.addressV = pc.ADDRESS_CLAMP_TO_EDGE;
+        this._owned.push(tex);
+        m.diffuseMap = tex;
+        m.useMetalness = true;
+        m.metalness = 0;
+        m.gloss = 0.42;
+        m.update();
+        return own(m);
+      }
+      case 'deck': {
+        // the deck's one big image, the non-skid's grit on top as a normal map every 2 m
+        const m = new pc.StandardMaterial();
+        const tex = upload(dev, deckMacro(carrier.data), { srgb: true, repeat: false });
+        this._owned.push(tex);
+        m.diffuseMap = tex;
+        m.normalMap = detail(dev, 'asphaltNormal');
+        m.normalMapTiling = new pc.Vec2((DECK_UV.t[1] - DECK_UV.t[0]) / 2, (DECK_UV.s[1] - DECK_UV.s[0]) / 2);
+        m.bumpiness = 0.8;
+        m.useMetalness = true;
+        m.metalness = 0;
+        m.gloss = 0.3;
+        m.update();
+        return own(m);
+      }
+      case 'paint': return paintMaterial(dev, part.color, true);
+      case 'glass': return paintMaterial(dev, part.color, false);
+      case 'emissive': return material(part.color, { emissive: '#ffd890' });
+      case 'mark': {
+        // the markings lie on the deck: pulled forward in depth so they never flicker into it
+        const m = material(part.color).clone();
+        m.depthBias = -2; m.slopeDepthBias = -2;
+        m.gloss = 0.4;
+        m.update();
+        return own(m);
+      }
+      default: return material(part.color);
+    }
   }
 
   set visible(v) {
@@ -130,6 +177,7 @@ export class CarrierVisual {
 
   destroy() {
     this.root.destroy();
+    for (const m of this._owned) m.destroy?.();
     for (const w of this.wires) for (const h of w.halves) h.destroy();
   }
 }

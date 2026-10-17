@@ -4,7 +4,7 @@
 
 import { asphaltDetail, asphaltNormal, grassDetail, grassMacro, paintWear, runwayMacro } from '../render/groundTextures.js';
 
-function upload(device, img, { srgb, repeat }) {
+export function upload(device, img, { srgb, repeat }) {
   const c = document.createElement('canvas');
   c.width = img.width; c.height = img.height;
   c.getContext('2d').putImageData(new ImageData(img.data, img.width, img.height), 0, 0);
@@ -36,7 +36,7 @@ function pavedMacro(kind, L, W, paved) {
 }
 
 const details = new Map();
-function detail(device, kind) {
+export function detail(device, kind) {
   if (!details.has(kind)) {
     const img = kind === 'grass' ? grassDetail() : kind === 'asphaltNormal' ? asphaltNormal() : asphaltDetail();
     details.set(kind, upload(device, img, { srgb: false, repeat: true }));

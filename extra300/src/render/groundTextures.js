@@ -12,7 +12,7 @@
 // v = along (m, north positive). Row 0 of an image is v = max (top of the canvas).
 
 // ── noise ──────────────────────────────────────────────────────────────────
-function hash(x, y, seed) {
+export function hash(x, y, seed) {
   let h = (x * 374761393 + y * 668265263 + seed * 2147483647) | 0;
   h = Math.imul(h ^ (h >>> 13), 1274126177);
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
@@ -20,7 +20,7 @@ function hash(x, y, seed) {
 const smooth = (t) => t * t * (3 - 2 * t);
 
 /** Value noise in [0, 1]; periodic with period p (lattice cells) when p > 0. */
-function vnoise(x, y, seed, p = 0) {
+export function vnoise(x, y, seed, p = 0) {
   const xi = Math.floor(x), yi = Math.floor(y);
   const fx = smooth(x - xi), fy = smooth(y - yi);
   const w = (i) => (p ? ((i % p) + p) % p : i);
@@ -43,7 +43,7 @@ export function fbm(x, y, seed, octaves = 4, p = 0) {
 
 const clamp255 = (v) => (v < 0 ? 0 : v > 255 ? 255 : v);
 
-function image(w, h, shade) {
+export function image(w, h, shade) {
   const px = new Uint8ClampedArray(w * h * 4);
   for (let j = 0; j < h; j++) {
     for (let i = 0; i < w; i++) {
