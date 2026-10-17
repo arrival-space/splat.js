@@ -11,7 +11,7 @@ const COLORS = { white: '#fff6e0', green: '#3dff7a', red: '#ff3a2a', blue: '#3a6
 
 let disc = null;
 /** A soft disc: a bright core falling off to nothing at the edge. */
-function discTexture(device) {
+export function discTexture(device) {
   if (disc) return disc;
   const S = 64;
   const c = document.createElement('canvas');

@@ -18,9 +18,9 @@ import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
 import { Lasers } from './lasers.js';
 import { CockpitDisplay } from './cockpitDisplay.js';
-import { LightsVisual } from './lightsVisual.js';
+import { discTexture, LightsVisual } from './lightsVisual.js';
 import { CameraRig } from '../render/cameraRig.js';
-import { fromNE } from '../render/geometry.js';
+import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
 import { AIRCRAFT_OPTIONS, nextProfile, PROFILES, profileByTitle } from './profiles.js';
 import { SceneryVisual } from './sceneryVisual.js';
@@ -980,6 +980,62 @@ export class Extra300 extends ArrivalScript {
     const p = cam.getPosition();
     this._sky.setPosition(p.x, p.y, p.z);
     this._sky.setLocalScale(r, r, r);
+    this._skySun(p);
+  }
+
+  /**
+   * The sun in our sky where the scene's light comes from: the dome's haze brightened round it
+   * (re-coloured when the light turns) and a disc with its glow. The light is the room's main
+   * directional one (found again now and then: the room may set it up after us).
+   */
+  _skySun(camPos) {
+    this._sunLookup = (this._sunLookup ?? 0) - 1;
+    if (this._sunLookup <= 0 || !this._sunLight?.entity?.enabled) {
+      this._sunLookup = 120;
+      this._sunLight = this.app.root.findComponents('light').find((l) => l.type === 'directional' && l.enabled && l.entity.enabled) || null;
+    }
+    const L = this._sunLight;
+    const up = L ? L.entity.up : null;                       // a directional light shines down its -Y
+    const sun = up && up.y > -0.1 ? [up.x, up.y, up.z] : null;
+    const last = this._skySunDir;
+    if (!!sun !== !!last || (sun && sun[0] * last[0] + sun[1] * last[1] + sun[2] * last[2] < 0.99996)) {
+      this._skySunDir = sun;
+      const mi = this._sky.render.meshInstances[0];
+      const old = mi.mesh;
+      mi.mesh = toMesh(this.app.graphicsDevice, buildSkyDome(32, 14, sun));
+      old.destroy();
+    }
+    if (!this._sunDisc) {
+      const m = new pc.StandardMaterial();
+      m.diffuse = new pc.Color(0, 0, 0);
+      m.emissive = new pc.Color(1, 0.96, 0.86);
+      m.emissiveIntensity = 1.5;
+      m.emissiveMap = discTexture(this.app.graphicsDevice);
+      m.opacityMap = m.emissiveMap;
+      m.opacityMapChannel = 'a';
+      m.blendType = pc.BLEND_ADDITIVEALPHA;
+      m.depthWrite = false;
+      m.useLighting = false;
+      m.useFog = false;
+      m.cull = pc.CULLFACE_NONE;
+      m.update();
+      const mb = new MeshBuilder({ uv: true });
+      const n = [0, 0, 1];
+      const i = mb.vertex([-1, -1, 0], n, [0, 0]); mb.vertex([1, -1, 0], n, [1, 0]); mb.vertex([1, 1, 0], n, [1, 1]); mb.vertex([-1, 1, 0], n, [0, 1]);
+      mb.indices.push(i, i + 1, i + 2, i, i + 2, i + 3);
+      this._sunDisc = new pc.Entity('SkySun');
+      this._sunDisc.addComponent('render', { meshInstances: [new pc.MeshInstance(toMesh(this.app.graphicsDevice, mb), m)], castShadows: false, receiveShadows: false });
+      this._sky.addChild(this._sunDisc);
+      this._sunDiscMat = m;
+    }
+    this._sunDisc.enabled = !!sun;
+    if (sun) {
+      // a little inside the dome, facing the camera: the bright core about 1° across, its glow 5°
+      this._sunDisc.setLocalPosition(sun[0] * 0.97, sun[1] * 0.97, sun[2] * 0.97);
+      const s = Math.tan(2.6 * Math.PI / 180) * 0.97;
+      this._sunDisc.setLocalScale(s, s, s);
+      this._sunDisc.lookAt(camPos);
+    }
   }
 
   onPropertyChanged(name) {
@@ -1030,6 +1086,7 @@ export class Extra300 extends ArrivalScript {
     this.lasers.destroy();
     this.display?.destroy();
     this._sky?.destroy();
+    this._sunDiscMat?.destroy();
     this._worldRoot.destroy();
     disposeMaterials();
     disposeGroundTextures();

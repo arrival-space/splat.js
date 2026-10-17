@@ -15,7 +15,7 @@
 //   space/entities/spawn-runway36.json      where visitors appear: behind the airplane, facing north
 //   room.json keys in MANAGED_ROOM_KEYS     hub hidden, far clip for the skyline
 //   space/plugins/google-3d-tiles.mjs       the Arrival library's Google 3D Tiles vibe (from the pulled reference/),
-//                                           patched with the lake's water shading (scripts/tilesWater.mjs)
+//                                           patched: lake water, room sun on the atmosphere's (scripts/tilesWater.mjs)
 //   space/entities/google-3d-tiles.json     its host, centred on the parking spot; only its position and
 //                                           location params are ours — the API key etc. stay as set in the
 //                                           browser (this file is git-ignored: it holds the key)
@@ -217,7 +217,7 @@ async function stageWorkspace(cfg) {
   let tilesSrc = existsSync(TILES_SRC) ? readFileSync(TILES_SRC, 'utf8') : null;
   if (tilesSrc) {
     const patched = patchTilesWater(tilesSrc);
-    if (!patched.ok) console.warn('google-3d-tiles: the library changed, staged without the water shading (scripts/tilesWater.mjs)');
+    if (!patched.ok) console.warn('google-3d-tiles: the library changed, staged without our water and sun patches (scripts/tilesWater.mjs)');
     tilesSrc = patched.src;
   }
   stageGoogleTiles(spaceDir, cfg, tilesSrc, parkingSpot(), room.data?.worldScale ?? 1);

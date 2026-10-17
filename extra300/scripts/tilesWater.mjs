@@ -1,8 +1,9 @@
-// tilesWater.mjs — the water shading added to the Arrival library's Google 3D Tiles vibe
-// ("googletiles:water-mask", see src/plugin/waterMask.js). The library's file is staged into the
-// space on every sync; this patches it there: each edit is anchored on the library's own text, and
-// if one no longer finds its anchor (the library changed) the vibe is staged as it is, with a
-// warning, rather than half-patched.
+// tilesWater.mjs — what this repo adds to the Arrival library's Google 3D Tiles vibe: the lake shaded
+// as water from a published land/water mask ("googletiles:water-mask", see src/plugin/waterMask.js),
+// and the room's own directional light turned onto the atmosphere's sun, so the shadows agree with
+// the sky. The library's file is staged into the space on every sync; this patches it there: each
+// edit is anchored on the library's own text, and if one no longer finds its anchor (the library
+// changed) the vibe is staged as it is, with a warning, rather than half-patched.
 
 const PATCHES = [
   {
@@ -11,7 +12,7 @@ const PATCHES = [
       "// tonemapped + gamma corrected). GLSL + WGSL so it works on WebGL2 and WebGPU.",
     ].join('\n'),
     insert: [
-      "// ── Water from a land/water mask (another vibe publishes it: googletiles:water-mask) ──",
+      "// \u2500\u2500 Water from a land/water mask (another vibe publishes it: googletiles:water-mask) \u2500\u2500",
       "// Google's lake is a satellite photo: flat, with the day's glints and boats baked in. Where a",
       "// published mask says water (and the tile is near the water's level, so a pier or a ship standing",
       "// in it keeps its photo), the tile is shaded as water instead: waves as a sum of travelling",
@@ -137,7 +138,7 @@ const PATCHES = [
     ].join('\n'),
     insert: [
       "    _waterMasks = new Map();        // id -> { near: {texture, inv}, far: {texture, inv}, level, scale }",
-      "    _waterBlank = null;             // 1×1 stand-in for the mask samplers until one is published",
+      "    _waterBlank = null;             // 1\u00d71 stand-in for the mask samplers until one is published",
       "    _waterTime = 0;",
       "    _onWaterMask = null;",
       "    _onWaterClear = null;",
@@ -151,7 +152,7 @@ const PATCHES = [
     insert: [
       "        // Water from a land/water mask another vibe publishes (see WATER_GLSL):",
       "        //   app.fire(\"googletiles:water-mask\", id, { near: { texture, inv }, far: { texture, inv }, level, scale })",
-      "        // near/far.inv: world -> (u, v, height) as a column-major 4×4; level: the water's height in the",
+      "        // near/far.inv: world -> (u, v, height) as a column-major 4\u00d74; level: the water's height in the",
       "        // near frame; scale: metres per world unit. \"googletiles:water-mask-clear\" (id) removes it.",
       "        this._onWaterMask = (id, mask) => {",
       "            if (!id || !mask?.near?.texture || !mask?.far?.texture) return;",
@@ -179,6 +180,16 @@ const PATCHES = [
   },
   {
     after: [
+      "",
+      "        if (this.atmosphere) this._updateAtmosphereUniforms(local);",
+    ].join('\n'),
+    insert: [
+      "        this._sunAlignTimer = (this._sunAlignTimer ?? 0) - 0.1;",
+      "        if (this._sunAlignTimer <= 0) { this._sunAlignTimer = 2; this._alignRoomSuns(); }",
+    ].join('\n'),
+  },
+  {
+    after: [
       "        if (this._onPatchRegion) this.app.off(\"googletiles:patch-region\", this._onPatchRegion, this);",
       "        if (this._onPatchClear) this.app.off(\"googletiles:patch-region-clear\", this._onPatchClear, this);",
     ].join('\n'),
@@ -186,6 +197,10 @@ const PATCHES = [
       "        if (this._onWaterMask) this.app.off(\"googletiles:water-mask\", this._onWaterMask, this);",
       "        if (this._onWaterClear) this.app.off(\"googletiles:water-mask-clear\", this._onWaterClear, this);",
       "        if (this._waterBlank) { this._waterBlank.destroy(); this._waterBlank = null; }",
+      "        if (this._roomSunRot) {",
+      "            for (const [e, q] of this._roomSunRot) if (e.light) e.setRotation(q);",
+      "            this._roomSunRot = null;",
+      "        }",
     ].join('\n'),
   },
   {
@@ -205,7 +220,7 @@ const PATCHES = [
       "        this._setWaterOn(mat);",
       "    }",
       "",
-      "    // ── Water mask (see WATER_GLSL) ──",
+      "    // \u2500\u2500 Water mask (see WATER_GLSL) \u2500\u2500",
       "    _activeWater() {",
       "        let mask = null;",
       "        for (const m of this._waterMasks.values()) mask = m;",
@@ -243,6 +258,45 @@ const PATCHES = [
       "        if (cam) {",
       "            const p = cam.getPosition();",
       "            scope.resolve(\"uWaterCam\").setValue([p.x, p.y, p.z]);",
+      "        }",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "     */",
+      "    _updateSunLight() {",
+    ].join('\n'),
+    insert: [
+      "        this._alignRoomSuns();",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "        this._sunEntity.setLocalRotation(q);",
+      "        this._sunEntity.light.intensity = dy > 0 ? 1.4 * Math.min(1, dy * 4) : 0;",
+    ].join('\n'),
+    insert: [
+      "    }",
+      "",
+      "    /**",
+      "     * The room's own directional lights shine from where the atmosphere draws the sun: turned onto",
+      "     * it (their rotations kept, and given back when the vibe goes), so shadows and highlights on",
+      "     * everything else in the space agree with the sky.",
+      "     */",
+      "    _alignRoomSuns() {",
+      "        if (!this.atmosphere || !this._sunDirLocal) return;",
+      "        const [dx, dy, dz] = this._sunDirLocal;",
+      "        const up = this.entity.getWorldTransform().transformVector(new pc.Vec3(dx, dy, dz)).normalize();",
+      "        // a directional light shines down its entity's -Y: turn +Y onto the sun",
+      "        const q = new pc.Quat();",
+      "        const axis = new pc.Vec3(up.z, 0, -up.x);",
+      "        if (axis.length() > 1e-6) q.setFromAxisAngle(axis.normalize(), Math.acos(Math.max(-1, Math.min(1, up.y))) * pc.math.RAD_TO_DEG);",
+      "        else if (up.y < 0) q.setFromAxisAngle(pc.Vec3.RIGHT, 180);",
+      "        this._roomSunRot ??= new Map();",
+      "        for (const l of this.app.root.findComponents(\"light\")) {",
+      "            if (l.type !== \"directional\" || l.entity === this._sunEntity) continue;",
+      "            if (!this._roomSunRot.has(l.entity)) this._roomSunRot.set(l.entity, l.entity.getRotation().clone());",
+      "            l.entity.setRotation(q);",
       "        }",
     ].join('\n'),
   },
