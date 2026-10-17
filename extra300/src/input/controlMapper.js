@@ -26,6 +26,7 @@ export const BINDINGS = {
   trimDown: [';'],  // nose down
   brakes: ['.', 'b'],
   starter: ['k'],
+  fire: [' '],      // the X-wing's lasers (held)
 };
 // one-shot actions handled by the plugin
 export const ACTIONS = {
@@ -105,6 +106,7 @@ export class ControlMapper {
     this.speedbrake = false;   // the jet's speed brake switch (J); B holds it out in the air
     this.gear = 1;             // the gear handle (G), down
     this.hook = 0;             // the hook handle (/), up
+    this.sfoils = 0;           // the X-wing's S-foils (J): closed
     this.autoRudder = opts.autoRudder ?? true;   // the pilot's feet: keeps the ball centred in the air
     this._autoRud = 0;
     this.easy = opts.easy ?? false;
@@ -275,6 +277,8 @@ export class ControlMapper {
     if (flight.onGround) this.gear = 1;
     controls.gear = this.gear;
     controls.hook = this.hook;
+    controls.sfoils = this.sfoils;
+    controls.fire = P('fire') || !!(raw.pad?.buttons?.[0]) || !!raw.fire;
     return controls;
   }
 

@@ -15,6 +15,17 @@ export class JetHud {
   constructor(canvas) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
+    this.setColor(GREEN, DIM);
+  }
+
+  /** The symbology's colour (the Eagle's green, the X-wing's targeting orange). */
+  setColor(main, dim = null) {
+    this.green = main;
+    const h = main.replace('#', '');
+    const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+    this.dim = dim || `rgba(${r},${g},${b},0.55)`;
+    this.glow = `rgba(${r},${g},${b},0.5)`;
+    this.faint = `rgba(${r},${g},${b},0.18)`;
   }
 
   resize(cssWidth, cssHeight, dpr = 1) {
@@ -37,10 +48,10 @@ export class JetHud {
     const u = Math.min(W, H * 1.4) / 100;            // layout unit
     const cx = W / 2, cy = H * 0.47;
     const ppd = H / (s.fov || 70);                      // pixels per degree, vertically
-    ctx.strokeStyle = GREEN;
-    ctx.fillStyle = GREEN;
+    ctx.strokeStyle = this.green;
+    ctx.fillStyle = this.green;
     ctx.lineWidth = Math.max(1.2, u * 0.16);
-    ctx.shadowColor = 'rgba(40,255,120,0.55)';
+    ctx.shadowColor = this.glow;
     ctx.shadowBlur = u * 0.5;
     ctx.font = `600 ${Math.round(u * 1.9)}px "Helvetica Neue", Arial, sans-serif`;
     ctx.textBaseline = 'middle';
@@ -139,22 +150,22 @@ export class JetHud {
       [`α ${(v.aoa || 0).toFixed(1)}`, !!s.stall],
     ];
     lines.forEach(([t, warn], i) => {
-      ctx.fillStyle = warn ? '#ffd166' : GREEN;
+      ctx.fillStyle = warn ? '#ffd166' : this.green;
       ctx.fillText(t, lx - u * 0.5, cy + u * (4.5 + i * 2.6));
     });
-    ctx.fillStyle = GREEN;
+    ctx.fillStyle = this.green;
     ctx.textAlign = 'left';
     const vs = Math.round((v.vsi || 0) / 100) * 100;
     ctx.fillText(`${vs >= 0 ? '+' : ''}${vs}`, rx + u * 0.5, cy + u * 4.5);
-    ctx.fillStyle = DIM;
+    ctx.fillStyle = this.dim;
     ctx.fillText('KCAS', lx - u * 9, cy - u * 3.2);
     ctx.fillText('FT', rx + u * 0.3, cy - u * 3.2);
-    ctx.fillStyle = GREEN;
+    ctx.fillStyle = this.green;
     if (s.stall) {
       ctx.textAlign = 'center';
       ctx.fillStyle = '#ffd166';
       ctx.fillText('AOA', cx, cy + fieldH / 2 - u * 2);
-      ctx.fillStyle = GREEN;
+      ctx.fillStyle = this.green;
     }
 
     // ── engine and configuration strip along the bottom ──
@@ -166,7 +177,7 @@ export class JetHud {
     items.push(`FF ${Math.round((v.fuelFlow || 0) / 100) * 100}`);
     items.push(`FUEL ${Math.round((v.fuelLb || 0) / 10) * 10}`);
     const thr = s.throttle ?? 0, det = s.abDetent ?? 0.8;
-    items.push(thr > det ? `AB ${Math.round(((thr - det) / (1 - det)) * 5) || 1}` : `THR ${Math.round((thr / det) * 100)}%`);
+    items.push(thr > det ? `${s.boostLabel || 'AB'} ${Math.round(((thr - det) / (1 - det)) * 5) || 1}` : `THR ${Math.round((thr / det) * 100)}%`);
     ctx.font = `700 ${Math.round(u * 1.8)}px "Helvetica Neue", Arial, sans-serif`;
     const gapX = u * 2.2;
     const widths = items.map((t) => ctx.measureText(t).width);
@@ -176,21 +187,22 @@ export class JetHud {
     ctx.fillRect(x - u, sy - u * 1.9, total + 2 * u, u * 3.8);
     ctx.textAlign = 'left';
     items.forEach((t, i) => {
-      ctx.fillStyle = i === 4 && thr > det ? '#ffb86b' : GREEN;
+      ctx.fillStyle = i === 4 && thr > det ? '#ffb86b' : this.green;
       ctx.fillText(t, x, sy);
       x += widths[i] + gapX;
     });
     // gear: three lights, green down and locked, amber in transit; speed brake, flaps, brake, pause
     const g = s.gearPos ?? 1;
     const lamp = (label, on, col) => {
-      ctx.fillStyle = on ? col : 'rgba(109,255,158,0.18)';
+      ctx.fillStyle = on ? col : this.faint;
       ctx.fillText(label, x, sy);
       x += ctx.measureText(label).width + u * 1.2;
     };
-    lamp(g > 0.99 ? '●●●' : g < 0.01 ? '○○○' : '◐◐◐', g > 0.01, g > 0.99 ? GREEN : '#ffb86b');
-    lamp('SB', (s.speedbrake || 0) > 0.05, '#ffb86b');
-    lamp('FLAP', (s.flaps || 0) > 0.05, GREEN);
-    lamp('HOOK', (s.hook || 0) > 0.05, '#ffb86b');
+    lamp(g > 0.99 ? '●●●' : g < 0.01 ? '○○○' : '◐◐◐', g > 0.01, g > 0.99 ? this.green : '#ffb86b');
+    if (s.speedbrake != null) lamp('SB', s.speedbrake > 0.05, '#ffb86b');
+    if (s.flaps != null) lamp('FLAP', s.flaps > 0.05, this.green);
+    if (s.hook != null) lamp('HOOK', s.hook > 0.05, '#ffb86b');
+    if (s.sfoils != null) lamp('S-FOILS', s.sfoils > 0.05, s.sfoils > 0.95 ? '#ff4a3a' : '#ffb86b');
     lamp('PARK', !!s.parkingBrake, '#ffd166');
     if (!s.engineRunning) lamp('ENG OFF', true, '#ffd166');
     if (s.paused) lamp('PAUSED', true, '#7fb0ff');

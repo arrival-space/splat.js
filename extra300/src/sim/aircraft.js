@@ -1,6 +1,7 @@
 // aircraft.js — the flight model: one rigid body with a spinning propeller
-// (the Extra) or a pair of jets (the F-15), stepped at a fixed 480 Hz no
-// matter what the display does.
+// (the Extra), a pair of jets (the F-15) or four fusial engines with
+// repulsorlifts (the X-wing), stepped at a fixed 480 Hz no matter what the
+// display does.
 //
 // Earth frame is local NED (north, east, down) about a datum point; the
 // world module decides where that is (Meigs Field). Everything in here is
@@ -28,6 +29,7 @@ export function defaultControls() {
     brakeL: 0, brakeR: 0, parkingBrake: false,
     gear: 1, speedbrake: 0,          // handles: gear down, speed brake in (jets)
     hook: 0,                         // tail hook handle: up
+    sfoils: 0,                       // the X-wing's S-foils: 0 closed (cruise), 1 open (attack position)
   };
 }
 
@@ -56,6 +58,7 @@ export class Aircraft {
     this.gearPos = 1;            // 0 up .. 1 down and locked
     this.speedbrakePos = 0;
     this.hookPos = 0;            // 0 stowed .. 1 down (on its stop)
+    this.sfoilPos = 0;           // the X-wing's wings: 0 closed .. 1 in attack position
     this.hookAngle = 0;          // rad below the stowed position, where the deck lets it be
     this.arrestor = null;        // a carrier's arresting gear (sim/arrestor.js), if there is one to land on
 
@@ -268,6 +271,45 @@ export class Aircraft {
           add(M, cross([hk.pivot[0] - this.cg[0], hk.pivot[1] - this.cg[1], hk.pivot[2] - this.cg[2]], fb), M);
         }
       }
+    }
+
+    if (sp.sfoils) {
+      // the S-foils swing open in a second, and never with the wings' tips near the ground
+      const want = this.gear.onGround ? 0 : c.sfoils || 0;
+      this.sfoilPos = clamp(this.sfoilPos + clamp(want - this.sfoilPos, -h, h), 0, 1);
+      c.sfoilPos = this.sfoilPos;
+    }
+    if (sp.thrusters) {
+      // reaction-control thrusters: the stick asks for a roll, pitch and yaw rate and they drive the
+      // body there (on the wheels they have little to push against)
+      const t = sp.thrusters, I = this.inertia;
+      const k = t.gain * (this.gear.onGround ? 0.3 : 1);
+      // the pitch rate a turn at this speed can take within the g limit
+      const qMax = Math.min(t.pitch, (t.gLimit * G0) / Math.max(tas, 1));
+      M[0] += I.xx * k * (clamp(c.aileron || 0, -1, 1) * t.roll - st.omega[0]);
+      M[1] += I.yy * k * (clamp(c.elevator || 0, -1, 1) * qMax - st.omega[1]);
+      M[2] += I.zz * k * (clamp(c.rudder || 0, -1, 1) * t.yaw - st.omega[2]);
+    }
+    if (sp.stabilizers && tas > 2) {
+      // flight stabilizers: they push the airflow's sideways and up-down parts back toward the nose, so
+      // the ship goes where it points (a fighter's wing does it with lift; these do it at any speed)
+      const s = sp.stabilizers, m = this.mass;
+      let fy = -m * s.rate * vAirB[1], fz = -m * s.rate * vAirB[2];
+      const f = Math.hypot(fy, fz), lim = m * G0 * s.maxG;
+      if (f > lim) { fy *= lim / f; fz *= lim / f; }
+      F[1] += fy; F[2] += fz;
+    }
+    if (sp.repulsor && this.engine.running) {
+      // repulsorlifts carry the weight when slow and fade out as the wings' speed takes over; near the
+      // ground they also cushion the vertical speed, so it settles instead of dropping
+      const r = sp.repulsor;
+      // parked or taxiing at idle they rest, and it sits on its gear
+      const resting = this.gear.onGround && (c.throttle || 0) < 0.2;
+      const carry = resting ? 0 : r.share * clamp(1 - tas / r.fadeSpeed, 0, 1);
+      const agl = -st.pos[2] - this.ground(st.pos[0], st.pos[1]).h;
+      const near = clamp(1 - agl / r.cushionHeight, 0, 1);
+      const up = this.mass * (G0 * carry - r.damping * near * st.vel[2] * (st.vel[2] > 0 ? 1 : 0.3));
+      add(F, qRotateInv(st.q, [0, 0, -up]), F);
     }
 
     const gear = this.gear.compute(st, this.cg, c, this.ground, h);

@@ -123,6 +123,7 @@ export class Hud {
       mk('view', 'View', { right: '12px', top: 'calc(22% + 48px)' });
       mk('brake', 'Brake', { right: '12px', top: 'calc(42% + 56px)' });
       mk('reset', 'Reset', { right: '12px', top: 'calc(42% + 104px)' });
+      mk('fire', 'Fire', { right: '12px', top: 'calc(42% + 8px)', background: 'rgba(196,40,30,0.75)' });
     }
     this.layout();
   }
@@ -268,6 +269,7 @@ export class Hud {
     this.easyButton.style.display = flying ? 'block' : 'none';
     this.controlsButton.style.display = flying ? 'block' : 'none';
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
+    if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
     if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); }
   }
 

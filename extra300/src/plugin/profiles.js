@@ -5,16 +5,18 @@
 
 import EXTRA from '../sim/aircraft/extra300l.js';
 import F15 from '../sim/aircraft/f15c.js';
+import XW from '../sim/aircraft/xwing.js';
+import { buildXwingModel } from '../render/xwingModel.js';
 import { buildExtraModel } from '../render/extraModel.js';
 import { buildF15Model } from '../render/f15Model.js';
 import { INTROS } from '../render/intro.js';
-import { CockpitSound, JetSound } from '../render/audio.js';
+import { CockpitSound, JetSound, XwingSound } from '../render/audio.js';
 
 const VIEWS_HELP = ['Views', 'V  cockpit · chase · tower · fly-by    drag the mouse to look (chase: orbit)    wheel: zoom    C  centre'];
 const COMMON_TAIL = [
   ['Intro', 'Space / Enter / Esc skips it'],
   ['Mouse yoke', 'Y  fly with the mouse (screen centre = neutral)'],
-  ['Aircraft', 'T  switch Extra 300L ⇄ F-15C Eagle (back on runway 36)'],
+  ['Aircraft', 'T  next airplane: Extra 300L → F-15C Eagle → X-wing (back on runway 36)'],
   ['Sim', 'P  pause    Backspace  back to runway 36    Esc  leave the airplane'],
 ];
 
@@ -101,6 +103,48 @@ export const PROFILES = {
       ['HUD', 'I  show / hide    N  set altimeter'],
       ...COMMON_TAIL,
       ['Gamepad', 'left stick flies, right stick rudder / throttle, triggers brake'],
+    ],
+  },
+
+  xwing: {
+    id: 'xwing',
+    title: 'X-wing',
+    spec: XW,
+    buildModel: buildXwingModel,
+    intro: INTROS.xwing,
+    display: 'hud',
+    hudColor: '#ff7a4a',
+    boostLabel: 'BOOST',
+    Sound: XwingSound,
+    chaseSize: 1.5,
+    demo: null,
+    lasers: true,
+    seat: { forward: XW.eye[0] + 0.22, height: XW.eye[2] + 1.1, lean: 14 },
+    quick: [
+      'Hold <b>R</b> (past 80 %: boost) and it lifts off on its repulsors, keep it straight with <b>Q</b> / <b>E</b>',
+      '<b>J</b> S-foils into attack position, <b>Space</b> fires the lasers, <b>G</b> gear',
+      '<b>W A S D</b> or the arrows fly it, <b>V</b> changes the view, <b>Esc</b> gets out',
+    ],
+    quickMobile: [
+      'Engines at 75 %: it rolls, lifts off and its S-foils open by themselves',
+      '<b>Left stick</b>: down climbs, up dives, sideways banks',
+      '<b>Fire</b> shoots the lasers · <b>right stick</b>: throttle ↑↓ (the top fifth is boost)',
+    ],
+    easyOn: 'Easy mode: limits held, rudder and gear handled for you',
+    easyTitle: 'Easy mode (L): angle of attack and g limited, rudder, bank and gear handled',
+    help: [
+      ['Pitch', 'S / ↓ nose up    W / ↑ nose down    (reaction thrusters: a rate for the stick)'],
+      ['Roll', 'A / ←  left    D / →  right'],
+      ['Easy mode', 'L  on / off: limits held, rudder and bank held, the gear by itself'],
+      ['Rudder', 'Q  left    E  right    (Z / X too)'],
+      ['Throttle', 'R  more    F  less    Home idle    End full boost    (past 80 %: boost)'],
+      ['S-foils', 'J  attack position / closed (closed: a little faster)    Space  lasers (held, S-foils open)'],
+      ['Gear', 'G  up / down    B  wheel brakes'],
+      ['Engines', 'M  fuel off / on    K  starter (hold)'],
+      VIEWS_HELP,
+      ['HUD', 'I  show / hide    N  set altimeter'],
+      ...COMMON_TAIL,
+      ['Gamepad', 'left stick flies, right stick rudder / throttle, A fires, triggers brake'],
     ],
   },
 };

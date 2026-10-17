@@ -1,7 +1,7 @@
 // bake-model.mjs — a Blender model (scripts/blender/<id>.py → data/model/<id>.json) packed into
-// the module the vibe ships with: src/render/data/<id>Model.js (the Extra 300L, the F-15C).
+// the module the vibe ships with: src/render/data/<id>Model.js (the Extra 300L, the F-15C, the X-wing).
 //
-//   node scripts/bake-model.mjs [extra300l | f15c | data/model/<id>.json]
+//   node scripts/bake-model.mjs [extra300l | f15c | xwing | data/model/<id>.json]
 //
 // Layout (little-endian): u32 header length, header JSON (part list with counts), padding to 4,
 // then three streams: positions Int16 (1/posScale m, body axes: 1/4096 for the Extra's ±8 m, 1/2048 for
@@ -49,6 +49,7 @@ export function packModel(model, posScale = POS_SCALE) {
 const MODELS = {
   extra300l: { script: 'extra300l.py', out: 'extra300lModel.js', name: 'EXTRA300L_MODEL' },
   f15c: { script: 'f15c.py', out: 'f15cModel.js', name: 'F15C_MODEL', posScale: 2048 },
+  xwing: { script: 'xwing.py', out: 'xwingModel.js', name: 'XWING_MODEL', posScale: 2048 },
 };
 
 function main() {

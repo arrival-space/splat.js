@@ -51,6 +51,19 @@ setting, or `?aircraft=f15` on the space's address. It lines up on runway 36 in 
 | stall, gear and flaps down, 17.2 t | 98 KCAS, no departure | — |
 | burner take-off, lift-off | ~350 m, 10 s | ~270 m (900 ft) |
 
+## The X-wing
+
+The third airplane: an Incom T-65B X-wing. Pick it with **⇄** or **T**, or put `?aircraft=xwing` on the address.
+
+- **Model.** Built in Blender from Troy Vigil's three-view schematic, scaled to its 12.5 m length: the long nose, the faceted canopy, R2 in his socket, and four S-foils, each with its engine, KX9 cannon and Red Squadron markings. **J** swings the S-foils into attack position. They stay closed on the ground.
+- **Performance is invented, and it is fast.** Four fusial engines give 60 kN each, or 110 kN on boost past 80 % throttle, with no loss with height or speed. Top speed is Mach 1.9 on the deck in attack position, Mach 2.0 with the S-foils closed for cruise, and past Mach 3.3 high up, where a heat barrier stops it.
+- **It flies like a starfighter:**
+  - Repulsorlifts carry it when slow: it hovers, sinks gently and settles onto its gear.
+  - Reaction thrusters turn the stick into roll, pitch and yaw rates: 190 °/s roll, held to 9 g.
+  - Flight stabilizers send it where its nose points at any speed.
+- **Lasers:** **Space** (a pad's A, or *Fire* on a phone) fires the four cannons in alternating pairs, with the S-foils open.
+- **Cockpit and film:** a targeting-orange HUD with BOOST and S-FOILS, its own engine scream, and its own intro film.
+
 ## The aircraft carrier
 
 USS Nimitz (CVN-68) rides at anchor in the lake, 3.4 km east of Meigs. Its angled deck points
@@ -155,7 +168,7 @@ direct stick positions.
 ```bash
 cd extra300
 npm install
-npm test               # 136 unit, component and flight-test checks (~10 s)
+npm test               # 150 unit, component and flight-test checks
 npm run build          # → dist/extra300-meigs.mjs, the single-file vibe
 npm run serve          # http://localhost:8740/tests/harness/  (PlayCanvas + an Arrival stand-in)
 npm run test:e2e       # headless Chromium on the local stand-in: boards, rolls, screenshots into dist/shots/
@@ -164,6 +177,7 @@ npm run osm:fetch      # download OSM + City of Chicago data (data/osm/raw/, not
 npm run osm:bake       # → src/world/data/chicagoOsm.js, the compact city the vibe ships with
 BPY=bpyenv/bin/python npm run model   # Blender (pip install bpy) → src/render/data/extra300lModel.js, plus dist/extra300l.glb / .blend
 BPY=bpyenv/bin/python npm run model:f15   # the F-15C → src/render/data/f15cModel.js, plus dist/f15c.glb / .blend
+BPY=bpyenv/bin/python npm run model:xwing # the X-wing → src/render/data/xwingModel.js
 ```
 
 `test:arrival` opens a public space in headless Chromium and blocks every
@@ -200,11 +214,11 @@ Anything edited in the browser stays as it is.
 
 ```
 src/sim/          flight model: atmosphere, aero, engine, propeller, gear, rigid body (no PlayCanvas)
-src/sim/aircraft/ the airplanes as data (extra300l.js, f15c.js), every number tagged [pub] / [est] / [tune]
+src/sim/aircraft/ the airplanes as data (extra300l.js, f15c.js, xwing.js), every number tagged [pub] / [est] / [tune]
 src/instruments/  gauge physics, the Extra's canvas instrument panel, the F-15's HUD
 src/world/        WGS-84 local frame, Meigs Field, the OSM codec and the baked city
 src/render/       engine-free geometry: the Extra (baked from Blender), Meigs, procedural buildings, ground textures, sky, camera maths, sound
-scripts/blender/  the Extra 300L and the F-15C modelled in Blender, by script (kit.py: the shared helpers)
+scripts/blender/  the Extra 300L, the F-15C and the X-wing modelled in Blender, by script (kit.py: the shared helpers)
 src/input/        keyboard / gamepad / touch / mouse-yoke → controls
 src/plugin/       the Arrival.Space glue (the only code that touches pc / ArrivalSpace)
 tests/            node --test suites, the flight-test autopilot, the browser harness

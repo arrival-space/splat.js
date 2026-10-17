@@ -16,6 +16,7 @@ import { buildMeigs } from '../world/meigs.js';
 import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
+import { Lasers } from './lasers.js';
 import { CameraRig } from '../render/cameraRig.js';
 import { fromNE } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
@@ -67,7 +68,7 @@ export class Extra300 extends ArrivalScript {
 
   static properties = {
     isEnabled: { title: 'Enabled' },
-    aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 on the address)', options: AIRCRAFT_OPTIONS },
+    aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 or ?aircraft=xwing on the address)', options: AIRCRAFT_OPTIONS },
     startRunway: { title: 'Start: runway 36, 18, or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
     showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
     engineRunningAtStart: { title: 'Engine running at start' },
@@ -120,7 +121,7 @@ export class Extra300 extends ArrivalScript {
     // ?aircraft=f15 (or f15c, extra) on the address picks the airplane, as the setting does
     try {
       const want = new URLSearchParams(location.search).get('aircraft');
-      if (want) this.aircraft = /f-?15/i.test(want) ? PROFILES.f15c.title : PROFILES.extra300l.title;
+      if (want) this.aircraft = /f-?15/i.test(want) ? PROFILES.f15c.title : /x-?wing/i.test(want) ? PROFILES.xwing.title : PROFILES.extra300l.title;
     } catch { /* no address to read */ }
     this._sky = null;
 
@@ -130,6 +131,8 @@ export class Extra300 extends ArrivalScript {
     this.cameraRig = new CameraRig({ eye: this.profile.spec.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
     this._placeDeckCamera();
     this.hud = new Hud(this.getUIContainer(), this.profile, this.isMobile, (tag, opts) => this.createUI(tag, opts));
+    this.lasers = new Lasers(this.app, this._worldRoot);
+    this._fire = false;
     this._buildAircraft(this.profile);
     this.hud.setEasy(this.mapper.easy);
 
@@ -165,6 +168,10 @@ export class Extra300 extends ArrivalScript {
     if (this.hud.buttons.exit) this.hud.buttons.exit.onclick = () => this._exit();
     if (this.hud.buttons.view) this.hud.buttons.view.onclick = () => this._action('view');
     if (this.hud.buttons.reset) this.hud.buttons.reset.onclick = () => this._action('reset');
+    if (this.hud.buttons.fire) {
+      this.hud.buttons.fire.ontouchstart = () => { this._fire = true; };
+      this.hud.buttons.fire.ontouchend = () => { this._fire = false; };
+    }
     if (this.hud.buttons.brake) {
       this.hud.buttons.brake.ontouchstart = () => this._keys.add('b');
       this.hud.buttons.brake.ontouchend = () => this._keys.delete('b');
@@ -204,6 +211,10 @@ export class Extra300 extends ArrivalScript {
     this.sound?.stop();
     this.sound = new profile.Sound();
     this.hud.setProfile(profile, nextProfile(profile));
+    this.hud.jetHud.setColor(profile.hudColor || '#6dff9e');
+    this.lasers?.hide();
+    this.mapper.sfoils = 0;
+    this._sfoilHint = false;
     // tap / click the airplane to board
     this._unsubClick = ArrivalSpace.onEntityClick?.(this.visual.root, () => { if (!this._flying) this._enter(); });
     this._resetToRunway();
@@ -439,6 +450,7 @@ export class Extra300 extends ArrivalScript {
       if (this.ac.gear.onGround && this.ac.groundSpeed < 2 && !this.ac.damage.crashed) {
         if (!this.ac.engine.running) this.ac.setEngineRunning(true);
         this.ac.controls.parkingBrake = false;
+        if (this.ac.spec.sfoils) this.mapper.sfoils = 1;   // they open by themselves once it is off the ground
         this.mapper.throttle = MOBILE_THROTTLE;
       }
     }
@@ -714,6 +726,12 @@ export class Extra300 extends ArrivalScript {
         this.hud.flash(this.mapper.gear ? 'Gear down' : 'Gear up', 1.2);
         break;
       case 'speedbrake':
+        if (this.ac.spec.sfoils) {
+          // the X-wing's J: the S-foils
+          this.mapper.sfoils = this.mapper.sfoils ? 0 : 1;
+          this.hud.flash(this.ac.gear.onGround ? 'S-foils open once you are off the ground' : this.mapper.sfoils ? 'S-foils in attack position' : 'S-foils closed: cruise', 1.5);
+          break;
+        }
         if (!this.ac.jet) break;
         this.mapper.speedbrake = !this.mapper.speedbrake;
         this.hud.flash(this.mapper.speedbrake ? 'Speed brake out' : 'Speed brake in', 1.2);
@@ -784,6 +802,7 @@ export class Extra300 extends ArrivalScript {
       left: this.isMobile ? this.getLeftStick() : null,
       right: this.isMobile ? this.getRightStick() : null,
       yoke: this._yoke ? { x: this._mouse.x, y: this._mouse.y } : null,
+      fire: this._fire,
     };
     if (this._demo && raw.pad && raw.pad.axes.slice(0, 4).some((a) => Math.abs(a) > 0.35)) this._stopDemo();
     if (this._intro) {
@@ -802,6 +821,14 @@ export class Extra300 extends ArrivalScript {
     const v = this.instruments.update(this.ac, dt);
     this.visual.update(this.ac, this._paused ? 0 : dt);
     if (this.showCarrier) this.carrierVisual.update(this.ac);
+    if (this.profile.lasers) {
+      if (this.lasers.update(this.ac, !!this.ac.controls.fire && !this._intro && !this._demo && !this._paused, this._paused ? 0 : dt)) this.sound.pew?.();
+      // a first-time hint once it is flying with its wings still closed
+      if (!this._sfoilHint && !this.isMobile && this.ac.agl > 40 && !this.mapper.sfoils) {
+        this._sfoilHint = true;
+        this.hud.flash('J: S-foils into attack position, then Space fires', 4);
+      }
+    }
 
     for (const ev of this.ac.events.splice(0)) {
       if (ev.e === 'propStrike') this.hud.flash('Prop strike! Backspace to reset', 4);
@@ -832,7 +859,10 @@ export class Extra300 extends ArrivalScript {
       if (this.profile.display === 'hud') {
         this.hud.jetHud.draw(v, {
           fov: this._pose?.fov, throttle: c.throttle, abDetent: this.ac.spec.jet.abDetent, gearPos: this.ac.gearPos,
-          speedbrake: this.ac.speedbrakePos, flaps: c.flaps, hook: this.ac.hookPos, parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running,
+          speedbrake: this.ac.spec.aero.body.speedbrakeDragArea ? this.ac.speedbrakePos : null,
+          flaps: this.ac.spec.autoFlaps ? c.flaps : null, hook: this.ac.spec.hook ? this.ac.hookPos : null,
+          sfoils: this.ac.spec.sfoils ? this.ac.sfoilPos : null, boostLabel: this.profile.boostLabel,
+          parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running,
           paused: this._paused, stall: v.stallWarning, gMax: this.ac.spec.limits.gPos, conformal: this.cameraRig.view === 'cockpit' && !this._intro,
         });
       } else {
@@ -956,6 +986,7 @@ export class Extra300 extends ArrivalScript {
     this.scenery.destroy();
     this.city?.destroy();
     this.carrierVisual.destroy();
+    this.lasers.destroy();
     this._sky?.destroy();
     this._worldRoot.destroy();
     disposeMaterials();

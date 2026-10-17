@@ -168,3 +168,32 @@ export class JetSound {
     this.nodes = null;
   }
 }
+
+/**
+ * The X-wing: the jets' synthesis pitched up into the fusial engines' scream, and the lasers' pew —
+ * a falling sweep with a crack of noise on top.
+ */
+export class XwingSound extends JetSound {
+  update(s) {
+    super.update({ ...s, rpm: s.rpm * 1.6 });
+  }
+
+  pew() {
+    const ctx = this.ctx, n = this.nodes;
+    if (!ctx || !n || this.muted) return;
+    const t = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(1900, t);
+    o.frequency.exponentialRampToValueAtTime(240, t + 0.18);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+    const f = ctx.createBiquadFilter();
+    f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.8;
+    o.connect(f).connect(g).connect(n.master);
+    o.start(t);
+    o.stop(t + 0.25);
+  }
+}

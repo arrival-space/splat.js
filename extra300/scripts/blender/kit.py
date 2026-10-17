@@ -104,7 +104,7 @@ class Kit:
                             positions=[round(c, 5) for p, _ in verts for c in p],
                             normals=[round(c, 4) for _, n in verts for c in n],
                             indices=idx)
-                for k in ('kind', 'hinge', 'axis', 'side', 'gear', 'transparent', 'parent', 'fold'):
+                for k in ('kind', 'hinge', 'axis', 'side', 'gear', 'transparent', 'parent', 'fold', 'layer'):
                     if k in meta:
                         part[k] = meta[k]
                 out.append(part)

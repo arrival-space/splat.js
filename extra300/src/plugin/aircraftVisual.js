@@ -32,6 +32,7 @@ export class AircraftVisual {
     const dev = app.graphicsDevice;
     for (const part of parts) {
       const mat = part.kind === 'abFlame' ? flameMaterial(part.color)
+        : part.kind === 'engineGlow' ? flameMaterial('#ff6a48')
         : part.kind === 'propDisc' ? material('#202226', { transparent: true, opacity: 0.07 })
           : GLASS.has(part.material) || part.name === 'canopy' ? glassMaterial(dev, part.color)
             : PAINTED.has(part.material) ? paintMaterial(dev, part.color)
@@ -50,7 +51,7 @@ export class AircraftVisual {
       const hp = fromBody(rel);
       pivot.setLocalPosition(hp[0], hp[1], hp[2]);
       (up ? up.pivot : this.root).addChild(pivot);
-      const glow = part.kind === 'propDisc' || part.kind === 'abFlame';
+      const glow = part.kind === 'propDisc' || part.kind === 'abFlame' || part.kind === 'engineGlow';
       const ent = meshEntity(app, pivot, part.name, part.mesh, mat, { castShadows: !glow, receiveShadows: !glow });
       const ax = fromBody(part.axis);
       const l = Math.hypot(ax[0], ax[1], ax[2]);
@@ -94,6 +95,15 @@ export class AircraftVisual {
         case 'rudder': angle = defl('rudder'); break;
         case 'speedbrake': angle = -SPEEDBRAKE_ANGLE * (ac.speedbrakePos || 0); break;
         case 'hook': angle = ac.hookAngle || 0; break;   // down from stowed, as far as the deck lets it
+        case 'sfoil': angle = -m.side * m.layer * (ac.spec.sfoils?.open || 0) * (ac.sfoilPos || 0); break;
+        case 'engineGlow': {
+          // the fusial engines' glow: there while they run, bigger with the power (and the boost)
+          const on = ac.engine.running;
+          m.ent.enabled = on;
+          const f = on ? 0.7 + 0.35 * Math.min(2, ac.engine.power || 0) + 0.03 * Math.sin(performance.now() * 0.04 + m.side * 3 + m.layer) : 1;
+          m.ent.setLocalScale(f, f, f);
+          continue;
+        }
         case 'gearLeg':
           // folds forward into its bay as the gear comes up; out of sight once stowed
           m.pivot.enabled = ac.gearPos > 0.02;

@@ -196,7 +196,8 @@ export class Aero {
       const Y = -q * b.sideArea * (b.sideSlope * sa * ca + 1.1 * sa * Math.abs(sa));
       const Z = -q * b.topArea * (b.topSlope * sz * ca + 1.1 * sz * Math.abs(sz));
       // the gear hanging out and the speed brake up add their own flat-plate drag
-      const extra = (b.gearDragArea || 0) * (controls.gearPos ?? 1) + (b.speedbrakeDragArea || 0) * (controls.speedbrakePos || 0);
+      const extra = (b.gearDragArea || 0) * (controls.gearPos ?? 1) + (b.speedbrakeDragArea || 0) * (controls.speedbrakePos || 0)
+        + (b.sfoilDragArea || 0) * (controls.sfoilPos || 0);
       const Dk = -q * (b.dragArea * dragK + extra) / V;
       const fx = Dk * vAir[0];
       const fy = Dk * vAir[1] + Y;

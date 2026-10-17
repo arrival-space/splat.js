@@ -10,6 +10,7 @@
 
 import EXTRA from '../sim/aircraft/extra300l.js';
 import F15 from '../sim/aircraft/f15c.js';
+import XW from '../sim/aircraft/xwing.js';
 
 const ease = (t) => t * t * t * (t * (t * 6 - 15) + 10);   // smootherstep
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -65,11 +66,30 @@ const F15_CARDS = [
   { kicker: 'Your jet', title: 'Runway 36', lines: ['Engines at idle · throttle past 80 % lights the burners'] },
 ];
 
+// ── the X-wing: the long nose, along the engines, over an S-foil to its cannon, the exhausts, the seat ──
+// (its ground ~1.7 m below R)
+const XW_EYE = XW.eye;
+const XW_SHOTS = [
+  { t0: 0, t1: 5.5, eye: [[11.6, 1.9, 0.9], [10.3, 1.3, 0.5]], at: [[7.5, 0, -0.15], [6.2, 0, -0.3]], fov: [40, 34], card: 0 },
+  { t0: 5.5, t1: 10.5, eye: [[6.0, -5.6, 0.7], [-1.2, -6.6, -0.5]], at: [[4.0, -1.0, -0.3], [-2.0, -1.6, -0.4]], fov: [44, 48], card: 1 },
+  { t0: 10.5, t1: 15.5, eye: [[2.0, 8.2, -3.4], [-2.2, 6.2, -5.0]], at: [[0.5, 4.2, -0.3], [1.5, 0, -0.4]], fov: [50, 52], card: 2 },
+  { t0: 15.5, t1: 20.5, eye: [[-9.2, -3.0, 0.9], [-8.6, 3.0, -0.6]], at: [[-3.4, 0, 0], [0, 0, -0.6]], fov: [44, 52], card: 3 },
+  { t0: 20.5, t1: 24.5, eye: [[-4.2, 0, -2.6], XW_EYE], at: [[3.0, 0, -1.0], [XW_EYE[0] + 5, 0, XW_EYE[2] + 0.05]], fov: [55, 72], card: 4 },
+];
+const XW_CARDS = [
+  { kicker: 'Incom Corporation · T-65B', title: 'X-wing', lines: ['Starfighter: a long nose, four S-foils, an astromech behind the pilot', 'Meigs Field, Chicago · runway 36'] },
+  { kicker: 'Engines', title: '4 × Incom 4L4 fusial thrust', lines: ['This sim: 60 kN each, 110 kN on boost past 80 % throttle', 'Repulsorlifts carry it when slow: it hovers'] },
+  { kicker: 'S-foils', title: '4 × KX9 laser cannons', lines: ['J swings the S-foils into attack position', 'Space fires the lasers (S-foils open)'] },
+  { kicker: 'This sim', title: 'Mach 2 on the deck', lines: ['Past Mach 3 up high, S-foils closed for cruise', 'Reaction thrusters: 220°/s roll, 9 g'] },
+  { kicker: 'Your X-wing', title: 'Runway 36', lines: ['Engines idling · R or End: throttle and boost · Space: lasers'] },
+];
+
 /** Each airplane's film: shots, captions, the starter's window, its length. */
 export const INTROS = {
   extra300l: { shots: INTRO_SHOTS, cards: INTRO_CARDS, starter: INTRO_STARTER, length: INTRO_LENGTH },
   // the jet fuel starter needs longer to bring the cores to light-off
   f15c: { shots: F15_SHOTS, cards: F15_CARDS, starter: [1.4, 7.5], length: F15_SHOTS[F15_SHOTS.length - 1].t1 },
+  xwing: { shots: XW_SHOTS, cards: XW_CARDS, starter: [1.4, 3.5], length: XW_SHOTS[XW_SHOTS.length - 1].t1 },
 };
 
 /**
