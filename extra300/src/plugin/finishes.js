@@ -42,19 +42,20 @@ const cache = new Map();
 
 /**
  * Aircraft paint: a polyurethane topcoat over the colour, glossy and clear-coated, the sky sliding
- * across it as the airplane moves (white, red, the yellow prop tips, the spinner).
+ * across it as the airplane moves (white, red, the yellow prop tips, the spinner). `satin`: a
+ * fighter's low-sheen greys, the sky only a soft sheen on them.
  */
-export function paintMaterial(device, colour) {
-  const key = `paint${colour}`;
+export function paintMaterial(device, colour, satin = false) {
+  const key = `paint${colour}${satin}`;
   if (cache.has(key)) return cache.get(key);
   cube ??= skyCube(device);
   const m = new pc.StandardMaterial();
   m.diffuse = new pc.Color().fromString(colour);
   m.useMetalness = true;
   m.metalness = 0;
-  m.gloss = 0.82;
-  m.clearCoat = 1;
-  m.clearCoatGloss = 0.93;
+  m.gloss = satin ? 0.55 : 0.82;
+  m.clearCoat = satin ? 0.25 : 1;
+  m.clearCoatGloss = satin ? 0.7 : 0.93;
   m.cubeMap = cube;
   m.reflectivity = 1;
   m.update();
@@ -93,6 +94,25 @@ export function glassMaterial(device, tint) {
   m.opacityFadesSpecular = false;   // the reflection keeps its strength where the glass is clear
   m.cull = pc.CULLFACE_NONE;
   m.update();
+  return m;
+}
+
+/** The afterburner's plume: glowing, additive, unlit, seen from both sides. */
+export function flameMaterial(colour) {
+  const key = `flame${colour}`;
+  if (cache.has(key)) return cache.get(key);
+  const m = new pc.StandardMaterial();
+  m.diffuse = new pc.Color(0, 0, 0);
+  m.emissive = new pc.Color().fromString(colour);
+  m.emissiveIntensity = 2.2;
+  m.useLighting = false;
+  m.useFog = false;
+  m.blendType = pc.BLEND_ADDITIVEALPHA;
+  m.opacity = 0.35;
+  m.depthWrite = false;
+  m.cull = pc.CULLFACE_NONE;
+  m.update();
+  cache.set(key, m);
   return m;
 }
 

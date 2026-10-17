@@ -68,8 +68,9 @@ export function lookRotation(eye, target, up = [0, 1, 0]) {
 }
 
 export class CameraRig {
-  constructor({ eye, towerPos }) {
+  constructor({ eye, towerPos, size = 1 }) {
     this.eye = eye;                 // body-axes eye point
+    this.size = size;               // the chase camera's distance, × the Extra's (the F-15 is twice its length)
     this.towerPos = towerPos;       // render-space tower cab
     this.view = 'cockpit';
     this.lookYaw = 0;
@@ -138,7 +139,7 @@ export class CameraRig {
       const sp = Math.hypot(v[0], v[1], v[2]);
       const nose = rotateVec(rot, [0, 0, -1]);
       const dir = sp > 8 ? [v[0] / sp, v[1] / sp, v[2] / sp] : nose;
-      const D = 14 * this.chaseScale, H = 3.2 * this.chaseScale;
+      const D = 14 * this.size * this.chaseScale, H = 3.2 * this.size * this.chaseScale;
       const want = [pos[0] - dir[0] * D, pos[1] - dir[1] * D + H, pos[2] - dir[2] * D];
       if (!this.chasePos) this.chasePos = want;
       const k = 1 - Math.exp(-dt * 4.5);

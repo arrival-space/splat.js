@@ -13,14 +13,14 @@ import EXTRA from '../sim/aircraft/extra300l.js';
 import { fromBody, MeshBuilder, ring } from './geometry.js';
 import { EXTRA300L_MODEL } from './data/extra300lModel.js';
 
-const POS_SCALE = 4096;   // scripts/bake-model.mjs
+const POS_SCALE = 4096;   // scripts/bake-model.mjs (a model's header may carry its own)
 
 function bytesOf(b64) {
   if (typeof atob === 'function') return Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
   return new Uint8Array(Buffer.from(b64, 'base64'));
 }
 
-/** The baked model: { eye, parts: [{ name, color, material, kind?, hinge?, axis?, side?, gear?, transparent?, mesh }] }, meshes in render axes. */
+/** A baked model: { eye, parts: [{ name, color, material, kind?, hinge?, axis?, side?, gear?, parent?, fold?, transparent?, mesh }] }, meshes in render axes. */
 export function decodeModel(b64 = EXTRA300L_MODEL) {
   const u8 = bytesOf(b64);
   const buf = u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
@@ -31,12 +31,13 @@ export function decodeModel(b64 = EXTRA300L_MODEL) {
   const P = new Int16Array(buf, head + pad, nvAll * 3);
   const I = new Uint16Array(buf, head + pad + nvAll * 6, niAll);
   const N = new Int8Array(buf, head + pad + nvAll * 6 + niAll * 2, nvAll * 3);
+  const scale = header.posScale || POS_SCALE;
   let pv = 0, pi = 0;
   const parts = header.parts.map(({ nv, ni, ...meta }) => {
     const mb = new MeshBuilder();
     for (let v = 0; v < nv; v++) {
       const k = (pv + v) * 3;
-      mb.positions.push(...fromBody([P[k] / POS_SCALE, P[k + 1] / POS_SCALE, P[k + 2] / POS_SCALE]));
+      mb.positions.push(...fromBody([P[k] / scale, P[k + 1] / scale, P[k + 2] / scale]));
       mb.normals.push(...fromBody([N[k] / 127, N[k + 1] / 127, N[k + 2] / 127]));
     }
     for (let i = 0; i < ni; i++) mb.indices.push(I[pi + i]);

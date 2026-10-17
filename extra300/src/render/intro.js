@@ -1,6 +1,7 @@
 // intro.js — the boarding intro: a short film of the airplane on runway 36, then
-// into the cockpit. Pure timing and geometry (no engine): the plugin asks for
-// the shot at time t and turns it into a camera pose and a caption card.
+// into the cockpit — one for each airplane. Pure timing and geometry (no
+// engine): the plugin asks for the shot at time t and turns it into a camera
+// pose and a caption card.
 //
 // Every camera point is in body axes (x forward, y right, z down; metres from
 // R, as the model and the sim), so the shots stay framed on the airplane
@@ -8,6 +9,7 @@
 // is at z ≈ 1.33 + 0.2·x, and every eye point stays well above it.
 
 import EXTRA from '../sim/aircraft/extra300l.js';
+import F15 from '../sim/aircraft/f15c.js';
 
 const ease = (t) => t * t * t * (t * (t * 6 - 15) + 10);   // smootherstep
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -45,16 +47,42 @@ export const INTRO_CARDS = [
   { kicker: 'Your airplane', title: 'Runway 36', lines: ['Pilot in the rear seat · engine running'] },
 ];
 
+// ── the F-15C: the radome, down the intake, over the wing, the nozzles, into the cockpit ──
+// (body axes as the F-15's model: the radome tip 11 m ahead of R, the ground ~2.15 m below it)
+const F15_EYE = F15.eye;
+const F15_SHOTS = [
+  { t0: 0, t1: 5.5, eye: [[14.6, 2.6, 1.1], [13.2, 1.7, 0.6]], at: [[9.0, 0, -0.45], [7.6, 0, -0.65]], fov: [40, 34], card: 0 },
+  { t0: 5.5, t1: 10.5, eye: [[8.4, -5.6, 0.9], [0.6, -8.4, -0.6]], at: [[5.8, -1.4, -0.3], [-0.5, -2.2, -0.6]], fov: [44, 48], card: 1 },
+  { t0: 10.5, t1: 15.5, eye: [[2.5, 12.5, -4.0], [-4.0, 8.5, -8.5]], at: [[-1.0, 3.6, -0.5], [-2.6, 0, -0.6]], fov: [50, 52], card: 2 },
+  { t0: 15.5, t1: 20.5, eye: [[-15.0, -4.2, 1.0], [-13.6, 3.8, -0.4]], at: [[-8.0, 0, 0.0], [-3.0, 0, -0.9]], fov: [44, 52], card: 3 },
+  { t0: 20.5, t1: 24.5, eye: [[-7.0, 0, -4.2], F15_EYE], at: [[3.0, 0, -1.6], [F15_EYE[0] + 5, 0, F15_EYE[2] + 0.05]], fov: [55, 72], card: 4 },
+];
+const F15_CARDS = [
+  { kicker: 'McDonnell Douglas · St. Louis', title: 'F-15C Eagle', lines: ['Air-superiority fighter: over 100 aerial victories, none lost in air combat', 'Meigs Field, Chicago · runway 36'] },
+  { kicker: 'Engines', title: '2 × Pratt & Whitney F100', lines: ['105.7 kN each with afterburner, 64.9 kN dry', 'More thrust than weight: it accelerates going straight up'] },
+  { kicker: 'Airframe', title: '45° swept wing, twin tails', lines: ['13.05 m span, 56.5 m² of wing · all-moving stabilators', 'Big low-loaded wing: it turns, and it lands slow for a fighter'] },
+  { kicker: 'Envelope', title: 'Mach 2.5 · +9 g', lines: ['19.43 m long, 20 t with fuel and missiles', 'Service ceiling 65,000 ft'] },
+  { kicker: 'Your jet', title: 'Runway 36', lines: ['Engines at idle · throttle past 80 % lights the burners'] },
+];
+
+/** Each airplane's film: shots, captions, the starter's window, its length. */
+export const INTROS = {
+  extra300l: { shots: INTRO_SHOTS, cards: INTRO_CARDS, starter: INTRO_STARTER, length: INTRO_LENGTH },
+  // the jet fuel starter needs longer to bring the cores to light-off
+  f15c: { shots: F15_SHOTS, cards: F15_CARDS, starter: [1.4, 7.5], length: F15_SHOTS[F15_SHOTS.length - 1].t1 },
+};
+
 /**
  * The intro at time t (s): camera eye and target in body axes, field of view, which caption, and its
  * opacity (fading in at a shot's start and out at its end). Past the end, `done` is true.
  */
-export function introAt(t) {
-  if (t >= INTRO_LENGTH) {
-    const last = INTRO_SHOTS[INTRO_SHOTS.length - 1];
+export function introAt(t, intro = INTROS.extra300l) {
+  const shots = intro.shots;
+  if (t >= intro.length) {
+    const last = shots[shots.length - 1];
     return { eye: last.eye[1], at: last.at[1], fov: last.fov[1], card: -1, cardAlpha: 0, done: true };
   }
-  const s = INTRO_SHOTS.find((x) => t < x.t1) || INTRO_SHOTS[0];
+  const s = shots.find((x) => t < x.t1) || shots[0];
   const u = ease(Math.max(0, Math.min(1, (t - s.t0) / (s.t1 - s.t0))));
   const into = t - s.t0, left = s.t1 - t;
   const cardAlpha = Math.max(0, Math.min(1, (into - 0.5) / 0.6, left / 0.5));

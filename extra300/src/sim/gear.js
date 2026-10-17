@@ -1,9 +1,11 @@
-// gear.js — taildragger ground contact.
+// gear.js — ground contact: the Extra's taildragger, the F-15's retractable tricycle.
 //
 // Each wheel is a spring-damper strut along the body z axis with a tyre at
 // its end. The strut pushes only along the ground normal; the tyre adds
 // rolling resistance, brakes and a slip-angle lateral force inside a
-// friction circle. The tailwheel steers with the rudder pedals. Hard points
+// friction circle. The tail or nose wheel steers with the rudder pedals (a
+// nose wheel less and less as the speed builds). Retracted wheels don't touch
+// anything; the belly does. Hard points
 // (prop tip, wingtips, rudder) scrape when the airframe itself meets the
 // ground — the prop strike and the ground loop are part of the model.
 
@@ -40,8 +42,15 @@ export class Gear {
     const re = [0, 0, 0];
     const vp = [0, 0, 0];
     const strutE = qRotate(st.q, [0, 0, 1]);    // strut axis in earth (NED), pointing down
+    const gearDown = controls.gearPos ?? 1;
+    const groundSpeed = Math.hypot(st.vel[0], st.vel[1]);
 
     for (const u of this.units) {
+      if (u.retracts && gearDown < 0.98) {
+        u.compression = 0; u.load = 0; u.onGround = false;
+        u.wheelSpeed *= Math.exp(-dt * 2);
+        continue;
+      }
       rb[0] = u.pos[0] - cg[0]; rb[1] = u.pos[1] - cg[1]; rb[2] = u.pos[2] - cg[2];
       qRotate(st.q, rb, re);
       const pn = st.pos[0] + re[0], pe = st.pos[1] + re[1], pd = st.pos[2] + re[2];
@@ -77,7 +86,10 @@ export class Gear {
 
       // tyre frame on the ground plane
       let steer = 0;
-      if (u.steer) steer = u.steer.sign * clamp(controls[u.steer.input] || 0, -1, 1) * u.steer.maxAngle;
+      if (u.steer) {
+        steer = u.steer.sign * clamp(controls[u.steer.input] || 0, -1, 1) * u.steer.maxAngle;
+        if (u.steer.fadeSpeed) steer /= 1 + (groundSpeed / u.steer.fadeSpeed) ** 2;
+      }
       u.steerAngle = steer;
       const wheelFwdB = [Math.cos(steer), Math.sin(steer), 0];
       const wf = qRotate(st.q, wheelFwdB);

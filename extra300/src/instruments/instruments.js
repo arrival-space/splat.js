@@ -104,9 +104,33 @@ export class Instruments {
     v.compass = this.compass(ac, dt);
     v.heading = ac.euler.psi / DEG;   // true heading, for the HUD only
 
+    // ── air data and attitude for a head-up display ─────────────────────
+    v.mach = M;
+    v.aoa = o.alpha / DEG;
+    const eu = ac.euler;
+    v.pitch = eu.theta / DEG;
+    v.bank = eu.phi / DEG;
+    v.flightPath = Math.atan2(-ac.state.vel[2], Math.max(0.1, Math.hypot(ac.state.vel[0], ac.state.vel[1]))) / DEG;
+    v.drift = Math.atan2(vb[1], Math.max(0.1, vb[0])) / DEG;
+
     // ── engine ───────────────────────────────────────────────────────────
     const e = ac.engine;
     v.rpm = v.rpm == null ? ac.rpm : lag(v.rpm, ac.rpm, 0.12, dt);
+    if (ac.jet) {
+      // the F-15's engine strip: core speed %, turbine temperature, fuel flow (lb/h), fuel (lb), nozzle
+      v.n2 = v.rpm;
+      v.ftit = e.ftit;
+      const pph = (e.fuelFlow * 3600) / 0.45359237;
+      v.fuelFlow = v.fuelFlow == null ? pph : lag(v.fuelFlow, pph, 0.8, dt);
+      v.fuelLb = (ac.fuelL * ac.spec.mass.fuelDensity) / 0.45359237;
+      v.nozzle = e.nozzle * 100;
+      v.ab = e.ab;
+      v.oilPress = e.oilPress;
+      v.oat = atm.T - 273.15;
+      // the AoA tone: once the wing is well into its stall (a thin swept wing rounds over gently)
+      v.stallWarning = M * atm.a > 20 && ac.aero.wingStallFraction() > 0.3;
+      return v;
+    }
     v.mp = v.mp == null ? e.mp / INHG : lag(v.mp, e.mp / INHG, 0.25, dt);
     const gph = (e.fuelFlow / ac.spec.mass.fuelDensity) * 3600 / 3.785411784;
     v.fuelFlow = v.fuelFlow == null ? gph : lag(v.fuelFlow, gph, 0.8, dt);

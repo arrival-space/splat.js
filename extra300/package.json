@@ -13,7 +13,8 @@
     "osm:fetch": "node scripts/fetch-osm.mjs",
     "osm:bake": "node scripts/bake-osm.mjs",
     "test:arrival": "node scripts/build.mjs && node tests/e2e/arrival-client.cjs",
-    "model": "${BPY:-python3} scripts/blender/extra300l.py data/model/extra300l.json --glb dist/extra300l.glb --blend dist/extra300l.blend && node scripts/bake-model.mjs"
+    "model": "${BPY:-python3} scripts/blender/extra300l.py data/model/extra300l.json --glb dist/extra300l.glb --blend dist/extra300l.blend && node scripts/bake-model.mjs extra300l",
+    "model:f15": "${BPY:-python3} scripts/blender/f15c.py data/model/f15c.json --glb dist/f15c.glb --blend dist/f15c.blend && node scripts/bake-model.mjs f15c"
   },
   "devDependencies": {
     "esbuild": "0.28.0",

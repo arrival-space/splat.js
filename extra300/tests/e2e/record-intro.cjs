@@ -1,6 +1,6 @@
 // record-intro.cjs — render the boarding intro film from the real arrival.space client to an MP4.
 //
-//   node tests/e2e/record-intro.cjs [spaceId] [out.mp4]
+//   node tests/e2e/record-intro.cjs [spaceId] [out.mp4]          (AIRCRAFT=f15c for the Eagle's film)
 //
 // Opens the space as a guest (read-only: every write and websocket is blocked), finds the vibe
 // already placed there, boards, and then renders the film frame by frame at a fixed time step:
@@ -17,7 +17,8 @@ try { ({ chromium } = require('playwright')); } catch { ({ chromium } = require(
 // the built bundle is injected at the guest's feet, as tests/e2e/arrival-client.cjs does.
 const SPACE = process.argv[2] || '42485456_9715';
 const BUNDLE = process.env.BUNDLE || path.join(__dirname, '..', '..', 'dist', 'extra300-meigs.mjs');
-const OUT = process.argv[3] || path.join(__dirname, '..', '..', 'dist', 'intro.mp4');
+const AIRCRAFT = process.env.AIRCRAFT || 'extra300l';
+const OUT = process.argv[3] || path.join(__dirname, '..', '..', 'dist', AIRCRAFT === 'extra300l' ? 'intro.mp4' : `intro-${AIRCRAFT}.mp4`);
 const FPS = Number(process.env.FPS || 24);
 const TAIL = Number(process.env.TAIL || 2.0);     // seconds of cockpit after the film
 const W = Number(process.env.W || 960), H = Number(process.env.H || 540);
@@ -67,8 +68,9 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
   await page.waitForFunction(() => window.vibe.world && window.vibe.city && !window.vibe.city.queue.length, null, { timeout: 400000, polling: 2000 });
   log('vibe found and the city is up');
 
-  await page.evaluate(() => {
+  await page.evaluate((id) => {
     const v = window.vibe;
+    if (v.profile && v.profile.id !== id) v._action('aircraft');   // two airplanes: the other one
     // the client's own on-screen help bubbles: not in the film
     for (const el of document.querySelectorAll('body *')) {
       if (/Look Around|Move/.test(el.textContent || '') && el.children.length < 12 && getComputedStyle(el).position === 'fixed') el.style.display = 'none';
@@ -76,7 +78,7 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     v.playIntro = true;
     v._introPlayed = false;
     v._enter();
-  });
+  }, AIRCRAFT);
   await page.waitForTimeout(4000);   // the seated pose blends in
   await page.evaluate(() => {
     const v = window.vibe;
@@ -85,12 +87,12 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     }
     // back to the very start of the film, engine still, then freeze the client's clock
     v._intro = { t: 0 };
-    v.ac.engine.running = false; v.ac.rpm = 0;
+    v.ac.setEngineRunning(false);
     v.hud.skipButton.style.visibility = 'hidden';   // a film, not the live screen
     window.__app.timeScale = 0;
   });
 
-  const total = Math.ceil((await page.evaluate(() => window.vibe.constructor.INTRO_LENGTH || 24.5) + TAIL) * FPS);
+  const total = Math.ceil((await page.evaluate(() => window.vibe.profile?.intro.length || window.vibe.constructor.INTRO_LENGTH || 24.5) + TAIL) * FPS);
   log(`rendering ${total} frames at ${FPS} fps`);
   if (have) {
     // replay the film's first frames without drawing them: the airplane (engine start and all) ends up

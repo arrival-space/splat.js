@@ -1,41 +1,12 @@
-// hud.js — the DOM side: instrument panel canvas, the boarding prompt, the
-// keyboard card, status messages, and touch buttons on phones.
+// hud.js — the DOM side: the instrument panel canvas (the Extra) or the
+// head-up display (the F-15), the boarding prompt, the keyboard card, status
+// messages, the top bar (airplane, easy mode, controls) and touch buttons on
+// phones. The words on the cards are the airplane's (plugin/profiles.js).
 
 import { Panel } from '../instruments/panel.js';
+import { JetHud } from '../instruments/jetHud.js';
 
 export const CREDIT = 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago';
-
-const QUICK_START = [
-  'Hold <b>R</b> for full throttle, keep it straight with <b>Q</b> / <b>E</b>',
-  'At 60 kt ease back on <b>S</b> (or <b>↓</b>) and it flies',
-  '<b>W A S D</b> or the arrows fly it, <b>V</b> changes the view, <b>Esc</b> gets out',
-];
-
-// on a phone: one thumb flies it (easy mode, the engine at 75 % already)
-const QUICK_START_MOBILE = [
-  'Engine running, 75 % power: it rolls straight and lifts off by itself',
-  '<b>Left stick</b>: down climbs, up dives, sideways banks',
-  'Let go and it holds the attitude · <b>right stick</b>: throttle ↑↓',
-];
-
-const HELP = [
-  ['Pitch', 'S / ↓ nose up (pull)    W / ↑ nose down (push)    + Shift: pull through the buffet'],
-  ['Roll', 'A / ←  left    D / →  right'],
-  ['Easy mode', 'L  on / off, any time: no stalls, rudder and bank held against the torque'],
-  ['Rudder', 'Q  left    E  right    (Z / X too)    U  auto-rudder on / off'],
-  ['Throttle', 'R  more    F  less    (also + / − or PgUp / PgDn)    Home idle    End full'],
-  ['Brakes', 'B or .  (hold)    ,  parking brake'],
-  ['Trim', ';  nose down    \'  nose up'],
-  ['Prop rpm', '[  lower    ]  higher'],
-  ['Engine', 'M  mixture run / cut-off    K  starter (hold, if it stopped)'],
-  ['Views', 'V  cockpit · chase · tower · fly-by    drag the mouse to look (chase: orbit)    wheel: zoom    C  centre'],
-  ['Intro', 'Space / Enter / Esc skips it'],
-  ['Panel', 'I  show / hide    G  reset g-meter    N  set altimeter'],
-  ['Mouse yoke', 'Y  fly with the mouse (screen centre = neutral)'],
-  ['Sim', 'P  pause    Backspace  back to runway 36    Esc  leave the airplane'],
-  ['Demo', 'O  watch a Platzrunde flown for you    any flight key takes over'],
-  ['Gamepad', 'left stick flies, right stick rudder / throttle, triggers brake'],
-];
 
 export class Hud {
   /**
@@ -44,7 +15,7 @@ export class Hud {
    *   get an element the pointer can reach — it sets pointer-events:auto and pauses the game's mouse
    *   capture while hovered, so the click lands on the button instead of the camera
    */
-  constructor(container, limits, isMobile, createUI) {
+  constructor(container, profile, isMobile, createUI) {
     this.container = container;
     this.isMobile = isMobile;
     this.createUI = createUI;
@@ -53,7 +24,12 @@ export class Hud {
     this.panelCanvas = document.createElement('canvas');
     css(this.panelCanvas, { position: 'fixed', left: '50%', bottom: '4px', transform: 'translateX(-50%)', pointerEvents: 'none', zIndex: 20, display: 'none' });
     container.appendChild(this.panelCanvas);
-    this.panel = new Panel(this.panelCanvas, limits);
+    this.panel = new Panel(this.panelCanvas, profile.spec.limits);
+    // the jet's head-up display: the whole view, click-through
+    this.hudCanvas = document.createElement('canvas');
+    css(this.hudCanvas, { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', zIndex: 19, display: 'none' });
+    container.appendChild(this.hudCanvas);
+    this.jetHud = new JetHud(this.hudCanvas);
 
     this.prompt = document.createElement('div');
     css(this.prompt, {
@@ -79,11 +55,6 @@ export class Hud {
       background: 'rgba(12,13,16,0.88)', color: '#e6e3da', font: '13px/1.55 "Helvetica Neue", Arial, sans-serif',
       borderRadius: '10px', zIndex: 22, display: 'none', pointerEvents: 'none', boxShadow: '0 6px 24px rgba(0,0,0,0.35)',
     });
-    this.help.innerHTML = `<div style="font-weight:700;margin-bottom:6px">Extra 300L — controls</div>`
-      // the double spaces in HELP separate key groups; HTML would collapse them
-      + HELP.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b.replace(/ {2,}/g, ' <span style="color:#6f6c66">·</span> ')}</div>`).join('')
-      + `<div style="margin-top:8px;color:#9d9a92">H or Controls hides this card.</div>`
-      + `<div style="margin-top:4px;color:#9d9a92;font-size:11px">${CREDIT}</div>`;
     container.appendChild(this.help);
 
     // what a new pilot needs, and nothing else: shown at the start, gone once the airplane is flying
@@ -93,10 +64,6 @@ export class Hud {
       background: 'rgba(12,13,16,0.78)', color: '#ece9e1', font: '13px/1.6 "Helvetica Neue", Arial, sans-serif',
       borderRadius: '10px', zIndex: 22, display: 'none', pointerEvents: 'none', boxShadow: '0 6px 24px rgba(0,0,0,0.3)',
     });
-    this.quick.innerHTML = `<div style="font:700 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.12em;text-transform:uppercase;color:#e0505a;margin-bottom:4px">Take off</div>`
-      + (isMobile ? QUICK_START_MOBILE : QUICK_START).map((t) => `<div>${t}</div>`).join('')
-      + (isMobile ? `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Easy mode is on: no stalls, the rudder is done for you</div>`
-        : `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Everything else: <b>Controls</b> (or H)</div>`);
     container.appendChild(this.quick);
 
     // ODbL: the map data is credited wherever the city is on screen
@@ -113,17 +80,21 @@ export class Hud {
       css(b, { position: 'fixed', zIndex: 1000, pointerEvents: 'auto', cursor: 'pointer', ...style });
       return b;
     };
-    // the top bar: easy mode (switchable any time in flight) and the controls card
+    // the top bar: which airplane, easy mode (switchable any time in flight) and the controls card
     const pill = {
-      top: '12px', height: '34px', padding: '0 14px', borderRadius: '17px', display: 'none',
+      top: '12px', height: '34px', padding: '0 10px', borderRadius: '17px', display: 'none',
       border: '1px solid rgba(255,255,255,0.22)', color: '#f4f2ec', background: 'rgba(12,13,16,0.66)',
-      font: '600 13px "Helvetica Neue", Arial, sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
-      backdropFilter: 'blur(6px)', whiteSpace: 'nowrap',
+      font: `600 ${isMobile ? 12 : 13}px "Helvetica Neue", Arial, sans-serif`, boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
+      backdropFilter: 'blur(6px)', whiteSpace: 'nowrap', textAlign: 'center', overflow: 'hidden',
     };
-    this.easyButton = button({ ...pill, left: 'calc(50% - 5px)', transform: 'translateX(-100%)' });
-    this.controlsButton = button({ ...pill, left: 'calc(50% + 5px)' });
+    const [wA, wE, wC] = isMobile ? [118, 118, 80] : [146, 132, 92];
+    const x0 = -(wA + wE + wC + 16) / 2;
+    this.aircraftButton = button({ ...pill, width: `${wA}px`, left: `calc(50% + ${x0}px)` });
+    this.easyButton = button({ ...pill, width: `${wE}px`, left: `calc(50% + ${x0 + wA + 8}px)` });
+    this.controlsButton = button({ ...pill, width: `${wC}px`, left: `calc(50% + ${x0 + wA + wE + 16}px)` });
     this.controlsButton.innerHTML = 'Controls';
     this.controlsButton.title = 'All the keys (H)';
+    this.setProfile(profile);
     this.setEasy(false);
 
     this._buildIntro(container, button);
@@ -147,7 +118,7 @@ export class Hud {
         this.buttons[id] = b;
         return b;
       };
-      mk('board', 'Fly the Extra', { left: '50%', bottom: '26%', transform: 'translateX(-50%)', display: 'none' });
+      mk('board', `Fly the ${profile.title}`, { left: '50%', bottom: '26%', transform: 'translateX(-50%)', display: 'none' });
       mk('exit', 'Exit', { right: '12px', top: '22%' });
       mk('view', 'View', { right: '12px', top: 'calc(22% + 48px)' });
       mk('brake', 'Brake', { right: '12px', top: 'calc(42% + 56px)' });
@@ -156,7 +127,32 @@ export class Hud {
     this.layout();
   }
 
+  /** Another airplane: its cards, its cockpit display, its name on the top bar. */
+  setProfile(p, next = null) {
+    this.profile = p;
+    const isMobile = this.isMobile;
+    this.help.innerHTML = `<div style="font-weight:700;margin-bottom:6px">${p.title} — controls</div>`
+      // the double spaces in the help separate key groups; HTML would collapse them
+      + p.help.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b.replace(/ {2,}/g, ' <span style="color:#6f6c66">·</span> ')}</div>`).join('')
+      + `<div style="margin-top:8px;color:#9d9a92">H or Controls hides this card.</div>`
+      + `<div style="margin-top:4px;color:#9d9a92;font-size:11px">${CREDIT}</div>`;
+    this.quick.innerHTML = `<div style="font:700 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.12em;text-transform:uppercase;color:#e0505a;margin-bottom:4px">Take off · ${p.title}</div>`
+      + (isMobile ? p.quickMobile : p.quick).map((t) => `<div>${t}</div>`).join('')
+      + (isMobile ? `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Easy mode is on: ${p.easyOn.replace(/^Easy mode: /, '')}</div>`
+        : `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Everything else: <b>Controls</b> (or H)</div>`);
+    this.aircraftButton.innerHTML = `<span style="opacity:0.7;margin-right:5px">⇄</span>${p.title}`;
+    this.aircraftButton.title = next ? `Switch to the ${next.title} (T)` : 'Switch airplane (T)';
+    this.panel.limits = p.spec.limits;
+    this.setEasy(this._easy ?? false);
+    // (from the constructor, the rest of the DOM isn't built yet)
+    if (this.buttons) {
+      if (this.buttons.board) this.buttons.board.textContent = `Fly the ${p.title}`;
+      this.setFlying(this._flying ?? false, this._panelVisible ?? false);
+    }
+  }
+
   layout() {
+    this.jetHud.resize(window.innerWidth, window.innerHeight, Math.min(2, window.devicePixelRatio || 1));
     // the cluster is only as wide as its instruments, centred on the bottom edge
     let h = Math.round(Math.min(window.innerHeight * 0.21, 175));
     let w = Panel.widthFor(Panel.radiusFor(h));
@@ -174,13 +170,14 @@ export class Hud {
 
   /** Easy-mode switch: what it is now, and what a click does. */
   setEasy(on) {
+    this._easy = on;
     const knob = `<span style="display:inline-block;vertical-align:-3px;width:28px;height:16px;border-radius:8px;margin-right:8px;`
       + `background:${on ? '#2fa35a' : 'rgba(255,255,255,0.25)'};position:relative">`
       + `<span style="position:absolute;top:2px;left:${on ? 14 : 2}px;width:12px;height:12px;border-radius:6px;background:#fff"></span></span>`;
     this.easyButton.innerHTML = `${knob}Easy mode`;
     this.easyButton.title = on
-      ? 'Easy mode is on: no stalls, torque handled for you. Click (or L) for the real thing'
-      : 'Easy mode (L): the wing can\'t stall, rudder and bank are held against the torque';
+      ? `${this.profile.easyOn}. Click (or L) for the real thing`
+      : this.profile.easyTitle;
   }
 
   // ── the intro: letterbox, caption cards, progress, skip ─────────────────
@@ -221,8 +218,8 @@ export class Hud {
     this.introProgress.style.display = on ? 'block' : 'none';
     this.skipButton.style.display = on ? 'block' : 'none';
     this._introCardShown = -1;
-    if (on) { this.panelCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
-    for (const b of [this.easyButton, this.controlsButton]) b.style.display = on ? 'none' : b.style.display;
+    if (on) { this.panelCanvas.style.display = 'none'; this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
+    for (const b of [this.aircraftButton, this.easyButton, this.controlsButton]) b.style.display = on ? 'none' : b.style.display;
   }
 
   /** One caption card: { kicker, title, lines }, faded by alpha; progress 0..1 along the bottom edge. */
@@ -261,8 +258,13 @@ export class Hud {
   }
 
   setFlying(flying, panelVisible) {
-    this.panelCanvas.style.display = flying && panelVisible ? 'block' : 'none';
+    this._flying = flying;
+    this._panelVisible = panelVisible;
+    const hud = this.profile.display === 'hud';
+    this.panelCanvas.style.display = flying && panelVisible && !hud ? 'block' : 'none';
+    this.hudCanvas.style.display = flying && panelVisible && hud ? 'block' : 'none';
     this.credit.style.display = flying ? 'block' : 'none';
+    this.aircraftButton.style.display = flying ? 'block' : 'none';
     this.easyButton.style.display = flying ? 'block' : 'none';
     this.controlsButton.style.display = flying ? 'block' : 'none';
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
@@ -277,7 +279,7 @@ export class Hud {
   }
 
   destroy() {
-    for (const el of [this.panelCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.easyButton, this.controlsButton,
+    for (const el of [this.panelCanvas, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

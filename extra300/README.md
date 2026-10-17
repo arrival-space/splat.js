@@ -27,6 +27,30 @@ landing. Press any flight key to take over wherever it is.
 
 ![Runway 36, Meigs Field, from the cockpit](docs/img/cockpit-runway36.png)
 
+## The F-15C Eagle
+
+The second airplane. Pick it with the **⇄** button on the top bar, **T** in flight, the vibe's *Aircraft*
+setting, or `?aircraft=f15` on the space's address. It lines up on runway 36 in the Extra's place.
+
+- **Flight model.** The same strip build-up as the Extra, built from the published F-15C figures:
+  - 13.05 m span, 56.5 m² wing with a 45° leading edge, all-moving stabilators that also roll it differentially, twin fins.
+  - Two F100-PW-220s at 64.9 kN dry and 105.7 kN with afterburner. The cores spool up and the burners light past the 80 % throttle detent.
+  - Thrust lapses with air density and gains ram with Mach. Zero-lift drag rises through the transonic.
+  - Retractable gear (**G**) with flaps that follow it, a dorsal speed brake (**J**, or **B** held in the air), nose-wheel steering that fades with speed, and a jet fuel starter (**K**).
+- **Cockpit.** A green head-up display replaces the round gauges: pitch ladder and flight-path marker to scale in the cockpit view, heading tape, KCAS and altitude, Mach, g and α, and an engine strip with N2, FTIT, fuel flow and fuel.
+- **3D model.** Modelled in Blender by script from the same numbers: raked intakes, the bubble canopy, the cockpit with its seat, stick and HUD, flaps, ailerons, stabilators, rudders, speed brake, nozzles with burner flames, and gear that folds away.
+- **Intro film.** It has its own: radome, intake, wing, nozzles, then into the seat. The engines spool up on the way.
+- **Easy mode** limits α and g (7.5 g) and raises and lowers the gear for you. On a phone it rolls at 75 % throttle and lifts off by itself.
+
+| | model | F-15C |
+|---|---|---|
+| sea level, military / full burner | Mach 0.92 / 1.25 | ~800 KCAS limit (M 1.2) |
+| 36,000 ft, military / full burner | Mach 1.00 / 2.28+ | M 2.5 |
+| static thrust, both engines | 211 kN, idle → military ~4 s | 2 × 105.7 kN |
+| roll rate, full stick, 350 KCAS | 214 °/s | — |
+| stall, gear and flaps down, 17.2 t | 98 KCAS, no departure | — |
+| burner take-off, lift-off | ~350 m, 10 s | ~270 m (900 ft) |
+
 ## Google Photorealistic 3D Tiles
 
 The space also carries the Arrival library's **Google 3D Tiles** vibe, centred on
@@ -109,7 +133,7 @@ direct stick positions.
 ```bash
 cd extra300
 npm install
-npm test               # 100 unit, component and flight-test checks (~4 s)
+npm test               # 136 unit, component and flight-test checks (~10 s)
 npm run build          # → dist/extra300-meigs.mjs, the single-file vibe
 npm run serve          # http://localhost:8740/tests/harness/  (PlayCanvas + an Arrival stand-in)
 npm run test:e2e       # headless Chromium on the local stand-in: boards, rolls, screenshots into dist/shots/
@@ -117,6 +141,7 @@ npm run test:arrival   # the real arrival.space client, as a guest, read-only: l
 npm run osm:fetch      # download OSM + City of Chicago data (data/osm/raw/, not committed)
 npm run osm:bake       # → src/world/data/chicagoOsm.js, the compact city the vibe ships with
 BPY=bpyenv/bin/python npm run model   # Blender (pip install bpy) → src/render/data/extra300lModel.js, plus dist/extra300l.glb / .blend
+BPY=bpyenv/bin/python npm run model:f15   # the F-15C → src/render/data/f15cModel.js, plus dist/f15c.glb / .blend
 ```
 
 `test:arrival` opens a public space in headless Chromium and blocks every
@@ -124,7 +149,8 @@ request that would write anything. It injects the built vibe and checks that
 it boards, flies and hands the camera back. The last run was on client 1.26.0
 (`worldScale` 0.7) and passed with no errors from the vibe.
 
-`?fly=1&view=chase` on the harness URL boards right away; `?bundle=0` loads the sources without building.
+`?fly=1&view=chase` on the harness URL boards right away (add `&aircraft=f15` for the Eagle); `?bundle=0` loads the sources without building.
+`AIRCRAFT=f15c node tests/e2e/record-intro.cjs` renders the F-15's intro film.
 
 ## Syncing with the space
 
@@ -152,11 +178,11 @@ Anything edited in the browser stays as it is.
 
 ```
 src/sim/          flight model: atmosphere, aero, engine, propeller, gear, rigid body (no PlayCanvas)
-src/sim/aircraft/ the airplane as data, every number tagged [pub] / [est] / [tune]
-src/instruments/  gauge physics and the canvas instrument panel
+src/sim/aircraft/ the airplanes as data (extra300l.js, f15c.js), every number tagged [pub] / [est] / [tune]
+src/instruments/  gauge physics, the Extra's canvas instrument panel, the F-15's HUD
 src/world/        WGS-84 local frame, Meigs Field, the OSM codec and the baked city
 src/render/       engine-free geometry: the Extra (baked from Blender), Meigs, procedural buildings, ground textures, sky, camera maths, sound
-scripts/blender/  the Extra 300L modelled in Blender, by script: fuselage shell, cockpit, sunburst, tail, MT prop, gear
+scripts/blender/  the Extra 300L and the F-15C modelled in Blender, by script (kit.py: the shared helpers)
 src/input/        keyboard / gamepad / touch / mouse-yoke → controls
 src/plugin/       the Arrival.Space glue (the only code that touches pc / ArrivalSpace)
 tests/            node --test suites, the flight-test autopilot, the browser harness

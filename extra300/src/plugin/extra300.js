@@ -1,12 +1,12 @@
-// extra300.js — the Arrival.Space vibe: an Extra 300L parked on runway 36 at
-// Meigs Field. Walk up to it, press E (or tap it) and fly.
+// extra300.js — the Arrival.Space vibe: an Extra 300L (or, picked in the top
+// bar, with T or in the settings, an F-15C Eagle) parked on runway 36 at Meigs
+// Field. Walk up to it, press E (or tap it) and fly.
 //
 // This file is glue only. The flight model, instruments, scenery and camera
 // maths live in engine-free modules under src/ and are unit-tested in Node;
 // scripts/build.mjs bundles everything into one .mjs for the space.
 
 import { Aircraft } from '../sim/aircraft.js';
-import EXTRA from '../sim/aircraft/extra300l.js';
 import { DEG, INHG, KT } from '../sim/units.js';
 import { Instruments } from '../instruments/instruments.js';
 import { ControlMapper, ACTIONS, BINDINGS, FLIGHT_KEYS } from '../input/controlMapper.js';
@@ -14,8 +14,8 @@ import { PatternPilot } from '../autopilot/platzrunde.js';
 import { buildMeigs } from '../world/meigs.js';
 import { CameraRig } from '../render/cameraRig.js';
 import { fromNE } from '../render/geometry.js';
-import { CockpitSound } from '../render/audio.js';
 import { AircraftVisual } from './aircraftVisual.js';
+import { AIRCRAFT_OPTIONS, nextProfile, PROFILES, profileByTitle } from './profiles.js';
 import { SceneryVisual } from './sceneryVisual.js';
 import { Hud } from './hud.js';
 import { disposeMaterials, toMesh } from './pcMesh.js';
@@ -26,9 +26,9 @@ import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
 import { buildSkyDome } from '../render/sky.js';
 import { carveBox } from '../render/carve.js';
-import { INTRO_CARDS, INTRO_LENGTH, INTRO_STARTER, introAt } from '../render/intro.js';
+import { INTRO_LENGTH, introAt } from '../render/intro.js';
 
-const BOARD_DISTANCE = 9; // metres from the airplane
+const BOARD_DISTANCE = 9; // metres from the airplane (more for a bigger one)
 const MOBILE_THROTTLE = 0.75; // a phone pilot starts rolling at once
 // m above the datum (the runway): over the airfield Google's tiles are cut away above this. Just under
 // our island's surface, so their water (photographed, not flat: it varies by a metre or more from
@@ -37,9 +37,10 @@ const CARVE_FLOOR = -0.3;
 
 export class Extra300 extends ArrivalScript {
   static scriptName = 'extra300Meigs';
-  static INTRO_LENGTH = INTRO_LENGTH;   // for tests/e2e/record-intro.cjs
+  static INTRO_LENGTH = INTRO_LENGTH;   // for tests/e2e/record-intro.cjs (the Extra's; vibe.profile.intro.length)
 
   isEnabled = true;
+  aircraft = 'Extra 300L';
   startRunway = '36';
   engineRunningAtStart = true;
   showPanel = true;
@@ -61,11 +62,12 @@ export class Extra300 extends ArrivalScript {
 
   static properties = {
     isEnabled: { title: 'Enabled' },
+    aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 on the address)', options: AIRCRAFT_OPTIONS },
     startRunway: { title: 'Start runway', options: ['36', '18'] },
     engineRunningAtStart: { title: 'Engine running at start' },
     showPanel: { title: 'Instrument panel' },
     showScenery: { title: 'Meigs & Chicago scenery' },
-    fuelLiters: { title: 'Fuel, centre tank (L)', min: 5, max: 60, step: 1 },
+    fuelLiters: { title: 'Fuel, centre tank (L) — the Extra (the F-15 carries ~64 % internal)', min: 5, max: 60, step: 1 },
     windKt: { title: 'Wind (kt)', min: 0, max: 40, step: 1 },
     windFromDeg: { title: 'Wind from (°true)', min: 0, max: 359, step: 1 },
     qnhInHg: { title: 'QNH (inHg)', min: 28.5, max: 31, step: 0.01 },
@@ -76,9 +78,9 @@ export class Extra300 extends ArrivalScript {
     playIntro: { title: 'Intro film on first boarding (skippable)' },
     introOnLoad: { title: 'Film mode: board and play the intro by itself after loading (or open the space with ?intro)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
-    avatarSeatHeight: { title: 'Pilot seat: avatar height (m, body z: + is down)', min: -1.5, max: 1.0, step: 0.01 },
-    avatarSeatForward: { title: 'Pilot seat: avatar fore/aft (m, body x: + is forward)', min: -2.0, max: 0.5, step: 0.01 },
-    avatarLean: { title: 'Pilot seat: avatar leans back (degrees)', min: -10, max: 45, step: 1 },
+    avatarSeatHeight: { title: 'Extra\'s pilot seat: avatar height (m, body z: + is down)', min: -1.5, max: 1.0, step: 0.01 },
+    avatarSeatForward: { title: 'Extra\'s pilot seat: avatar fore/aft (m, body x: + is forward)', min: -2.0, max: 0.5, step: 0.01 },
+    avatarLean: { title: 'Extra\'s pilot seat: avatar leans back (degrees)', min: -10, max: 45, step: 1 },
   };
 
   initialize() {
@@ -104,25 +106,20 @@ export class Extra300 extends ArrivalScript {
     try {
       this._filmPending = this.introOnLoad || new URLSearchParams(location.search).has('intro') || /(^|[#&])intro\b/.test(location.hash.slice(1));
     } catch { this._filmPending = this.introOnLoad; }
+    // ?aircraft=f15 (or f15c, extra) on the address picks the airplane, as the setting does
+    try {
+      const want = new URLSearchParams(location.search).get('aircraft');
+      if (want) this.aircraft = /f-?15/i.test(want) ? PROFILES.f15c.title : PROFILES.extra300l.title;
+    } catch { /* no address to read */ }
     this._sky = null;
 
-    this.ac = new Aircraft(EXTRA, {
-      ground: this.world.ground,
-      datumMsl: this.world.elevation,
-      load: { fuelCenterL: this.fuelLiters },
-      weather: this._weather(),
-    });
-    this.instruments = new Instruments(EXTRA, { kollsman: this.qnhInHg * INHG });
+    this.profile = profileByTitle(this.aircraft);
     this.mapper = new ControlMapper({ easy: this.easyMode });
     const tower = this.world.landmarks.find((l) => l.name === 'Meigs Tower');
-    this.cameraRig = new CameraRig({ eye: EXTRA.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
-    this.visual = new AircraftVisual(this.app, this._worldRoot);
-    this.sound = new CockpitSound();
-    this.hud = new Hud(this.getUIContainer(), EXTRA.limits, this.isMobile, (tag, opts) => this.createUI(tag, opts));
+    this.cameraRig = new CameraRig({ eye: this.profile.spec.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
+    this.hud = new Hud(this.getUIContainer(), this.profile, this.isMobile, (tag, opts) => this.createUI(tag, opts));
+    this._buildAircraft(this.profile);
     this.hud.setEasy(this.mapper.easy);
-
-    this._resetToRunway();
-    this.visual.update(this.ac, 0);
 
     // input
     this._onKeyDown = (e) => this._keyDown(e);
@@ -148,8 +145,7 @@ export class Extra300 extends ArrivalScript {
     window.addEventListener('pointerup', this._onPointerUp);
     window.addEventListener('pointermove', this._onPointerMove);
 
-    // tap / click the airplane to board
-    this._unsubClick = ArrivalSpace.onEntityClick?.(this.visual.root, () => { if (!this._flying) this._enter(); });
+    this.hud.aircraftButton.onclick = (ev) => { ev.stopPropagation(); this._action('aircraft'); };
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
@@ -171,6 +167,52 @@ export class Extra300 extends ArrivalScript {
   get _ws() {
     const s = Number(this.app.worldScale);
     return s > 0 ? s : 0.7;
+  }
+
+  /** The airplane itself: flight model, instruments, 3D model, sound, stick feel, cockpit display, camera eye. */
+  _buildAircraft(profile) {
+    this.profile = profile;
+    const spec = profile.spec;
+    this.ac = new Aircraft(spec, {
+      ground: this.world.ground,
+      datumMsl: this.world.elevation,
+      load: spec.engine ? { fuelCenterL: this.fuelLiters } : {},
+      weather: this._weather(),
+    });
+    this.instruments = new Instruments(spec, { kollsman: this.qnhInHg * INHG });
+    this.mapper.setHandling(spec.handling);
+    this.mapper.speedbrake = false;
+    this.cameraRig.eye = spec.eye;
+    this.cameraRig.size = profile.chaseSize;
+    if (typeof this._unsubClick === 'function') this._unsubClick();
+    this.visual?.destroy();
+    this.visual = new AircraftVisual(this.app, this._worldRoot, profile.buildModel(), profile.title);
+    this.sound?.stop();
+    this.sound = new profile.Sound();
+    this.hud.setProfile(profile, nextProfile(profile));
+    // tap / click the airplane to board
+    this._unsubClick = ArrivalSpace.onEntityClick?.(this.visual.root, () => { if (!this._flying) this._enter(); });
+    this._resetToRunway();
+    this.visual.update(this.ac, 0);
+  }
+
+  /** Another airplane, back on runway 36; a pilot already aboard moves across with it. */
+  _switchAircraft(profile) {
+    if (profile === this.profile) return;
+    const flying = this._flying;
+    if (this._intro) this._endIntro();
+    if (this._demo) this._stopDemo('Demo ended');
+    if (flying) { this._attach?.detach?.(); this._attach = null; }
+    this._buildAircraft(profile);
+    this.aircraft = profile.title;
+    if (flying) {
+      this._attachPilot();
+      this.sound.start();
+      this._setAvatarVisible(this.cameraRig.view !== 'cockpit');
+      this.visual.setCockpitView(this.cameraRig.view === 'cockpit');
+      this._showTakeoffCard();
+      this.hud.flash(`${profile.title} on runway 36`, 2.5);
+    }
   }
 
   _placeWorldRoot() {
@@ -269,15 +311,17 @@ export class Extra300 extends ArrivalScript {
       const rw = this.world.runway;
       n = rw.thr18[0] - rw.dir[0] * 30; e = rw.thr18[1] - rw.dir[1] * 30; heading = rw.bearing + Math.PI;
     }
-    this.ac.load.fuelCenterL = this.fuelLiters;
+    if (this.ac.spec.engine) this.ac.load.fuelCenterL = this.fuelLiters;
     this.ac.updateMass();
     this.ac.placeOnGround(n, e, heading);
     this.ac.controls.parkingBrake = false;
-    this.ac.engine.running = this.engineRunningAtStart;
-    this.ac.rpm = this.engineRunningAtStart ? 750 : 0;
-    this.ac.engine.oilTemp = this.engineRunningAtStart ? 70 : this.oatC;
-    this.ac.engine.cht = this.engineRunningAtStart ? 150 : this.oatC;
+    this.ac.setEngineRunning(this.engineRunningAtStart);
+    if (!this.ac.jet) {
+      this.ac.engine.oilTemp = this.engineRunningAtStart ? 70 : this.oatC;
+      this.ac.engine.cht = this.engineRunningAtStart ? 150 : this.oatC;
+    }
     this.mapper.throttle = 0;
+    this.mapper.gear = 1;
     this.instruments.resetG();
     // let it settle onto its gear before anyone sees it
     for (let i = 0; i < 480; i++) this.ac.step(1 / 480);
@@ -295,20 +339,7 @@ export class Extra300 extends ArrivalScript {
     // pose under the current rig so leaving the airplane doesn't strand the camera
     const cam0 = ArrivalSpace.getCamera?.();
     this._camLocal = cam0 ? { parent: cam0.parent, p: cam0.getLocalPosition().clone(), r: cam0.getLocalRotation().clone() } : null;
-    const seat = EXTRA.eye;
-    // the avatar sits in the rear seat in a seated pose (as the vehicle demo seats its driver): its
-    // root goes below the seat pan by the pose's hip height, so the hips land on the cushion
-    const pose = this.seatAnimation || 'driving.glb';
-    this._attach = ArrivalSpace.attachPlayerToEntity?.(this.visual.root, {
-      offset: { x: seat[1], y: -this.avatarSeatHeight, z: -this.avatarSeatForward },
-      animations: { Idle: pose, Forward: pose, Backward: pose, Left: pose, Right: pose },
-      // the avatar faces the entity's +z; the airplane's nose is its −z: turn the avatar round
-      // and lean it back into the reclined seat (the car pose sits upright)
-      meshEuler: () => ({ x: -this.avatarLean, y: 180, z: 0 }),
-      disableCollision: true,
-      rate: 20,
-      extra: () => ({ rpm: Math.round(this.ac.rpm), ias: Math.round(this.instruments.values.ias || 0) }),
-    }) || null;
+    this._attachPilot();
     ArrivalSpace.setCameraMode?.('free');
     const cam = ArrivalSpace.getCamera?.();
     if (cam?.camera) {
@@ -330,6 +361,24 @@ export class Extra300 extends ArrivalScript {
     else this._showTakeoffCard();
   }
 
+  /** The avatar in the pilot's seat (the Extra's rear seat, the Eagle's ACES II). */
+  _attachPilot() {
+    // the avatar sits in a seated pose (as the vehicle demo seats its driver): its root goes below the
+    // seat pan by the pose's hip height, so the hips land on the cushion
+    const seat = this.profile.seat || { forward: this.avatarSeatForward, height: this.avatarSeatHeight, lean: this.avatarLean };
+    const pose = this.seatAnimation || 'driving.glb';
+    this._attach = ArrivalSpace.attachPlayerToEntity?.(this.visual.root, {
+      offset: { x: this.profile.spec.eye[1], y: -seat.height, z: -seat.forward },
+      animations: { Idle: pose, Forward: pose, Backward: pose, Left: pose, Right: pose },
+      // the avatar faces the entity's +z; the airplane's nose is its −z: turn the avatar round
+      // and lean it back into the reclined seat (the car pose sits upright)
+      meshEuler: () => ({ x: -(this.profile.seat ? this.profile.seat.lean : this.avatarLean), y: 180, z: 0 }),
+      disableCollision: true,
+      rate: 20,
+      extra: () => ({ aircraft: this.profile.id, rpm: Math.round(this.ac.rpm), ias: Math.round(this.instruments.values.ias || 0) }),
+    }) || null;
+  }
+
   _showTakeoffCard() {
     this._helpAutoHidden = false;
     this.hud.showQuick(this.ac.agl < 30);
@@ -339,8 +388,7 @@ export class Extra300 extends ArrivalScript {
     if (this.isMobile) {
       if (!this._mobileEasyOn) { this._mobileEasyOn = true; this._setEasy(true); }
       if (this.ac.gear.onGround && this.ac.groundSpeed < 2 && !this.ac.damage.crashed) {
-        this.ac.engine.running = true;
-        this.ac.rpm = Math.max(this.ac.rpm, 750);
+        if (!this.ac.engine.running) this.ac.setEngineRunning(true);
         this.ac.controls.parkingBrake = false;
         this.mapper.throttle = MOBILE_THROTTLE;
       }
@@ -366,9 +414,8 @@ export class Extra300 extends ArrivalScript {
     this._introPlayed = true;
     this._intro = { t: 0 };
     const c = this.ac.controls;
-    // it starts with the engine still: the first shot watches the starter turn the prop over
-    this.ac.engine.running = false;
-    this.ac.rpm = 0;
+    // it starts with the engine still: the first shot watches the starter turn the prop over (or spool the cores up)
+    this.ac.setEngineRunning(false);
     c.throttle = 0; c.parkingBrake = true; c.starter = false;
     this.mapper.throttle = 0;
     this._setAvatarVisible(true);
@@ -381,14 +428,15 @@ export class Extra300 extends ArrivalScript {
     const it = this._intro;
     it.t += dt;
     const c = this.ac.controls;
+    const film = this.profile.intro;
     c.throttle = 0; c.parkingBrake = true;
-    c.starter = it.t > INTRO_STARTER[0] && it.t < INTRO_STARTER[1] && !this.ac.engine.running;
-    const shot = introAt(it.t);
-    // the last second flies into the rear seat: the pilot's own head goes, and the canopy
-    const inside = it.t > INTRO_LENGTH - 1.2;
+    c.starter = it.t > film.starter[0] && it.t < film.starter[1] && !this.ac.engine.running;
+    const shot = introAt(it.t, film);
+    // the last second flies into the pilot's seat: the pilot's own head goes, and the canopy
+    const inside = it.t > film.length - 1.2;
     this._setAvatarVisible(!inside);
     this.visual.setCockpitView(inside);
-    this.hud.setIntroCard(shot.card >= 0 ? INTRO_CARDS[shot.card] : null, shot.cardAlpha, Math.min(1, it.t / INTRO_LENGTH));
+    this.hud.setIntroCard(shot.card >= 0 ? film.cards[shot.card] : null, shot.cardAlpha, Math.min(1, it.t / film.length));
     if (shot.done) { this._endIntro(); return null; }
     return this.cameraRig.bodyPose(this.ac, shot.eye, shot.at, shot.fov, this.ac.cg);
   }
@@ -401,7 +449,7 @@ export class Extra300 extends ArrivalScript {
     const c = this.ac.controls;
     c.starter = false;
     c.parkingBrake = false;
-    if (this.engineRunningAtStart && !this.ac.engine.running) { this.ac.engine.running = true; this.ac.rpm = Math.max(this.ac.rpm, 750); }
+    if (this.engineRunningAtStart && !this.ac.engine.running) this.ac.setEngineRunning(true);
     this.hud.showIntro(false);
     this.hud.setFlying(true, this._panelVisible);
     this.cameraRig.view = 'cockpit';
@@ -441,7 +489,8 @@ export class Extra300 extends ArrivalScript {
     if (this.ac.agl > 3 || this.ac.damage.crashed) this._resetToRunway();
     const ws = this._ws;
     const p = this.ac.referencePoint();
-    const side = [p[0] + Math.sin(this.ac.euler.psi) * 5.5, p[1] - Math.cos(this.ac.euler.psi) * 5.5];
+    const out0 = this.ac.spec.wing.span / 2 + 1.5;
+    const side = [p[0] + Math.sin(this.ac.euler.psi) * out0, p[1] - Math.cos(this.ac.euler.psi) * out0];
     const local = fromNE(side[0], side[1], 1.0);
     const o = this._worldRoot.getPosition();
     const out = { x: o.x + local[0] * ws, y: o.y + local[1] * ws, z: o.z + local[2] * ws };
@@ -461,12 +510,13 @@ export class Extra300 extends ArrivalScript {
   // ── demo flight ──────────────────────────────────────────────────────────
   _startDemo() {
     if (!this.isEnabled) return;
+    if (!this.profile.demo) { this.hud.flash('The demo flight is the Extra\'s (T switches airplane)', 3); return; }
     this._introPlayed = true;
     if (this._intro) this._endIntro();
     if (!this._flying) this._enter();
     this._paused = false;
     this._resetToRunway();
-    this.ac.engine.running = true;
+    this.ac.setEngineRunning(true);
     this._demo = new PatternPilot(this.ac, this.world);
     this._director = true;
     this._helpAutoHidden = true;
@@ -561,13 +611,28 @@ export class Extra300 extends ArrivalScript {
       case 'reset': if (this._demo) this._stopDemo('Demo ended'); this._resetToRunway(); this.hud.flash('Back on runway 36', 2); break;
       case 'pause': this._paused = !this._paused; break;
       case 'help': this.hud.toggleHelp(); break;
-      case 'mixture': c.mixture = c.mixture > 0.5 ? 0 : 1; this.hud.flash(c.mixture ? 'Mixture rich' : 'Mixture cut-off', 1.5); break;
+      case 'mixture':
+        c.mixture = c.mixture > 0.5 ? 0 : 1;
+        this.hud.flash(this.ac.jet ? (c.mixture ? 'Fuel on' : 'Fuel off: engines shut down') : (c.mixture ? 'Mixture rich' : 'Mixture cut-off'), 1.5);
+        break;
       case 'parkingBrake': c.parkingBrake = !c.parkingBrake; break;
-      case 'gReset': this.instruments.resetG(); break;
+      case 'gReset': if (!this.ac.retractable) this.instruments.resetG(); break;
+      case 'gear':
+        if (!this.ac.retractable) break;
+        if (this.ac.gear.onGround) { this.hud.flash('Weight on wheels: the gear stays down', 1.5); break; }
+        this.mapper.gear = this.mapper.gear ? 0 : 1;
+        this.hud.flash(this.mapper.gear ? 'Gear down' : 'Gear up', 1.2);
+        break;
+      case 'speedbrake':
+        if (!this.ac.jet) break;
+        this.mapper.speedbrake = !this.mapper.speedbrake;
+        this.hud.flash(this.mapper.speedbrake ? 'Speed brake out' : 'Speed brake in', 1.2);
+        break;
+      case 'aircraft': this._switchAircraft(nextProfile(this.profile)); break;
       case 'kollsman': this.instruments.kollsman = this.ac.weather.qnh; this.hud.flash(`Altimeter ${(this.ac.weather.qnh / INHG).toFixed(2)}`, 1.5); break;
       case 'easy':
         this._setEasy(!this.mapper.easy);
-        this.hud.flash(this.mapper.easy ? 'Easy mode: the wing won\'t stall, torque handled for you' : 'Easy mode off: all yours', 2.5);
+        this.hud.flash(this.mapper.easy ? this.profile.easyOn : 'Easy mode off: all yours', 2.5);
         break;
       case 'autoRudder': this.mapper.autoRudder = !this.mapper.autoRudder; this.hud.flash(this.mapper.autoRudder ? 'Auto-rudder on (keeps the ball centred)' : 'Auto-rudder off: your feet', 2); break;
       case 'yoke': this._yoke = !this._yoke; this.hud.flash(this._yoke ? 'Mouse yoke on' : 'Mouse yoke off', 1.5); break;
@@ -601,7 +666,7 @@ export class Extra300 extends ArrivalScript {
     if (!player) return false;
     const pp = player.getPosition();
     const ap = this.visual.root.getPosition();
-    return pp.distance(ap) < BOARD_DISTANCE * this._ws;
+    return pp.distance(ap) < Math.max(BOARD_DISTANCE, this.ac.spec.wing.span) * this._ws;
   }
 
   // ── frame ──────────────────────────────────────────────────────────────
@@ -615,7 +680,7 @@ export class Extra300 extends ArrivalScript {
     }
     if (!this._flying) {
       if (this._filmPending) this._filmTick(dt);
-      if (!this._flying) this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? 'Extra 300L' : 'Press E to fly the Extra 300L') : '');
+      if (!this._flying) this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? this.profile.title : `Press E to fly the ${this.profile.title}`) : '');
       return;
     }
     const raw = {
@@ -633,12 +698,7 @@ export class Extra300 extends ArrivalScript {
       this._directCamera();
       this.hud.showDemoStatus(Extra300.DEMO_TEXT[this._demo.phase] || '');
     } else {
-      const e0 = this.ac.euler;
-      this.mapper.update(raw, dt, this.ac.controls, {
-        qbar: this.ac.out.qbar, alpha: this.ac.out.alpha, beta: this.ac.out.beta, loadFactor: this.ac.out.loadFactor,
-        yawRate: this.ac.state.omega[2], rollRate: this.ac.state.omega[0], pitchRate: this.ac.state.omega[1],
-        heading: e0.psi, bank: e0.phi, pitch: e0.theta, onGround: this.ac.gear.onGround,
-      });
+      this.mapper.update(raw, dt, this.ac.controls, this.ac.flightState());
     }
     if (!this._paused) this.ac.update(dt);
     this._checkBuildings();
@@ -649,6 +709,8 @@ export class Extra300 extends ArrivalScript {
 
     for (const ev of this.ac.events.splice(0)) {
       if (ev.e === 'propStrike') this.hud.flash('Prop strike! Backspace to reset', 4);
+      if (ev.e === 'nozzleLStrike' || ev.e === 'nozzleRStrike') this.hud.flash('Tail strike: easy on the rotation', 3);
+      if (/^belly/.test(ev.e)) this.hud.flash('Gear-up landing! Backspace to reset', 4);
       if (ev.e === 'splash') this.hud.flash('In the lake. Backspace to reset', 4);
     }
 
@@ -656,7 +718,8 @@ export class Extra300 extends ArrivalScript {
 
     this.sound.update({
       rpm: this.ac.rpm,
-      powerFrac: Math.max(0, this.ac.engine.power) / EXTRA.engine.ratedPower,
+      powerFrac: this.ac.jet ? this.ac.engine.power : Math.max(0, this.ac.engine.power) / this.ac.spec.engine.ratedPower,
+      ab: this.ac.jet ? this.ac.engine.ab : 0,
       running: this.ac.engine.running,
       qbar: this.ac.out.qbar,
       stall: v.stallWarning,
@@ -667,10 +730,18 @@ export class Extra300 extends ArrivalScript {
     if (this._panelVisible && !this._intro && this._panelAcc > 1 / 30) {
       this._panelAcc = 0;
       const c = this.ac.controls;
-      this.hud.panel.draw(v, {
-        throttle: c.throttle, prop: c.prop, trim: c.elevatorTrim, parkingBrake: c.parkingBrake,
-        engineRunning: this.ac.engine.running, paused: this._paused,
-      });
+      if (this.profile.display === 'hud') {
+        this.hud.jetHud.draw(v, {
+          fov: this._pose?.fov, throttle: c.throttle, abDetent: this.ac.spec.jet.abDetent, gearPos: this.ac.gearPos,
+          speedbrake: this.ac.speedbrakePos, flaps: c.flaps, parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running,
+          paused: this._paused, stall: v.stallWarning, gMax: this.ac.spec.limits.gPos, conformal: this.cameraRig.view === 'cockpit' && !this._intro,
+        });
+      } else {
+        this.hud.panel.draw(v, {
+          throttle: c.throttle, prop: c.prop, trim: c.elevatorTrim, parkingBrake: c.parkingBrake,
+          engineRunning: this.ac.engine.running, paused: this._paused,
+        });
+      }
     }
   }
 
@@ -700,7 +771,7 @@ export class Extra300 extends ArrivalScript {
     if (h > 450) return;
     if (this.world.buildingAt(p[0], p[1], h)) {
       this.ac.damage.crashed = true;
-      this.ac.engine.running = false;
+      this.ac.setEngineRunning(false);
       this.ac.state.vel = [0, 0, 0];
       this.ac.state.omega = [0, 0, 0];
       this.hud.flash('You hit a building. Backspace to reset', 5);
@@ -742,6 +813,7 @@ export class Extra300 extends ArrivalScript {
       this.city.build(this._cityOptions());
     }
     if (name === 'easyMode') this._setEasy(this.easyMode);
+    if (name === 'aircraft') this._switchAircraft(profileByTitle(this.aircraft));
     if (name === 'introOnLoad' && this.introOnLoad && !this._flying) this._filmPending = true;
     if (name === 'showPanel') { this._panelVisible = this.showPanel; this.hud.setFlying(this._flying, this._panelVisible); }
     if (['windKt', 'windFromDeg', 'qnhInHg', 'oatC'].includes(name)) this.ac.weather = this._weather();

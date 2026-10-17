@@ -10,7 +10,7 @@
 // a table someone had to measure.
 
 import { cross, dot, length } from '../math/vec3.js';
-import { clamp, DEG, lag } from './units.js';
+import { clamp, DEG, lag, table1 } from './units.js';
 
 const FLAT_PLATE_CL = 1.15;   // peak normal-force lift of a plate (Hoerner)
 const FLAT_PLATE_CD = 1.95;
@@ -29,15 +29,18 @@ export function deflectionEfficiency(delta) {
 
 const smooth = (t) => t * t * (3 - 2 * t);
 
-/** Forward-flow lift for |alpha| in [0, pi/2]. */
-function clForward(x, a, stall) {
+/**
+ * Forward-flow lift for |alpha| in [0, pi/2]. A thick straight wing breaks sharply (22 % gone within 4°);
+ * a thin swept one (stallDrop, stallWidth) rounds over gently and keeps most of its lift.
+ */
+function clForward(x, a, stall, lossFrac = 0.22, width = 4 * DEG) {
   const clmax = a * stall;
   if (x <= stall) return a * x;
-  const drop = 4 * DEG;
-  if (x <= stall + drop) return clmax * (1 - 0.22 * ((x - stall) / drop));
+  if (x <= stall + width) return clmax * (1 - lossFrac * ((x - stall) / width));
   const fp = FLAT_PLATE_CL * Math.sin(2 * x);
-  const t = smooth(clamp((x - stall - drop) / (40 * DEG - stall - drop), 0, 1));
-  return 0.78 * clmax * (1 - t) + fp * t;
+  const end = Math.max(40 * DEG, stall + width + 10 * DEG);
+  const t = smooth(clamp((x - stall - width) / (end - stall - width), 0, 1));
+  return (1 - lossFrac) * clmax * (1 - t) + fp * t;
 }
 
 /**
@@ -54,7 +57,7 @@ export function sectionCoefficients(alpha, g, groundFactor = 1) {
   let cl;
   let stalled;
   if (x <= Math.PI / 2) {
-    cl = s * clForward(x, g.a, g.stall);
+    cl = s * clForward(x, g.a, g.stall, g.stallDrop, g.stallWidth);
     stalled = x > g.stall;
   } else {
     // reversed flow: the section works backwards, with a worse slope and an earlier stall
@@ -87,7 +90,7 @@ export class Aero {
       ...s,
       tau: s.control ? flapTau(s.control.chordFrac) : 0,
       // inner wing strips sit in the slipstream
-      propwash: s.propwash ?? (s.group === 'wing' && Math.abs(s.pos[1]) < (ac.prop.diameter / 2) * 0.9 ? 0.55 : 0),
+      propwash: s.propwash ?? (ac.prop && s.group === 'wing' && Math.abs(s.pos[1]) < (ac.prop.diameter / 2) * 0.9 ? 0.55 : 0),
       out: { alpha: 0, cl: 0, stalled: false, q: 0 },
       deflection: 0,
     }));
@@ -102,14 +105,19 @@ export class Aero {
    * @param {{aileron:number, elevator:number, rudder:number, elevatorTrim?:number}} p.controls
    * @param {{dv:number, swirl:number, rot:number}} p.slip  slipstream axial increment & swirl at the tail
    * @param {number} p.hWing   wing height above ground (m), Infinity in the air
+   * @param {number} [p.mach]  flight Mach number (the jet's compressibility tables; the Extra never notices)
    * @param {number} p.dt
    * @returns {{ force: number[], moment: number[] }} body axes, about the CG
    */
-  compute({ vAir, omega, cg, rho, controls, slip, hWing = Infinity, dt }) {
+  compute({ vAir, omega, cg, rho, controls, slip, hWing = Infinity, mach = 0, dt }) {
     const F = [0, 0, 0];
     const M = [0, 0, 0];
     const V = length(vAir);
     const gd = this.ac.aero.groupData;
+    // compressibility: lift slope up toward Mach 1 and down past it, the drag rise through it
+    const mt = this.ac.aero.mach;
+    const liftK = mt ? table1(mt.lift, mach) : 1;
+    const dragK = mt ? table1(mt.drag, mach) : 1;
     this.alphaBody = vAir[0] > 0.1 ? Math.atan2(vAir[2], vAir[0]) : 0;
     this.betaBody = V > 0.1 ? Math.asin(clamp(vAir[1] / V, -1, 1)) : 0;
 
@@ -136,19 +144,27 @@ export class Aero {
       const Vp = length(u);
       if (Vp < 0.05) { st.out.q = 0; continue; }
 
-      let alpha = Math.atan2(-dot(u, st.normal), u[0]);
+      let alpha = Math.atan2(-dot(u, st.normal), u[0]) + (st.incidence || 0);
       if (st.downwash) alpha -= this.eps;
 
       let delta = 0;
       if (st.control) {
         let input = (controls[st.control.input] || 0) + (this.ac.rigging?.[st.control.input] || 0);
         if (st.control.input === 'elevator') input += 0.35 * (controls.elevatorTrim || 0);
+        // a surface worked by two inputs (the F-15's stabilators: pitch together, roll differentially)
+        if (st.control.mix) for (const m of st.control.mix) input += m.gain * (controls[m.input] || 0);
         input = clamp(input, -1, 1);
         delta = st.control.sign * input * st.control.maxDefl;
       }
       st.deflection = delta;
-      const alphaEff = alpha + st.tau * deflectionEfficiency(delta) * delta;
-      const { cl, cd, stalled } = sectionCoefficients(alphaEff, g, st.group === 'wing' ? ge : 1);
+      // an all-moving surface turns as a whole: no hinge-line separation to lose effectiveness to
+      const eff = st.control?.allMoving ? 1 : deflectionEfficiency(delta);
+      const alphaEff = alpha + st.tau * eff * delta;
+      // a trailing-edge flap raises the section's maximum lift, not only its lift at a given angle
+      const flapStall = st.control?.clmaxGain && delta > 0 ? st.control.clmaxGain * st.tau * eff * delta : 0;
+      const gs = mt || flapStall ? { ...g, a: g.a * liftK, cd0: g.cd0 * dragK, stall: g.stall + flapStall } : g;
+      const sc = sectionCoefficients(alphaEff, gs, st.group === 'wing' ? ge : 1);
+      const { cl, cd, stalled } = sc;
 
       const q = 0.5 * rho * Vp * Vp;
       const qS = q * st.area;
@@ -179,7 +195,9 @@ export class Aero {
       const ca = Math.abs(vAir[0]) / V;
       const Y = -q * b.sideArea * (b.sideSlope * sa * ca + 1.1 * sa * Math.abs(sa));
       const Z = -q * b.topArea * (b.topSlope * sz * ca + 1.1 * sz * Math.abs(sz));
-      const Dk = -q * b.dragArea / V;
+      // the gear hanging out and the speed brake up add their own flat-plate drag
+      const extra = (b.gearDragArea || 0) * (controls.gearPos ?? 1) + (b.speedbrakeDragArea || 0) * (controls.speedbrakePos || 0);
+      const Dk = -q * (b.dragArea * dragK + extra) / V;
       const fx = Dk * vAir[0];
       const fy = Dk * vAir[1] + Y;
       const fz = Dk * vAir[2] + Z;

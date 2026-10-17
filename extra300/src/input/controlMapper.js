@@ -31,6 +31,7 @@ export const BINDINGS = {
 export const ACTIONS = {
   view: ['v'], panel: ['i'], reset: ['Backspace'], pause: ['p'], help: ['h', '?'],
   mixture: ['m'], parkingBrake: [','], autoRudder: ['u'], easy: ['l'], demo: ['o'], gReset: ['g'], kollsman: ['n'], exit: ['Escape'], yoke: ['y'], lookCenter: ['c'],
+  gear: ['g'], speedbrake: ['j'],   // the jet's: G is the gear handle there (the Extra's G resets its g-meter)
 };
 
 /**
@@ -68,13 +69,14 @@ export const EASY = {
   holdKp: 2.2, holdKi: 1.6, holdKd: 0.5,   // pitch hold: elevator per rad, per rad·s, per rad/s [tune] tests/handling.test.js
   gMax: 7, gMin: -4.5,              // and a load limit inside the airplane's ±10 g [tune]
   radPerG: 0.03,                    // α per g at aerobatic speeds, to fold the g limit into the same loop
+  holdSpeedKt: [50, 95],            // the pitch hold: 8° nose-down at the first speed, up to 25° nose-up by the second
 };
 
 /** How much of its travel a held key may use without Shift. */
 export const KEY_CAP = { elevator: 0.75, aileron: 0.5, rudder: 0.65 };
 
-export function keyAuthority(axis, qbar, boost = 1) {
-  const a = KEY_AUTHORITY[axis];
+export function keyAuthority(axis, qbar, boost = 1, table = KEY_AUTHORITY) {
+  const a = table[axis];
   return Math.min(1, boost / (a.c * Math.max(0, qbar) + a.k0));
 }
 
@@ -85,7 +87,13 @@ const expo = (x, e) => Math.sign(x) * (e * Math.abs(x) ** 3 + (1 - e) * Math.abs
 const dead = (x, d) => (Math.abs(x) < d ? 0 : Math.sign(x) * (Math.abs(x) - d) / (1 - d));
 
 export class ControlMapper {
+  /**
+   * @param {object} [opts]
+   * @param {object} [opts.handling]  the aircraft's own stick feel and easy-mode limits (spec.handling):
+   *   { keyAuthority, keyCap, buffetAlpha, easy, throttleRate }, each over the Extra's defaults here
+   */
   constructor(opts = {}) {
+    this.setHandling(opts.handling);
     this.rampIn = opts.rampIn ?? 2.5;     // a held key reaches its pull in ~0.4 s …
     this.rampOut = opts.rampOut ?? 5.0;   // … and springs back in ~0.2 s
     this.expo = opts.expo ?? 0.45;
@@ -93,6 +101,8 @@ export class ControlMapper {
     this.throttle = 0;
     this.prop = 1;
     this.trim = 0;
+    this.speedbrake = false;   // the jet's speed brake switch (J); B holds it out in the air
+    this.gear = 1;             // the gear handle (G), down
     this.autoRudder = opts.autoRudder ?? true;   // the pilot's feet: keeps the ball centred in the air
     this._autoRud = 0;
     this.easy = opts.easy ?? false;
@@ -105,6 +115,15 @@ export class ControlMapper {
     this._ele = 0;
     this._thetaRef = null;
     this._holdI = 0;
+  }
+
+  /** Another airplane: its key feel and easy-mode limits. */
+  setHandling(h = {}) {
+    this.keyTable = { ...KEY_AUTHORITY, ...(h.keyAuthority || {}) };
+    this.keyCap = { ...KEY_CAP, ...(h.keyCap || {}) };
+    this.buffetAlpha = h.buffetAlpha ?? BUFFET_ALPHA;
+    this.E = { ...EASY, ...(h.easy || {}) };
+    this.throttleRate = h.throttleRate ?? 0.5;
   }
 
   /** Forget the held heading and bank (the airplane was put somewhere new). */
@@ -130,7 +149,7 @@ export class ControlMapper {
    * @param {{x:number,y:number}|null} [raw.yoke] mouse yoke, -1..1 from screen centre
    * @param {number} dt
    * @param {object} controls  aircraft controls object, written in place
-   * @param {{ qbar?: number, alpha?: number, beta?: number, yawRate?: number, rollRate?: number, pitchRate?: number, heading?: number, bank?: number, pitch?: number, loadFactor?: number, onGround?: boolean }} [flight]
+   * @param {{ qbar?: number, alpha?: number, beta?: number, yawRate?: number, rollRate?: number, pitchRate?: number, heading?: number, bank?: number, pitch?: number, loadFactor?: number, onGround?: boolean, agl?: number, climbRate?: number, retractable?: boolean }} [flight]
    *   dynamic pressure (Pa), angle of attack and sideslip (rad), yaw and roll rate (rad/s), true heading, bank and pitch (rad), load factor: for
    *   the keyboard's pilot-force model, its feel for the buffet, the auto-rudder and easy mode
    */
@@ -151,15 +170,16 @@ export class ControlMapper {
     // responsive but not slammed: the stick moves at once (steepest at the start of the press) and a
     // held key stops short of full travel; Shift takes the cap off
     const soft = (h, cap) => Math.sign(h) * Math.pow(Math.abs(h), 0.6) * (boost > 1 ? 1 : cap);
-    let ail = soft(this.kb.aileron, KEY_CAP.aileron) * keyAuthority('aileron', q, boost);
-    let ele = soft(this.kb.elevator, KEY_CAP.elevator) * keyAuthority('elevator', q, boost);
+    let ail = soft(this.kb.aileron, this.keyCap.aileron) * keyAuthority('aileron', q, boost, this.keyTable);
+    let ele = soft(this.kb.elevator, this.keyCap.elevator) * keyAuthority('elevator', q, boost, this.keyTable);
     // the keyboard pilot holds the pull at the buffet instead of pulling through it (Shift: through)
     const alpha = flight.alpha ?? 0;
     if (boost === 1 && q > 150 && !this.easy) {   // easy mode has its own, closer limit
-      if (ele > 0 && alpha > BUFFET_ALPHA) ele = Math.max(0, ele - EASE_PER_RAD * (alpha - BUFFET_ALPHA));
-      if (ele < 0 && alpha < -BUFFET_ALPHA) ele = Math.min(0, ele - EASE_PER_RAD * (alpha + BUFFET_ALPHA));
+      const ba = this.buffetAlpha;
+      if (ele > 0 && alpha > ba) ele = Math.max(0, ele - EASE_PER_RAD * (alpha - ba));
+      if (ele < 0 && alpha < -ba) ele = Math.min(0, ele - EASE_PER_RAD * (alpha + ba));
     }
-    let rud = soft(this.kb.rudder, KEY_CAP.rudder) * keyAuthority('rudder', q, boost);
+    let rud = soft(this.kb.rudder, this.keyCap.rudder) * keyAuthority('rudder', q, boost, this.keyTable);
     // auto-rudder: right pedal for a sideslip from the right, damped by the yaw rate; any rudder
     // input from keys, pad or sticks takes over
     const target = this.easy ? this._easyRudder(flight, dt)
@@ -193,8 +213,8 @@ export class ControlMapper {
     if (raw.yoke) { ail = expo(clamp(raw.yoke.x, -1, 1), this.expo); ele = expo(clamp(raw.yoke.y, -1, 1), this.expo); }
     if (raw.yoke && Math.abs(raw.yoke.y) > 0.02) elevIn = true;
 
-    if (P('throttleUp')) this.throttle = clamp(this.throttle + 0.5 * dt, 0, 1);
-    if (P('throttleDown')) this.throttle = clamp(this.throttle - 0.5 * dt, 0, 1);
+    if (P('throttleUp')) this.throttle = clamp(this.throttle + this.throttleRate * dt, 0, 1);
+    if (P('throttleDown')) this.throttle = clamp(this.throttle - this.throttleRate * dt, 0, 1);
     if (P('throttleFull')) this.throttle = 1;
     if (P('throttleIdle')) this.throttle = 0;
     if (P('propUp')) this.prop = clamp(this.prop + 0.4 * dt, 0, 1);
@@ -211,7 +231,13 @@ export class ControlMapper {
       // a stick slammed full back reaches the wing faster than any limiter can see it coming:
       // easy mode moves the elevator at most this fast (a brisk 0.3 s end to end)
       // (the stick itself is slewed; the limiter then works on that)
-      const slew = EASY.slew * dt;
+      const slew = this.E.slew * dt;
+      // a fighter's stabilators would pull it far past its g limit before the loop below caught up:
+      // bound the stick by dynamic pressure first ("q-feel": elevator per g falls as 1/q)
+      if (this.E.elevPerGq && q > 0) {
+        const up = ((this.E.gMax - 1) * this.E.elevPerGq) / q, down = ((1 - this.E.gMin) * this.E.elevPerGq) / q;
+        ele = clamp(ele, -down, up);
+      }
       this._ele = clamp(ele, this._ele - slew, this._ele + slew);
       ele = this._limitAlpha(this._ele, flight, dt);
     } else this._ele = ele;
@@ -236,6 +262,16 @@ export class ControlMapper {
     controls.brakeL = brakeL;
     controls.brakeR = brakeR;
     controls.starter = P('starter');
+    // in the air the brake key works the speed brake (a jet's); on the wheels it is the wheel brakes
+    controls.speedbrake = Math.max(this.speedbrake ? 1 : 0, !flight.onGround && brake ? 1 : 0);
+    // easy mode works a retractable gear too: up once climbing away, down when coming back low and slow
+    if (this.easy && flight.retractable && !flight.onGround) {
+      const kt = Math.sqrt((2 * Math.max(0, q)) / 1.225) / 0.514444;
+      if (this.gear === 1 && flight.agl > 15 && flight.climbRate > 2) this.gear = 0;
+      else if (this.gear === 0 && flight.agl < 150 && flight.climbRate < -1 && kt < 220) this.gear = 1;
+    }
+    if (flight.onGround) this.gear = 1;
+    controls.gear = this.gear;
     return controls;
   }
 
@@ -249,21 +285,21 @@ export class ControlMapper {
     if (this._alphaPrev != null && dt > 0) this._alphaDot += ((a - this._alphaPrev) / dt - this._alphaDot) * Math.min(1, dt * 20);
     this._alphaPrev = a;
     // on the wheels too: the lift-off is where an over-rotation drops a wing (three-point α is ~12°)
-    if ((flight.qbar ?? 0) < EASY.minQ) { this._lim.hi = this._lim.lo = null; return ele; }
-    const pred = a + EASY.lead * this._alphaDot;
+    if ((flight.qbar ?? 0) < this.E.minQ) { this._lim.hi = this._lim.lo = null; return ele; }
+    const pred = a + this.E.lead * this._alphaDot;
     // rotating on the main wheels the nose comes up fast: lift off with a couple of degrees in hand
-    const alphaMax = EASY.alphaMax - (flight.onGround ? EASY.liftoffMargin : 0);
+    const alphaMax = this.E.alphaMax - (flight.onGround ? this.E.liftoffMargin : 0);
     for (const sgn of [1, -1]) {
       const key = sgn > 0 ? 'hi' : 'lo';
       const n = flight.loadFactor ?? 1;
-      const gLeft = sgn > 0 ? EASY.gMax - n : n - EASY.gMin;
-      const margin = Math.min(alphaMax - sgn * pred, gLeft * EASY.radPerG);   // rad left before a limit
+      const gLeft = sgn > 0 ? this.E.gMax - n : n - this.E.gMin;
+      const margin = Math.min(alphaMax - sgn * pred, gLeft * this.E.radPerG);   // rad left before a limit
       const e = sgn * ele;                                 // the stick, as a pull toward this limit
       if (margin > 6 * Math.PI / 180) { this._lim[key] = null; continue; }
       // never above the stick: when the stick asks for less there is nothing to limit
-      const I = Math.max(-1, Math.min(1, e, (this._lim[key] ?? e) + EASY.ki * margin * dt));
+      const I = Math.max(-1, Math.min(1, e, (this._lim[key] ?? e) + this.E.ki * margin * dt));
       this._lim[key] = I;
-      const cap = I + EASY.kp * margin;
+      const cap = I + this.E.kp * margin;
       if (e > cap) ele = sgn * Math.max(-1, cap);
     }
     return ele;
@@ -281,9 +317,9 @@ export class ControlMapper {
     const D = Math.PI / 180;
     if (flight.onGround) {
       this._holdI = 0;
-      this._thetaRef = q > EASY.rotateQ ? EASY.climbPitch : null;
+      this._thetaRef = q > this.E.rotateQ ? this.E.climbPitch : null;
       if (this._thetaRef == null) return 0;
-    } else if (Math.abs(phi) > 80 * D || Math.abs(theta) > 80 * D || q < EASY.minQ) {
+    } else if (Math.abs(phi) > 80 * D || Math.abs(theta) > 80 * D || q < this.E.minQ) {
       // near vertical, banked past 80° or upside down, or no air over the wing: hands off, stick centred
       this._thetaRef = null;
       this._holdI = 0;
@@ -291,13 +327,15 @@ export class ControlMapper {
     } else if (this._thetaRef == null) {
       this._thetaRef = clamp(theta, -25 * D, 25 * D);
     }
-    // never hold more nose-up than the speed can carry: 25° above ~95 kt, level near 60, nose down below
+    // never hold more nose-up than the speed can carry: the Extra's 25° above ~95 kt, level near 60,
+    // nose down below (holdSpeedKt: where it is 8° nose-down and where 25° nose-up)
     const kt = Math.sqrt((2 * Math.max(0, q)) / 1.225) / 0.514444;
-    const thetaMax = clamp(-8 * D + (kt - 50) * ((33 * D) / 45), -8 * D, 25 * D);
+    const [lo, hi] = this.E.holdSpeedKt;
+    const thetaMax = clamp(-8 * D + (kt - lo) * ((33 * D) / (hi - lo)), -8 * D, 25 * D);
     const target = flight.onGround ? this._thetaRef : Math.min(this._thetaRef, thetaMax);
     const err = target - theta;
-    this._holdI = clamp((this._holdI ?? 0) + EASY.holdKi * err * dt, -0.6, 0.8);
-    return clamp(this._holdI + EASY.holdKp * err - EASY.holdKd * qr, -1, 1);
+    this._holdI = clamp((this._holdI ?? 0) + this.E.holdKi * err * dt, -0.6, 0.8);
+    return clamp(this._holdI + this.E.holdKp * err - this.E.holdKd * qr, -1, 1);
   }
 
   /** Easy mode's feet: the ball centred in the air (with an integrator for the climb torque), the heading held on the ground. */
