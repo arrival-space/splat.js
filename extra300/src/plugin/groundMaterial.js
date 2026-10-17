@@ -2,7 +2,7 @@
 // the variation (sRGB) under a small tileable detail layer for the grain
 // (overlay, grey-centred), both mapped in runway metres (see render/groundTextures.js).
 
-import { asphaltDetail, asphaltNormal, grassDetail, grassMacro, paintWear, runwayMacro } from '../render/groundTextures.js';
+import { asphaltNormal, asphaltSurface, grassDetail, grassMacro, paintWear, runwayMacro } from '../render/groundTextures.js';
 
 export function upload(device, img, { srgb, repeat }) {
   const c = document.createElement('canvas');
@@ -35,10 +35,19 @@ function pavedMacro(kind, L, W, paved) {
   return macros.get(kind);
 }
 
+// the asphalt's surface (render/groundTextures.js asphaltSurface): one 2 m tile, its maps made together
+const SURFACE = 2;
+let surface = null;
 const details = new Map();
+/** A tileable detail map: 'grass', 'asphalt' (albedo), 'asphaltNormal', 'asphaltGloss', 'paint'. */
 export function detail(device, kind) {
   if (!details.has(kind)) {
-    const img = kind === 'grass' ? grassDetail() : kind === 'asphaltNormal' ? asphaltNormal() : asphaltDetail();
+    let img;
+    if (kind === 'grass') img = grassDetail();
+    else {
+      surface ??= asphaltSurface(768);
+      img = { asphalt: surface.albedo, asphaltNormal: surface.normal, asphaltGloss: surface.gloss, paint: surface.paint }[kind] || asphaltNormal();
+    }
     details.set(kind, upload(device, img, { srgb: false, repeat: true }));
   }
   return details.get(kind);
@@ -58,7 +67,7 @@ export function groundMaterial(device, kind, rw, paved, bias = 0, paint = null) 
     ({ u, v } = PAVED[base](L, W));
     macro = pavedMacro(base, L, W, paved);
     if (paint) macro = paintWear(macro);
-    period = 2.5;
+    period = SURFACE;
   } else {
     u = [-256, 256]; v = [-832, 832];
     macro = grassMacro({ u, v, width: W }, 512, 1024);
@@ -69,18 +78,26 @@ export function groundMaterial(device, kind, rw, paved, bias = 0, paint = null) 
   m.diffuseMap = upload(device, macro, { srgb: true, repeat: false });
   m.diffuseMapTiling = new pc.Vec2(1 / (u[1] - u[0]), 1 / (v[1] - v[0]));
   m.diffuseMapOffset = new pc.Vec2(-u[0] / (u[1] - u[0]), -v[0] / (v[1] - v[0]));
-  m.diffuseDetailMap = detail(device, base === 'grass' ? 'grass' : 'asphalt');
+  m.diffuseDetailMap = detail(device, base === 'grass' ? 'grass' : paint ? 'paint' : 'asphalt');
   m.diffuseDetailMapTiling = new pc.Vec2(1 / period, 1 / period);
   m.diffuseDetailMode = pc.DETAILMODE_OVERLAY;
   if (base !== 'grass') {
-    // the aggregate's relief, at the detail layer's scale: the sun glints off it
+    // the aggregate's relief, at the detail layer's scale: the sun picks it out; the paint over it
+    // keeps it, softened
     m.normalMap = detail(device, 'asphaltNormal');
     m.normalMapTiling = new pc.Vec2(1 / period, 1 / period);
-    m.bumpiness = paint ? 0.35 : 0.7;
+    m.bumpiness = paint ? 0.4 : 0.65;
   }
   m.useMetalness = true;
   m.metalness = 0;
-  m.gloss = base === 'grass' ? 0.2 : paint ? 0.45 : 0.36;
+  if (base !== 'grass' && !paint) {
+    // rough: the binder dull, the chips' worn faces a little glossier
+    m.glossMap = detail(device, 'asphaltGloss');
+    m.glossMapTiling = new pc.Vec2(1 / period, 1 / period);
+    m.gloss = 1;
+  } else {
+    m.gloss = base === 'grass' ? 0.2 : 0.3;
+  }
   m.cull = pc.CULLFACE_NONE;
   if (bias) { m.depthBias = bias; m.slopeDepthBias = bias; }
   m.update();

@@ -13,7 +13,7 @@ export const PALETTE = {
   land: '#8a8a7e',
   asphalt: '#3a3b3d',
   taxiway: '#46474a',
-  marking: '#f2f2ee',
+  marking: '#e9e6df',
   yellow: '#e2b83a',
   seawall: '#9b968a',
   pier: '#9d9481',

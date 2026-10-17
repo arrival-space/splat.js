@@ -95,11 +95,11 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
   const du = (u[1] - u[0]) / w, dv = (v[1] - v[0]) / h;
   // repair patches: rectangles of newer (darker) or older (paler) asphalt
   const patches = [];
-  for (let k = 0; k < 70; k++) {
+  for (let k = 0; k < 24; k++) {
     const a = areas[Math.floor(hash(k, 1, seed) * areas.length)];
     const cu = a.u[0] + hash(k, 2, seed) * (a.u[1] - a.u[0]), cv = a.v[0] + hash(k, 3, seed) * (a.v[1] - a.v[0]);
     const su = 1.5 + hash(k, 4, seed) * 9, sv = 2 + hash(k, 5, seed) * 18;
-    patches.push({ u0: cu - su / 2, u1: cu + su / 2, v0: cv - sv / 2, v1: cv + sv / 2, tone: hash(k, 6, seed) > 0.4 ? -16 : 12 });
+    patches.push({ u0: cu - su / 2, u1: cu + su / 2, v0: cv - sv / 2, v1: cv + sv / 2, tone: hash(k, 6, seed) > 0.4 ? -6 : 5 });
   }
   // oil stains on the apron and at the taxiway hold points
   const stains = [];
@@ -118,18 +118,19 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
     const uu = u[0] + (i + 0.5) * du, vv = v[1] - (j + 0.5) * dv;
     const area = areas.find((a) => uu >= a.u[0] && uu <= a.u[1] && vv >= a.v[0] && vv <= a.v[1]);
     // base: weathered grey, warmer and paler where older
+    // compact asphalt, dark, its broad tone varying only a few per cent
     const big = fbm(uu / 60, vv / 60, seed, 4);
     const mid = fbm(uu / 9, vv / 9, seed + 1, 3);
-    let g = 104 + (big - 0.5) * 34 + (mid - 0.5) * 16;
-    let warm = 2 + (big - 0.5) * 6;
+    let g = 80 + (big - 0.5) * 12 + (mid - 0.5) * 6;
+    let warm = 1.5 + (big - 0.5) * 3;
     if (area?.kind === 'taxiway') { g += 10; warm += 2; }
     if (area?.kind === 'apron') { g += 6; warm += 1; }
     if (area?.kind === 'runway' || !area) {
       // paving lanes: 25 ft strips laid side by side, each its own shade, joints between
       const lane = Math.floor((uu + W2) / 7.62);
-      g += (hash(lane, 0, seed) - 0.5) * 9;
+      g += (hash(lane, 0, seed) - 0.5) * 4;
       const inLane = (((uu + W2) % 7.62) + 7.62) % 7.62;
-      if (inLane < 0.18 || inLane > 7.62 - 0.18) g -= 10;
+      if (inLane < 0.12 || inLane > 7.62 - 0.12) g -= 5;
       // rubber: the touchdown zones of both ends, densest a few hundred metres in, along the wheel tracks
       for (const end of [-1, 1]) {
         const s = end * vv;                          // distance toward this end
@@ -137,19 +138,21 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
         if (fromThr > 40 && fromThr < 650) {
           const zone = Math.exp(-(((fromThr - 260) / 170) ** 2));
           const across = Math.exp(-((uu / 5.5) ** 2)) + 0.55 * Math.exp(-(((Math.abs(uu) - 2.4) / 1.1) ** 2));
-          const streak = 0.55 + 0.45 * vnoise(uu * 1.6, vv / 7, seed + 9);
-          g -= 34 * zone * Math.min(1, across) * streak;     // a general-aviation field: lighter than an airliner runway
-          warm -= 3 * zone * across;
+          // broken streaks along the runway, no carpet: thin runs of rubber with clean asphalt between
+          const streak = smooth(Math.min(1, Math.max(0, (vnoise(uu * 2.4, vv / 11, seed + 9) - 0.42) / 0.4)))
+            * (0.5 + 0.5 * vnoise(uu * 0.7, vv / 40, seed + 10));
+          g -= 24 * zone * Math.min(1, across) * streak;     // a general-aviation field: lighter than an airliner runway
+          warm -= 2 * zone * across * streak;
         }
       }
       // a polished, slightly darker track down the middle from rolling out
-      g -= 7 * Math.exp(-((uu / 3) ** 2));
+      g -= 3 * Math.exp(-((uu / 3) ** 2));
     }
     // sealed cracks: tar snakes, meandering, mostly across the paving
     const crackField = vnoise(uu / 7 + fbm(uu / 3, vv / 3, seed + 4, 2) * 1.8, vv / 2.2, seed + 5);
-    if (Math.abs(crackField - 0.5) < 0.012 && fbm(uu / 25, vv / 25, seed + 6, 2) > 0.52) g = 52;
+    if (Math.abs(crackField - 0.5) < 0.008 && fbm(uu / 25, vv / 25, seed + 6, 2) > 0.6) g = 46;
     // edges of the runway: paler, less traffic
-    if (Math.abs(uu) > W2 - 4 && Math.abs(uu) < W2 + 1 && Math.abs(vv) < L2 + 30) g += 6;
+    if (Math.abs(uu) > W2 - 4 && Math.abs(uu) < W2 + 1 && Math.abs(vv) < L2 + 30) g += 3;
     return [g + warm, g + warm * 0.4, g - warm * 0.6];
   });
   // stamp the patches and stains over their own pixels
@@ -180,7 +183,7 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
         const len = 18 + r(3) * 55;                           // long, fading streaks
         const ang = (r(4) - 0.5) * 0.02;                      // drifting a touch on contact
         const wid = 0.14 + r(5) * 0.16;
-        const dark = 22 + r(6) * 30;
+        const dark = 12 + r(6) * 20;
         for (const side of [-1, 1]) {
           const u0 = off + side * track / 2;
           // along the landing direction: toward the far end (v decreasing for the north end)
@@ -191,7 +194,9 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
             if (t < 0 || t > 1) return null;
             const dU = Math.abs(uu - (u0 + ang * len * t));
             if (dU > wid) return null;
-            const d = -dark * (1 - t) ** 1.5 * (1 - (dU / wid) ** 2) * (0.7 + 0.3 * vnoise(vv * 2, uu * 9, seed + 22));
+            // broken: the tyre skipped as it spun up
+            const gaps = smooth(Math.min(1, Math.max(0, (vnoise(vv * 0.8, uu * 3, seed + 23) - 0.3) / 0.4)));
+            const d = -dark * (1 - t) ** 1.5 * (1 - (dU / wid) ** 2) * (0.7 + 0.3 * vnoise(vv * 2, uu * 9, seed + 22)) * gaps;
             return [d, d, d * 0.95];
           });
         }
@@ -265,6 +270,65 @@ export function asphaltNormal(S = 256, seed = 7, strength = 2.2) {
   });
 }
 
+/**
+ * Compact asphalt's surface, tileable over a 2 m tile (S texels across): aggregate chips (5 mm to
+ * a centimetre and a half, most grey, some pale, a few dark) bedded in a dark, sandy binder, as maps
+ * from the one height field so they agree:
+ *   albedo  grey-centred for the overlay detail mode (the macro image carries the colour)
+ *   normal  the chips' relief, gentle (a millimetre or two): the sun picks the aggregate out
+ *   gloss   (r) the binder dull, the chips' worn faces a little glossier
+ *   paint   the albedo under a coat of paint: the chips' shapes, faint
+ */
+export function asphaltSurface(S = 1024, seed = 7) {
+  const N = Math.round(S / 5.4);                 // stone cells per side: ~14 mm apart over the 2 m tile
+  const cell = S / N;
+  const pts = new Float32Array(N * N * 2), tone = new Float32Array(N * N), size = new Float32Array(N * N);
+  for (let j = 0; j < N; j++) for (let i = 0; i < N; i++) {
+    const k = j * N + i;
+    pts[2 * k] = (i + 0.15 + 0.7 * hash(i, j, seed)) * cell;
+    pts[2 * k + 1] = (j + 0.15 + 0.7 * hash(i, j, seed + 1)) * cell;
+    const r = hash(i, j, seed + 2);
+    tone[k] = r > 0.72 ? 0.7 + 0.3 * hash(i, j, seed + 3) : r < 0.12 ? -0.55 : (hash(i, j, seed + 4) - 0.5) * 0.8;
+    size[k] = 0.55 + 0.45 * hash(i, j, seed + 5);
+  }
+  const H = new Float32Array(S * S), T = new Float32Array(S * S), G = new Float32Array(S * S);
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      const ci = Math.floor(x / cell), cj = Math.floor(y / cell);
+      // Worley: the nearest and second-nearest chip centres, wrapping round the tile
+      let d1 = 1e9, d2 = 1e9, k1 = 0;
+      for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+        const ii = (ci + di + N) % N, jj = (cj + dj + N) % N, k = jj * N + ii;
+        const px = pts[2 * k] + (ci + di - ii) * cell, py = pts[2 * k + 1] + (cj + dj - jj) * cell;
+        const d = Math.hypot(x + 0.5 - px, y + 0.5 - py) / (cell * size[k]);
+        if (d < d1) { d2 = d1; d1 = d; k1 = k; } else if (d < d2) d2 = d;
+      }
+      const grit = hash(x, y, seed + 9);
+      // a chip where it stands clear of the gap to its neighbour; the binder between, sandy
+      const chip = Math.min(1, Math.max(0, (d2 - d1 - 0.12) / 0.22)) * (d1 < 0.62 ? 1 : 0);
+      const i = y * S + x;
+      H[i] = chip * (0.55 + 0.45 * Math.sqrt(Math.max(0, 1 - d1 * d1 * 2.2))) + (grit - 0.5) * 0.05;
+      T[i] = chip ? tone[k1] * chip : -0.35 + (grit - 0.5) * 0.3;
+      G[i] = chip ? 0.18 + 0.08 * chip : 0.09;
+    }
+  }
+  const at = (a, x, y) => a[((y + S) % S) * S + ((x + S) % S)];
+  const albedo = image(S, S, (x, y) => {
+    const v = 128 + at(T, x, y) * 72;
+    return [v, v * 0.995, v * 0.985];
+  });
+  const strength = 3.2;
+  const normal = image(S, S, (x, y) => {
+    const dx = (at(H, x + 1, y) - at(H, x - 1, y)) * strength, dy = (at(H, x, y + 1) - at(H, x, y - 1)) * strength;
+    const l = Math.hypot(dx, dy, 1);
+    return [128 + (-dx / l) * 127, 128 + (dy / l) * 127, 128 + (1 / l) * 127];
+  });
+  const gloss = image(S, S, (x, y) => { const g = at(G, x, y) * 255; return [g, g, g]; });
+  // paint fills the binder's pores and lies over the chips: their shapes show through, faintly
+  const paint = image(S, S, (x, y) => { const v = 128 + at(T, x, y) * 16; return [v, v, v]; });
+  return { albedo, normal, gloss, paint };
+}
+
 /** Mean brightness of an image (0–255), for tests. */
 export function meanLuma(img, x0 = 0, y0 = 0, x1 = img.width, y1 = img.height) {
   let s = 0, n = 0;
@@ -286,12 +350,12 @@ export function paintWear(under, seed = 13) {
   return image(w, h, (i, j) => {
     const k = (j * w + i) * 4;
     const luma = 0.299 * under.data[k] + 0.587 * under.data[k + 1] + 0.114 * under.data[k + 2];
-    // clean asphalt here is ~105: anything darker is rubber, stains or sealant and shows on the paint too
-    let f = Math.min(1, Math.pow(luma / 105, 1.6));
+    // clean asphalt here is ~80: anything darker is rubber, stains or sealant and shows on the paint too
+    let f = Math.min(1, Math.pow(luma / 80, 1.6));
     f = 0.78 + 0.22 * f;                       // paint holds its white better than the asphalt round it
     const scuff = fbm(i / 9, j / 9, seed, 3);
     f *= 0.9 + 0.1 * scuff;
-    if (vnoise(i / 1.7, j / 1.7, seed + 1) > 0.86) f *= 0.7;   // flaked: asphalt shows through
+    if (vnoise(i / 1.2, j / 1.2, seed + 1) > 0.93) f *= 0.55;  // flaked here and there: asphalt shows through
     const v = 255 * f;
     return [v, v, v];
   });

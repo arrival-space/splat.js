@@ -25,19 +25,23 @@ test('detail layers are grey-centred (overlay leaves the big image\'s colour as 
 test('runway: the touchdown zones carry rubber and skid marks, the middle of the runway does not', () => {
   const tdz = (end) => meanLuma(runway, col(-6), row(end * (L / 2 - 260)) - 20, col(6), row(end * (L / 2 - 260)) + 20);
   const middle = meanLuma(runway, col(-6), row(0) - 20, col(6), row(0) + 20);
-  for (const end of [-1, 1]) assert.ok(tdz(end) < middle - 12, `touchdown ${tdz(end).toFixed(0)} vs middle ${middle.toFixed(0)}`);
+  // there, but broken and low in contrast: no black carpet
+  for (const end of [-1, 1]) {
+    assert.ok(tdz(end) < middle - 5, `touchdown ${tdz(end).toFixed(0)} vs middle ${middle.toFixed(0)}`);
+    assert.ok(tdz(end) > middle - 25, `touchdown ${tdz(end).toFixed(0)} vs middle ${middle.toFixed(0)}: a carpet`);
+  }
   // skids: individual near-black streaks among the rubber
   let darkest = 255;
   for (let j = row(L / 2 - 120); j < row(L / 2 - 500); j++) for (let i = col(-6); i < col(6); i++) darkest = Math.min(darkest, runway.data[(j * runway.width + i) * 4]);
   assert.ok(darkest < 45, `darkest ${darkest}`);
 });
 
-test('markings wear: paint picks up the rubber where it lies in the touchdown zone', () => {
+test('markings wear: paint picks up a little of the rubber where it lies in the touchdown zone', () => {
   const wear = paintWear(runway);
   const tdz = meanLuma(wear, col(-3), row(L / 2 - 260) - 20, col(3), row(L / 2 - 260) + 20);
   const middle = meanLuma(wear, col(-3), row(0) - 20, col(3), row(0) + 20);
   assert.ok(middle > 200, `clean paint ${middle.toFixed(0)}`);
-  assert.ok(tdz < middle - 25, `touchdown ${tdz.toFixed(0)} vs ${middle.toFixed(0)}`);
+  assert.ok(tdz < middle - 5, `touchdown ${tdz.toFixed(0)} vs ${middle.toFixed(0)}`);
 });
 
 test('grass: mowing stripes alternate beside the runway', () => {
