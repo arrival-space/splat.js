@@ -22,3 +22,4 @@ space/space/entities/google-3d-tiles.json
 # the Blender model's raw export (scripts/blender/extra300l.py); the baked module in src/render/data is committed
 data/model/
 __pycache__/
+data/lowi/raw/

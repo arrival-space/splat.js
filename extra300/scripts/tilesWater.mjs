@@ -1,9 +1,12 @@
-// tilesWater.mjs — what this repo adds to the Arrival library's Google 3D Tiles vibe: the lake shaded
-// as water from a published land/water mask ("googletiles:water-mask", see src/plugin/waterMask.js),
-// and the room's own directional light turned onto the atmosphere's sun, so the shadows agree with
-// the sky. The library's file is staged into the space on every sync; this patches it there: each
-// edit is anchored on the library's own text, and if one no longer finds its anchor (the library
-// changed) the vibe is staged as it is, with a warning, rather than half-patched.
+// tilesWater.mjs — what this repo adds to the Arrival library's Google 3D Tiles vibe:
+//   - the lake shaded as water from a published land/water mask ("googletiles:water-mask", see
+//     src/plugin/waterMask.js)
+//   - the room's own directional light turned onto the atmosphere's sun, so shadows agree with the sky
+//   - ground flattened inside a published mask ("googletiles:flatten-region": an airport's runway)
+//   - the globe re-anchored on request ("googletiles:set-origin": another destination)
+// The library's file is staged into the space on every sync; this patches it there: each edit is
+// anchored on the library's own text, and if one no longer finds its anchor (the library changed)
+// the vibe is staged as it is, with a warning, rather than half-patched.
 
 const PATCHES = [
   {
@@ -119,6 +122,34 @@ const PATCHES = [
       "}",
       "`;",
       "",
+      "// \u2500\u2500 Flattened ground (another vibe publishes the region: googletiles:flatten-region) \u2500\u2500",
+      "// An airport's runway in the photogrammetry is a lumpy mesh; a vibe that lands airplanes on it needs",
+      "// it level. Inside a published mask (1 = flat, easing to 0 at its edge) each vertex is drawn at the",
+      "// given height instead (world space), so the satellite runway is exactly where the gear rolls. The",
+      "// vertices are moved in every pass (shadows, depth), GLSL only.",
+      "const FLAT_VS_DECL_GLSL = /* glsl */ `",
+      "uniform float uFlatEnable;     // 0 = as streamed, 1 = flatten inside the mask",
+      "uniform mat4  uFlatInv;        // world -> mask (u, v)",
+      "uniform sampler2D uFlatMask;   // r: 1 = level at uFlatY",
+      "uniform float uFlatY;          // the level, world y",
+      "`;",
+      "const FLAT_VS_MAIN_GLSL = /* glsl */ `",
+      "if (uFlatEnable > 0.5) {",
+      "    vec2 fq = (uFlatInv * vec4(dPositionW, 1.0)).xy;",
+      "    if (fq.x > 0.0 && fq.x < 1.0 && fq.y > 0.0 && fq.y < 1.0) {",
+      "        float fm = textureLod(uFlatMask, fq, 0.0).r;",
+      "        if (fm > 0.0) {",
+      "            vec3 fp = vec3(dPositionW.x, mix(dPositionW.y, uFlatY, fm), dPositionW.z);",
+      "            gl_Position = matrix_viewProjection * vec4(fp, 1.0);",
+      "            vPositionW = fp;",
+      "            #ifdef LINEAR_DEPTH",
+      "                vLinearDepth = -(matrix_view * vec4(fp, 1.0)).z;",
+      "            #endif",
+      "        }",
+      "    }",
+      "}",
+      "`;",
+      "",
     ].join('\n'),
   },
   {
@@ -158,6 +189,10 @@ const PATCHES = [
       "    _waterTime = 0;",
       "    _onWaterMask = null;",
       "    _onWaterClear = null;",
+      "    _flatRegions = new Map();       // id -> { texture, inv: number[16], height }",
+      "    _onFlatten = null;",
+      "    _onFlattenClear = null;",
+      "    _onSetOrigin = null;",
     ].join('\n'),
   },
   {
@@ -183,6 +218,35 @@ const PATCHES = [
       "        };",
       "        this.app.on(\"googletiles:water-mask\", this._onWaterMask, this);",
       "        this.app.on(\"googletiles:water-mask-clear\", this._onWaterClear, this);",
+      "",
+      "        // Flattened ground another vibe publishes (see FLAT_VS_MAIN_GLSL):",
+      "        //   app.fire(\"googletiles:flatten-region\", id, { texture, inv, height })",
+      "        // inv: world -> (u, v) over the mask, column-major 4\u00d74; height: the level, world y.",
+      "        this._onFlatten = (id, region) => {",
+      "            if (!id || !region?.texture) return;",
+      "            this._flatRegions.set(id, region);",
+      "            this._chunkAllTiles();",
+      "            this._applyFlatten();",
+      "        };",
+      "        this._onFlattenClear = (id) => {",
+      "            this._flatRegions.delete(id);",
+      "            this._applyFlatten();",
+      "        };",
+      "        this.app.on(\"googletiles:flatten-region\", this._onFlatten, this);",
+      "        this.app.on(\"googletiles:flatten-region-clear\", this._onFlattenClear, this);",
+      "",
+      "        // Another vibe moves the globe under us, as the Latitude / Longitude / Ground Altitude",
+      "        // settings do (the tiles already streamed are re-anchored, nothing is re-downloaded):",
+      "        //   app.fire(\"googletiles:set-origin\", { latitude, longitude, groundAltitude })",
+      "        this._onSetOrigin = (o) => {",
+      "            if (!o || !Number.isFinite(o.latitude) || !Number.isFinite(o.longitude)) return;",
+      "            this.latitude = o.latitude;",
+      "            this.longitude = o.longitude;",
+      "            if (Number.isFinite(o.groundAltitude)) this.groundAltitude = o.groundAltitude;",
+      "            if (this._anchor) this._applyOrigin();",
+      "            this._computeSunDir();",
+      "        };",
+      "        this.app.on(\"googletiles:set-origin\", this._onSetOrigin, this);",
       "",
     ].join('\n'),
   },
@@ -213,6 +277,9 @@ const PATCHES = [
     insert: [
       "        if (this._onWaterMask) this.app.off(\"googletiles:water-mask\", this._onWaterMask, this);",
       "        if (this._onWaterClear) this.app.off(\"googletiles:water-mask-clear\", this._onWaterClear, this);",
+      "        if (this._onFlatten) this.app.off(\"googletiles:flatten-region\", this._onFlatten, this);",
+      "        if (this._onFlattenClear) this.app.off(\"googletiles:flatten-region-clear\", this._onFlattenClear, this);",
+      "        if (this._onSetOrigin) this.app.off(\"googletiles:set-origin\", this._onSetOrigin, this);",
       "        if (this._waterBlank) { this._waterBlank.destroy(); this._waterBlank = null; }",
       "        if (this._roomSunRot) {",
       "            for (const [e, q] of this._roomSunRot) if (e.light) e.setRotation(q);",
@@ -225,7 +292,19 @@ const PATCHES = [
       "                if (this._patchActive || this.atmosphere || this._colorGradeActive()) {",
     ].join('\n'),
     with: [
-      "                if (this._patchActive || this.atmosphere || this._colorGradeActive() || this._waterMasks.size) {",
+      "                if (this._patchActive || this.atmosphere || this._colorGradeActive() || this._waterMasks.size || this._flatRegions.size) {",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "            chunks.set(CHUNK_DECL_NAME, lang === \"wgsl\" ? CHUNK_DECL_WGSL : CHUNK_DECL_GLSL);",
+      "            chunks.set(CHUNK_MAIN_NAME, lang === \"wgsl\" ? CHUNK_MAIN_WGSL : CHUNK_MAIN_GLSL);",
+    ].join('\n'),
+    insert: [
+      "            if (lang !== \"wgsl\") {",
+      "                chunks.set(\"litUserDeclarationVS\", FLAT_VS_DECL_GLSL);",
+      "                chunks.set(\"litUserMainEndVS\", FLAT_VS_MAIN_GLSL);",
+      "            }",
     ].join('\n'),
   },
   {
@@ -235,6 +314,24 @@ const PATCHES = [
     ].join('\n'),
     insert: [
       "        this._setWaterOn(mat);",
+      "        this._setFlattenOn(mat);",
+      "    }",
+      "",
+      "    // \u2500\u2500 Flattened ground (see FLAT_VS_MAIN_GLSL) \u2500\u2500",
+      "    _setFlattenOn(mat) {",
+      "        let f = null;",
+      "        for (const r of this._flatRegions.values()) f = r;",
+      "        if (!this._waterBlank) this._setWaterOn(mat);",
+      "        mat.setParameter(\"uFlatEnable\", f ? 1 : 0);",
+      "        mat.setParameter(\"uFlatMask\", f ? f.texture : this._waterBlank);",
+      "        if (f) {",
+      "            mat.setParameter(\"uFlatInv\", f.inv);",
+      "            mat.setParameter(\"uFlatY\", f.height);",
+      "        }",
+      "    }",
+      "",
+      "    _applyFlatten() {",
+      "        for (const mat of this._chunkedMaterials) this._setFlattenOn(mat);",
       "    }",
       "",
       "    // \u2500\u2500 Water mask (see WATER_GLSL) \u2500\u2500",

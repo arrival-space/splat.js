@@ -181,6 +181,7 @@ export function buildMeigs(data = MEIGS) {
   };
 
   return {
+    id: 'meigs',
     data, frame, elevation, water, ground, shoreEastAt,
     osm: null,
     /** Hand the world the decoded OpenStreetMap scenery: land/water raster for the gear, buildings for collisions. */
@@ -238,8 +239,9 @@ export function buildMeigs(data = MEIGS) {
     },
     island, mainland, shore, pier, landmarks,
     downtown: { ...data.downtown, sw: toNE([data.downtown.south, data.downtown.west]), ne: toNE([data.downtown.north, data.downtown.east]) },
-    /** Classic start: lined up on runway 36 just past the numbers. */
-    startPosition() {
+    /** Classic start: lined up on runway 36 just past the numbers (or on 18 with alt). */
+    startPosition(alt = false) {
+      if (alt) return { n: thr18[0] - dir[0] * 30, e: thr18[1] - dir[1] * 30, heading: brg + Math.PI };
       const back = 105;
       return { n: thr36[0] + dir[0] * back, e: thr36[1] + dir[1] * back, heading: brg };
     },

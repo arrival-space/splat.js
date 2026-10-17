@@ -13,6 +13,8 @@ import { ControlMapper, ACTIONS, BINDINGS, FLIGHT_KEYS } from '../input/controlM
 import { PatternPilot } from '../autopilot/platzrunde.js';
 import { CarrierPilot, CARRIER_APPROACH } from '../autopilot/carrierApproach.js';
 import { buildMeigs } from '../world/meigs.js';
+import { buildInnsbruck, inflateLowiDem } from '../world/innsbruck.js';
+import { TerrainVisual } from './terrainVisual.js';
 import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
@@ -44,6 +46,14 @@ const MOBILE_THROTTLE = 0.75; // a phone pilot starts rolling at once
 // tile to tile) and low shore all stay, and what's left inside the island is hidden under it.
 const CARVE_FLOOR = -0.3;
 
+// where the airplane can be: Meigs (the full scenery, the carrier) or Innsbruck (Google's tiles,
+// flattened under the runway, or the elevation grids when they aren't there)
+const DESTINATIONS = {
+  meigs: { id: 'meigs', title: 'Chicago Meigs (KCGX)', short: 'Chicago', runways: ['36', '18'], credit: 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago' },
+  lowi: { id: 'lowi', title: 'Innsbruck (LOWI)', short: 'Innsbruck', runways: ['26', '08'], credit: 'Map data © OpenStreetMap contributors (ODbL) · Elevation: Terrarium (Mapzen, AWS Open Data)' },
+};
+const destinationByTitle = (t) => Object.values(DESTINATIONS).find((d) => d.title === t || d.id === t) || DESTINATIONS.meigs;
+
 export class Extra300 extends ArrivalScript {
   static scriptName = 'extra300Meigs';
   static INTRO_LENGTH = INTRO_LENGTH;   // for tests/e2e/record-intro.cjs (the Extra's; vibe.profile.intro.length)
@@ -52,6 +62,7 @@ export class Extra300 extends ArrivalScript {
   aircraft = 'Extra 300L';
   startRunway = '36';
   showCarrier = true;
+  destination = 'Chicago Meigs (KCGX)';
   waterReflections = true;
   engineRunningAtStart = true;
   showPanel = true;
@@ -74,7 +85,8 @@ export class Extra300 extends ArrivalScript {
   static properties = {
     isEnabled: { title: 'Enabled' },
     aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 or ?aircraft=xwing on the address)', options: AIRCRAFT_OPTIONS },
-    startRunway: { title: 'Start: runway 36, 18, or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
+    destination: { title: 'Where to fly (also the ✈ button on the top bar, or ?airport=lowi on the address)', options: Object.values(DESTINATIONS).map((d) => d.title) },
+    startRunway: { title: 'Start: runway 36, 18 (at Innsbruck: 26, 08), or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
     showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
     waterReflections: { title: 'Reflections in the lake (screen-space: the airplane, the carrier, the skyline)' },
     engineRunningAtStart: { title: 'Engine running at start' },
@@ -105,7 +117,8 @@ export class Extra300 extends ArrivalScript {
     this._mouse = { x: 0, y: 0, dragging: false, lastX: 0, lastY: 0 };
     this._panelAcc = 0;
 
-    this.world = buildMeigs();
+    this.world = this.meigs = buildMeigs();
+    this._dest = 'meigs';
     this._worldRoot = new pc.Entity('Extra300World');
     this.entity.addChild(this._worldRoot);
     this._placeWorldRoot();
@@ -169,6 +182,7 @@ export class Extra300 extends ArrivalScript {
     window.addEventListener('pointermove', this._onPointerMove);
 
     this.hud.aircraftButton.onclick = (ev) => { ev.stopPropagation(); this._action('aircraft'); };
+    this.hud.placeButton.onclick = (ev) => { ev.stopPropagation(); this._goTo(this._dest === 'meigs' ? 'lowi' : 'meigs'); };
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
@@ -188,6 +202,120 @@ export class Extra300 extends ArrivalScript {
     // the camera is ours for the frame, after the platform's own camera scripts
     this._onPrerender = () => this._applyCamera();
     this.app.on('prerender', this._onPrerender);
+
+    // ?airport=lowi (or innsbruck) on the address, or the setting: start somewhere else
+    let want = destinationByTitle(this.destination).id;
+    try {
+      const a = new URLSearchParams(location.search).get('airport');
+      if (a) want = /lowi|inn/i.test(a) ? 'lowi' : 'meigs';
+    } catch { /* no address to read */ }
+    if (want !== 'meigs') this._goTo(want);
+  }
+
+  // ── destinations ─────────────────────────────────────────────────────────
+  get _place() { return DESTINATIONS[this._dest]; }
+
+  /** The runway the airplane starts on (and goes back to). */
+  get _runwayName() { return this._place.runways[this.startRunway === '18' ? 1 : 0]; }
+
+  /**
+   * Fly somewhere else: the world under the airplane (its ground, its height, its runway), Google's
+   * globe moved under the space, the Meigs scenery off or on, and the airplane on the new runway,
+   * a pilot already aboard with it.
+   */
+  async _goTo(id) {
+    if (id === this._dest || this._going || !DESTINATIONS[id]) return;
+    this._going = true;
+    this.hud.setPlace(DESTINATIONS[id].short, true);
+    try {
+      if (id === 'lowi' && !this._lowi) {
+        this._lowiDem = await inflateLowiDem();
+        this._lowi = buildInnsbruck(this._lowiDem);
+      }
+    } catch (e) {
+      console.warn('[extra300] Innsbruck unavailable:', e);
+      this.hud.flash('Innsbruck could not be loaded', 3);
+      this._going = false;
+      this.hud.setPlace(DESTINATIONS.lowi.short);
+      return;
+    }
+    this._going = false;
+    if (this._destroyed) return;
+    const flying = this._flying;
+    if (this._intro) this._endIntro();
+    if (this._demo) this._stopDemo('Demo ended');
+    if (flying) { this._attach?.detach?.(); this._attach = null; }
+    this._dest = id;
+    this.destination = DESTINATIONS[id].title;
+    this.world = id === 'lowi' ? this._lowi : this.meigs;
+    this._placeWorldRoot();
+    this._applyDestination(true);
+    this._buildAircraft(this.profile);
+    // the lagged cameras start afresh behind the airplane, not a kilometre off where it was
+    this.cameraRig.chasePos = null;
+    this.cameraRig.flybyPos = null;
+    if (flying) {
+      this._attachPilot();
+      this.sound.start();
+      this._setAvatarVisible(this.cameraRig.view !== 'cockpit');
+      this.visual.setCockpitView(this.cameraRig.view === 'cockpit');
+      this._showTakeoffCard();
+    }
+    this.hud.flash(`${this._place.short}: ${this.profile.title} on runway ${this._runwayName}`, 3);
+  }
+
+  /** What belongs to the place we're at: on, the rest off; Google's tiles told where we are. */
+  _applyDestination(moved = false) {
+    const meigs = this._dest === 'meigs';
+    const other = Object.values(DESTINATIONS).find((d) => d.id !== this._dest);
+    this.hud.setPlace(other.short);
+    this.hud.setCredit(this._place.credit);
+    this.scenery.visible = meigs && this.showScenery;
+    this.lights.visible = meigs && this.showScenery;
+    if (this.city) this.city.visible = meigs && this.showScenery;
+    this.carrierVisual.visible = meigs && this.showCarrier;
+    this.meigs.attachCarrier(meigs && this.showCarrier ? this.carrier : null);
+    if (this._ssr) this._ssr.visible = meigs && this.waterReflections;
+    if (!meigs && !this._terrain && this._lowiDem) this._terrain = new TerrainVisual(this.app, this._worldRoot, this._lowi, this._lowiDem);
+    if (this._terrain) this._terrain.visible = !meigs && !this._google;
+    // the tower view's cab, the carrier's deck view
+    const t = meigs ? this.meigs.landmarks.find((l) => l.name === 'Meigs Tower') : { ne: this.world.tower.ne, h: this.world.tower.h };
+    this.cameraRig.towerPos = fromNE(t.ne[0], t.ne[1], t.h + 1.5);
+    if (meigs) this._placeDeckCamera(); else this.cameraRig.deckPos = null;
+    if (this.cameraRig.view === 'deck' && !this.cameraRig.deckPos) this.cameraRig.cycle();
+    if (moved) this._publishOrigin();
+    this._publishCarve();
+    this._publishWater();
+    this._publishFlatten();
+  }
+
+  /** Google's globe under the place: its start on the runway where the vibe stands. */
+  _publishOrigin() {
+    const s = this.world.startPosition();
+    const [latitude, longitude] = this.world.frame.toLatLon(s.n, s.e);
+    this.app.fire('googletiles:set-origin', { latitude, longitude, groundAltitude: this.world.elevation + this.world.data.geoidM });
+  }
+
+  /** Google's ground levelled where the airplane rolls (Innsbruck's runway, taxiways, aprons). */
+  _publishFlatten() {
+    const id = `extra300-flatten-${this.entity.getGuid()}`;
+    if (this._dest === 'meigs' || !this._worldRoot) { this.app.fire('googletiles:flatten-region-clear', id); return; }
+    if (!this._flatMask) {
+      const m = this.world.flattenMask();
+      const tex = new pc.Texture(this.app.graphicsDevice, {
+        width: m.width, height: m.height, format: pc.PIXELFORMAT_L8, mipmaps: false,
+        minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR, addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE,
+      });
+      tex.lock().set(m.data);
+      tex.unlock();
+      this._flatMask = { texture: tex, box: m.box };
+    }
+    const root = this._worldRoot.getWorldTransform();
+    this.app.fire('googletiles:flatten-region', id, {
+      texture: this._flatMask.texture,
+      inv: maskTransform(root, this._flatMask.box),
+      height: this._worldRoot.getPosition().y,
+    });
   }
 
   // ── setup helpers ──────────────────────────────────────────────────────
@@ -247,7 +375,7 @@ export class Extra300 extends ArrivalScript {
       this._setAvatarVisible(this.cameraRig.view !== 'cockpit');
       this.visual.setCockpitView(this.cameraRig.view === 'cockpit');
       this._showTakeoffCard();
-      this.hud.flash(`${profile.title} on runway 36`, 2.5);
+      this.hud.flash(`${profile.title} on runway ${this._runwayName}`, 2.5);
     }
   }
 
@@ -278,10 +406,10 @@ export class Extra300 extends ArrivalScript {
     try {
       const osm = await inflateOsm(CHICAGO_OSM);
       if (this._destroyed) return;
-      this.world.attachOsm(osm, this.skylineYear);
+      this.meigs.attachOsm(osm, this.skylineYear);
       this._publishWater();   // the lake's mask: Google's water shading and our reflections
-      this.city = new OsmVisual(this.app, this._worldRoot, this.world, this._cityOptions());
-      this.city.visible = this.showScenery;
+      this.city = new OsmVisual(this.app, this._worldRoot, this.meigs, this._cityOptions());
+      this.city.visible = this.showScenery && this._dest === 'meigs';
       if (this._google) this.city.setGoogle(true);
       // the stand-in skyline stays up until the last OSM tile is built (see update)
     } catch (e) {
@@ -301,6 +429,9 @@ export class Extra300 extends ArrivalScript {
       this._carveTimer = 2;
       this._publishCarve();
       this._publishWater();
+      this._publishFlatten();
+      // the tiles vibe may have started after we moved: tell it again where we are
+      if (this._dest !== 'meigs') this._publishOrigin();
       // with no API key yet the tiles vibe lays a 50 km green disc at the runway's height, over our lake
       const ph = this.app.root.findByName('google-tiles-placeholder-ground');
       if (ph?.enabled) ph.enabled = false;
@@ -309,6 +440,7 @@ export class Extra300 extends ArrivalScript {
 
   _setGoogle(on) {
     this._google = on;
+    if (this._terrain) this._terrain.visible = this._dest !== 'meigs' && !on;
     this.city?.setGoogle(on);
     this.scenery.setGoogle(on);
     if (on) this.scenery.standInCity = false;
@@ -318,6 +450,7 @@ export class Extra300 extends ArrivalScript {
 
   _publishCarve() {
     if (!this._worldRoot) return;
+    if (this._dest !== 'meigs') { this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`); return; }
     // from just under the runway up: the island's park, hills and trees go, Google's water around it stays
     const { local, half } = carveBox(this.world.airfieldBox(), CARVE_FLOOR, 400);
     const m = new pc.Mat4();
@@ -329,8 +462,9 @@ export class Extra300 extends ArrivalScript {
 
   /** The lake from OpenStreetMap's land/water raster, for the tiles vibe to shade as water (waterMask.js). */
   _publishWater() {
+    if (this._dest !== 'meigs') { this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`); return; }
     if (!this._worldRoot || !this.world.osm) return;
-    this._water ??= buildWaterMasks(this.app.graphicsDevice, this.world);
+    this._water ??= buildWaterMasks(this.app.graphicsDevice, this.meigs);
     if (!this._water) return;
     const root = this._worldRoot.getWorldTransform();
     const { near, far } = this._water;
@@ -345,7 +479,7 @@ export class Extra300 extends ArrivalScript {
     // the lake's mirror: screen-space reflections over the same mask
     if (!this._ssr) {
       this._ssr = new WaterReflections(this.app, this._worldRoot, this.world.water, this._water, { steps: this.isMobile ? 40 : 160 });
-      this._ssr.visible = this.waterReflections;
+      this._ssr.visible = this.waterReflections && this._dest === 'meigs';
     }
   }
 
@@ -375,12 +509,7 @@ export class Extra300 extends ArrivalScript {
     this.mapper.resetHolds();
     // on final to the carrier only once aboard: parked, the airplane waits on runway 36
     if (this._onFinalStart) { this._startOnFinal(); return; }
-    const s = this.world.startPosition();
-    let { n, e, heading } = s;
-    if (this.startRunway === '18') {
-      const rw = this.world.runway;
-      n = rw.thr18[0] - rw.dir[0] * 30; e = rw.thr18[1] - rw.dir[1] * 30; heading = rw.bearing + Math.PI;
-    }
+    const { n, e, heading } = this.world.startPosition(this.startRunway === '18');
     if (this.ac.spec.engine) this.ac.load.fuelCenterL = this.fuelLiters;
     this.ac.updateMass();
     this.ac.placeOnGround(n, e, heading);
@@ -398,7 +527,7 @@ export class Extra300 extends ArrivalScript {
     for (let i = 0; i < 480; i++) this.ac.step(1 / 480);
   }
 
-  get _onFinalStart() { return this._flying && this.startRunway === 'Carrier approach' && this.showCarrier; }
+  get _onFinalStart() { return this._flying && this.startRunway === 'Carrier approach' && this.showCarrier && this._dest === 'meigs'; }
 
   /** On final to the carrier, on the glide slope, gear (and hook) down, on speed. */
   _startOnFinal() {
@@ -452,7 +581,7 @@ export class Extra300 extends ArrivalScript {
       this._introPlayed = true;
       this._resetToRunway();
       this.hud.flash(this.ac.spec.hook ? 'On final to USS Nimitz: fly the ball, the hook is down (/)' : 'On final to USS Nimitz: land on the angled deck', 5);
-    } else if (this.playIntro && !this._introPlayed && !this._demo) this._startIntro();
+    } else if (this.playIntro && !this._introPlayed && !this._demo && this._dest === 'meigs') this._startIntro();
     else this._showTakeoffCard();
   }
 
@@ -607,7 +736,7 @@ export class Extra300 extends ArrivalScript {
   _startDemo() {
     if (!this.isEnabled) return;
     const kind = this.profile.demo;
-    if (!kind || (kind === 'carrier' && !this.showCarrier)) { this.hud.flash('No demo flight for this airplane here (T switches airplane)', 3); return; }
+    if (!kind || (kind === 'carrier' && !this.showCarrier) || this._dest !== 'meigs') { this.hud.flash(this._dest !== 'meigs' ? 'The demo flights are at Chicago Meigs (✈ on the top bar)' : 'No demo flight for this airplane here (T switches airplane)', 3); return; }
     this._introPlayed = true;
     if (this._intro) this._endIntro();
     if (!this._flying) this._enter();
@@ -744,7 +873,7 @@ export class Extra300 extends ArrivalScript {
       case 'reset':
         if (this._demo) this._stopDemo('Demo ended');
         this._resetToRunway();
-        this.hud.flash(this._onFinalStart ? 'Back on final to the carrier' : 'Back on runway 36', 2);
+        this.hud.flash(this._onFinalStart ? 'Back on final to the carrier' : `Back on runway ${this._runwayName}`, 2);
         break;
       case 'pause': this._paused = !this._paused; break;
       case 'help': this.hud.toggleHelp(); break;
@@ -943,7 +1072,7 @@ export class Extra300 extends ArrivalScript {
 
   /** Fly into a building (or the carrier's side, or its island) and the flight ends there. */
   _checkBuildings() {
-    if (this.showCarrier && !this.ac.damage.crashed) {
+    if (this.showCarrier && this._dest === 'meigs' && !this.ac.damage.crashed) {
       const p = this.ac.state.pos, h = -p[2];
       if (this.carrier.hullContains(p[0], p[1], h - 1) || this.carrier.islandContains(p[0], p[1], h)) {
         this._crash('You hit the ship. Backspace to reset');
@@ -1051,15 +1180,10 @@ export class Extra300 extends ArrivalScript {
   }
 
   onPropertyChanged(name) {
-    if (name === 'showScenery') { this.scenery.visible = this.showScenery; this.lights.visible = this.showScenery; if (this.city) this.city.visible = this.showScenery; }
-    if (name === 'waterReflections' && this._ssr) this._ssr.visible = this.waterReflections;
-    if (name === 'showCarrier') {
-      this.carrierVisual.visible = this.showCarrier;
-      this.world.attachCarrier(this.showCarrier ? this.carrier : null);
-      this._placeDeckCamera();
-    }
+    if (name === 'showScenery' || name === 'waterReflections' || name === 'showCarrier') this._applyDestination();
+    if (name === 'destination') this._goTo(destinationByTitle(this.destination).id);
     if ((name === 'skylineYear' || name === 'cityDetail') && this.city) {
-      this.world.setSkylineYear(this.skylineYear);
+      this.meigs.setSkylineYear(this.skylineYear);
       this.city.build(this._cityOptions());
     }
     if (name === 'easyMode') this._setEasy(this.easyMode);
@@ -1075,6 +1199,11 @@ export class Extra300 extends ArrivalScript {
 
   destroy() {
     this._destroyed = true;
+    // Google's globe back where the space has it (Meigs), the flattening gone
+    if (this._dest !== 'meigs') { this.world = this.meigs; this._publishOrigin(); }
+    this.app.fire('googletiles:flatten-region-clear', `extra300-flatten-${this.entity.getGuid()}`);
+    this._flatMask?.texture.destroy();
+    this._terrain?.destroy();
     this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this._ssr?.destroy();

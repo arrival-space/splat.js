@@ -87,11 +87,14 @@ export class Hud {
       font: `600 ${isMobile ? 12 : 13}px "Helvetica Neue", Arial, sans-serif`, boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
       backdropFilter: 'blur(6px)', whiteSpace: 'nowrap', textAlign: 'center', overflow: 'hidden',
     };
-    const [wA, wE, wC] = isMobile ? [118, 118, 80] : [146, 132, 92];
-    const x0 = -(wA + wE + wC + 16) / 2;
+    const [wA, wE, wC, wD] = isMobile ? [118, 118, 80, 108] : [146, 132, 92, 126];
+    const x0 = -(wA + wE + wC + wD + 24) / 2;
     this.aircraftButton = button({ ...pill, width: `${wA}px`, left: `calc(50% + ${x0}px)` });
     this.easyButton = button({ ...pill, width: `${wE}px`, left: `calc(50% + ${x0 + wA + 8}px)` });
     this.controlsButton = button({ ...pill, width: `${wC}px`, left: `calc(50% + ${x0 + wA + wE + 16}px)` });
+    // where to fly: the other destination, one click away (in the airplane and out of it)
+    this.placeButton = button({ ...pill, width: `${wD}px`, left: `calc(50% + ${x0 + wA + wE + wC + 24}px)`, display: 'block' });
+    this.setPlace('Innsbruck');
     this.controlsButton.innerHTML = 'Controls';
     this.controlsButton.title = 'All the keys (H)';
     this.setProfile(profile);
@@ -127,6 +130,15 @@ export class Hud {
     }
     this.layout();
   }
+
+  /** The destination button names where it goes. */
+  setPlace(next, busy = false) {
+    this.placeButton.innerHTML = `<span style="opacity:0.75;margin-right:5px">${busy ? '…' : '✈'}</span>${next}`;
+    this.placeButton.title = `Fly at ${next} instead`;
+  }
+
+  /** The map data's credit line, for the place on screen. */
+  setCredit(text) { this.credit.textContent = text; }
 
   /** Another airplane: its cards, its cockpit display, its name on the top bar. */
   setProfile(p, next = null) {
@@ -220,7 +232,7 @@ export class Hud {
     this.skipButton.style.display = on ? 'block' : 'none';
     this._introCardShown = -1;
     if (on) { this.panelCanvas.style.display = 'none'; this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
-    for (const b of [this.aircraftButton, this.easyButton, this.controlsButton]) b.style.display = on ? 'none' : b.style.display;
+    for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton]) b.style.display = on ? 'none' : b.style.display;
   }
 
   /** One caption card: { kicker, title, lines }, faded by alpha; progress 0..1 along the bottom edge. */
@@ -268,6 +280,7 @@ export class Hud {
     this.aircraftButton.style.display = flying ? 'block' : 'none';
     this.easyButton.style.display = flying ? 'block' : 'none';
     this.controlsButton.style.display = flying ? 'block' : 'none';
+    this.placeButton.style.display = 'block';
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
     if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); }
@@ -281,7 +294,7 @@ export class Hud {
   }
 
   destroy() {
-    for (const el of [this.panelCanvas, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton,
+    for (const el of [this.panelCanvas, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }
