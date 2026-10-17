@@ -902,14 +902,14 @@ export class Extra300 extends ArrivalScript {
 
   /** The airfield's changing lights: the PAPIs need to know where the eye is. */
   _lightsTick(dt) {
-    if (!this.showScenery) return;
     const cam = ArrivalSpace.getCamera?.();
     let eye = null;
     if (cam) {
       const p = cam.getPosition(), o = this._worldRoot.getPosition(), ws = this._ws;
       eye = [(p.x - o.x) / ws, (p.y - o.y) / ws, (p.z - o.z) / ws];
     }
-    this.lights.update(dt, eye);
+    if (this.showScenery) this.lights.update(dt, eye);
+    if (this.showCarrier) this.carrierVisual.lod(eye);
   }
 
   postUpdate() {

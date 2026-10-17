@@ -11,6 +11,34 @@ import { material, meshEntity } from './pcMesh.js';
 import { paintMaterial } from './finishes.js';
 import { detail, upload } from './groundMaterial.js';
 
+// the parts left out beyond DETAIL_RANGE: deck lights, catwalk grating
+const DETAILS = new Set(['emissive', 'grating']);
+const DETAIL_RANGE = 2500;
+
+/** Several parts as one mesh, each vertex carrying its part's colour. */
+function coloured(parts) {
+  const mb = new MeshBuilder({ color: true });
+  for (const part of parts) {
+    // vertex colours are taken as linear, a material's colour as sRGB: convert, so both look alike
+    const c = new pc.Color().fromString(part.color);
+    const rgb = [c.r, c.g, c.b].map((v) => Math.round(Math.pow(v, 2.2) * 255));
+    const base = mb.vertexCount;
+    const src = part.mesh;
+    for (let i = 0; i < src.positions.length; i += 3) {
+      mb.vertex([src.positions[i], src.positions[i + 1], src.positions[i + 2]], [src.normals[i], src.normals[i + 1], src.normals[i + 2]], null, rgb);
+    }
+    for (const i of src.indices) mb.indices.push(base + i);
+  }
+  return mb;
+}
+
+function withVertexColour(m) {
+  m.diffuse = new pc.Color(1, 1, 1);
+  m.diffuseVertexColor = true;
+  m.update();
+  return m;
+}
+
 const WIRE_R = 0.06;    // m: a 1 3/8 in cross-deck pendant, drawn a little thicker to be seen
 
 /** A unit cylinder along +y, from 0 to 1. */
@@ -41,11 +69,24 @@ export class CarrierVisual {
     this.root.setLocalEulerAngles(0, (-carrier.heading * 180) / Math.PI, 0);
     const dev = app.graphicsDevice;
     this._owned = [];
-    for (const part of buildCarrierModel(carrier, water)) {
+    // one draw call per material: the painted parts, the markings and the dark ones each merged into
+    // one mesh with their colours per vertex; the small details go when the ship is far (lod())
+    const parts = buildCarrierModel(carrier, water);
+    const merged = [];
+    for (const finish of ['paint', 'mark', 'dark']) {
+      const group = parts.filter((p) => p.finish === finish);
+      merged.push({ name: `carrier-${finish}`, finish, color: '#ffffff', mesh: coloured(group), vertexColor: true });
+    }
+    this.details = new pc.Entity('CarrierDetails');
+    this.root.addChild(this.details);
+    for (const part of [...parts.filter((p) => !['paint', 'mark', 'dark'].includes(p.finish)), ...merged]) {
       const m = this._material(dev, part, carrier, water);
       const flat = part.finish === 'mark';
-      meshEntity(app, this.root, part.name, part.mesh, m, { castShadows: !flat && part.finish !== 'deck', receiveShadows: true });
+      const small = DETAILS.has(part.finish);
+      meshEntity(app, small ? this.details : this.root, part.name, part.mesh, m, { castShadows: !flat && part.finish !== 'deck', receiveShadows: true });
     }
+    const [cn, ce] = carrier.toNE(carrier.data.length / 2, 0);
+    this._centre = fromNE(cn, ce, carrier.deckH);
     // the wires: two halves each, so a caught one can be drawn as a V
     const wireMat = material('#2b2d30');
     const rodMesh = rod();
@@ -108,19 +149,30 @@ export class CarrierVisual {
         m.update();
         return own(m);
       }
-      case 'paint': return paintMaterial(dev, part.color, true);
+      case 'paint':
+        if (!part.vertexColor) return paintMaterial(dev, part.color, true);
+        return own(withVertexColour(paintMaterial(dev, '#ffffff', true).clone()));
       case 'glass': return paintMaterial(dev, part.color, false);
       case 'emissive': return material(part.color, { emissive: '#ffd890' });
       case 'mark': {
         // the markings lie on the deck: pulled forward in depth so they never flicker into it
         const m = material(part.color).clone();
+        if (part.vertexColor) withVertexColour(m);
         m.depthBias = -2; m.slopeDepthBias = -2;
         m.gloss = 0.4;
         m.update();
         return own(m);
       }
-      default: return material(part.color);
+      default:
+        return part.vertexColor ? own(withVertexColour(material(part.color).clone())) : material(part.color);
     }
+  }
+
+  /** Far off (m, from `eye` in the world root's render metres) the small details aren't drawn. */
+  lod(eye) {
+    if (!eye) return;
+    const c = this._centre;
+    this.details.enabled = Math.hypot(eye[0] - c[0], eye[1] - c[1], eye[2] - c[2]) < DETAIL_RANGE;
   }
 
   set visible(v) {
