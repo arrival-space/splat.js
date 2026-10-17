@@ -20,6 +20,7 @@
       "aircraft": "Extra 300L",
       "startRunway": "36",
       "showCarrier": true,
+      "waterReflections": true,
       "engineRunningAtStart": true,
       "showPanel": true,
       "showScenery": true,
