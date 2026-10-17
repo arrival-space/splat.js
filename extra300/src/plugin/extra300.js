@@ -34,6 +34,7 @@ import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
 import { buildSkyDome } from '../render/sky.js';
 import { carveBox } from '../render/carve.js';
 import { buildWaterMasks, maskTransform } from './waterMask.js';
+import { WaterReflections } from './waterReflections.js';
 import { INTRO_LENGTH, introAt } from '../render/intro.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane (more for a bigger one)
@@ -51,6 +52,7 @@ export class Extra300 extends ArrivalScript {
   aircraft = 'Extra 300L';
   startRunway = '36';
   showCarrier = true;
+  waterReflections = true;
   engineRunningAtStart = true;
   showPanel = true;
   showScenery = true;
@@ -74,6 +76,7 @@ export class Extra300 extends ArrivalScript {
     aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 or ?aircraft=xwing on the address)', options: AIRCRAFT_OPTIONS },
     startRunway: { title: 'Start: runway 36, 18, or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
     showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
+    waterReflections: { title: 'Reflections in the lake (screen-space: the airplane, the carrier, the skyline)' },
     engineRunningAtStart: { title: 'Engine running at start' },
     showPanel: { title: 'Instrument panel' },
     showScenery: { title: 'Meigs & Chicago scenery' },
@@ -276,6 +279,7 @@ export class Extra300 extends ArrivalScript {
       const osm = await inflateOsm(CHICAGO_OSM);
       if (this._destroyed) return;
       this.world.attachOsm(osm, this.skylineYear);
+      this._publishWater();   // the lake's mask: Google's water shading and our reflections
       this.city = new OsmVisual(this.app, this._worldRoot, this.world, this._cityOptions());
       this.city.visible = this.showScenery;
       if (this._google) this.city.setGoogle(true);
@@ -330,12 +334,18 @@ export class Extra300 extends ArrivalScript {
     if (!this._water) return;
     const root = this._worldRoot.getWorldTransform();
     const { near, far } = this._water;
+    this._waterXf = { nearInv: maskTransform(root, near.box), farInv: maskTransform(root, far.box), scale: 1 / this._ws };
     this.app.fire('googletiles:water-mask', `extra300-meigs-${this.entity.getGuid()}`, {
-      near: { texture: near.texture, inv: maskTransform(root, near.box) },
-      far: { texture: far.texture, inv: maskTransform(root, far.box) },
+      near: { texture: near.texture, inv: this._waterXf.nearInv },
+      far: { texture: far.texture, inv: this._waterXf.farInv },
       level: this.world.water,
-      scale: 1 / this._ws,
+      scale: this._waterXf.scale,
     });
+    // the lake's mirror: screen-space reflections over the same mask
+    if (!this._ssr) {
+      this._ssr = new WaterReflections(this.app, this._worldRoot, this.world.water, this._water, { steps: this.isMobile ? 40 : 160 });
+      this._ssr.visible = this.waterReflections;
+    }
   }
 
   _cityOptions() {
@@ -910,6 +920,7 @@ export class Extra300 extends ArrivalScript {
     }
     if (this.showScenery) this.lights.update(dt, eye);
     if (this.showCarrier) this.carrierVisual.lod(eye);
+    if (this._ssr && this._waterXf) this._ssr.update(dt, this._waterXf);
   }
 
   postUpdate() {
@@ -1040,6 +1051,7 @@ export class Extra300 extends ArrivalScript {
 
   onPropertyChanged(name) {
     if (name === 'showScenery') { this.scenery.visible = this.showScenery; this.lights.visible = this.showScenery; if (this.city) this.city.visible = this.showScenery; }
+    if (name === 'waterReflections' && this._ssr) this._ssr.visible = this.waterReflections;
     if (name === 'showCarrier') {
       this.carrierVisual.visible = this.showCarrier;
       this.world.attachCarrier(this.showCarrier ? this.carrier : null);
@@ -1064,6 +1076,8 @@ export class Extra300 extends ArrivalScript {
     this._destroyed = true;
     this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`);
+    this._ssr?.destroy();
+    this._ssr = null;
     if (this._water) { this._water.near.texture.destroy(); this._water.far.texture.destroy(); this._water = null; }
     this._exit();
     window.removeEventListener('keydown', this._onKeyDown, true);
