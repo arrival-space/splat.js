@@ -9,7 +9,9 @@ Place the vibe where the airplane should park. Meigs Field, the lake and
 Chicago are laid out around it. Walk up to the airplane and press **E** (or
 tap it) to fly. The first boarding plays a short intro film of the airplane
 (engine start, the details, then into the rear seat); **Skip intro**, Space,
-Enter or Esc skips it. In the cockpit a small card says what you need to take
+Enter or Esc skips it. To screen-record it, open the space with **`?intro`** on its address
+(`https://arrival.space/<space>?intro`) or tick the vibe's *Film mode* setting: once the city has
+loaded, the airplane boards by itself and the film plays without the Skip button. In the cockpit a small card says what you need to take
 off; the top bar has the **Easy mode** switch and **Controls** for every key.
 
 New to it? Press **Easy mode** on the right edge (or **L**), on the ground

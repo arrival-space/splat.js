@@ -52,6 +52,7 @@ export class Extra300 extends ArrivalScript {
   cityDetail = 'full';
   easyMode = false;
   playIntro = true;
+  introOnLoad = false;
   seatAnimation = 'driving.glb';
   avatarLean = 20;            // degrees the avatar leans back into the reclined seat
   avatarSeatHeight = 0.54;    // the seated pose has its origin ~0.5 m under the hips: hips on the cushion, feet inside the floor
@@ -72,6 +73,7 @@ export class Extra300 extends ArrivalScript {
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
+    introOnLoad: { title: 'Film mode: board and play the intro by itself after loading (or open the space with ?intro)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
     avatarSeatHeight: { title: 'Pilot seat: avatar height (m, body z: + is down)', min: -1.5, max: 1.0, step: 0.01 },
     avatarSeatForward: { title: 'Pilot seat: avatar fore/aft (m, body x: + is forward)', min: -2.0, max: 0.5, step: 0.01 },
@@ -96,6 +98,11 @@ export class Extra300 extends ArrivalScript {
     this.scenery.visible = this.showScenery;
     this._loadCity();
     this._loadPoses();
+    // film mode: ?intro (or #intro) on the space's address, or the setting — board by itself once
+    // everything has loaded and play the intro, ready to be screen-recorded
+    try {
+      this._filmPending = this.introOnLoad || new URLSearchParams(location.search).has('intro') || /(^|[#&])intro\b/.test(location.hash.slice(1));
+    } catch { this._filmPending = this.introOnLoad; }
     this._sky = null;
 
     this.ac = new Aircraft(EXTRA, {
@@ -328,6 +335,20 @@ export class Extra300 extends ArrivalScript {
   }
 
   // ── the intro film ──────────────────────────────────────────────────────
+  /** Film mode: wait for the city (and Google's first tiles, if they come), settle, then board and roll. */
+  _filmTick(dt) {
+    const cityUp = this.city && !this.city.queue.length;
+    const tilesUp = this.app.googleTilesLoading !== true;
+    this._filmWait = cityUp && tilesUp ? (this._filmWait || 0) + dt : 0;
+    if (this._filmWait < 2.5) return;
+    this._filmPending = false;
+    this._filmMode = true;
+    this.playIntro = true;
+    this._introPlayed = false;
+    this._enter();
+  }
+
+
   _startIntro() {
     this._introPlayed = true;
     this._intro = { t: 0 };
@@ -340,6 +361,7 @@ export class Extra300 extends ArrivalScript {
     this._setAvatarVisible(true);
     this.visual.setCockpitView(false);
     this.hud.showIntro(true);
+    if (this._filmMode) this.hud.skipButton.style.display = 'none';   // not in the recording
   }
 
   _introTick(dt) {
@@ -362,6 +384,7 @@ export class Extra300 extends ArrivalScript {
   _endIntro() {
     if (!this._intro) return;
     this._intro = null;
+    this._filmMode = false;
     const c = this.ac.controls;
     c.starter = false;
     c.parkingBrake = false;
@@ -578,7 +601,8 @@ export class Extra300 extends ArrivalScript {
       if (!this.city.queue.length) this.scenery.standInCity = false;
     }
     if (!this._flying) {
-      this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? 'Extra 300L' : 'Press E to fly the Extra 300L') : '');
+      if (this._filmPending) this._filmTick(dt);
+      if (!this._flying) this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? 'Extra 300L' : 'Press E to fly the Extra 300L') : '');
       return;
     }
     const raw = {
@@ -705,6 +729,7 @@ export class Extra300 extends ArrivalScript {
       this.city.build(this._cityOptions());
     }
     if (name === 'easyMode') this._setEasy(this.easyMode);
+    if (name === 'introOnLoad' && this.introOnLoad && !this._flying) this._filmPending = true;
     if (name === 'showPanel') { this._panelVisible = this.showPanel; this.hud.setFlying(this._flying, this._panelVisible); }
     if (['windKt', 'windFromDeg', 'qnhInHg', 'oatC'].includes(name)) this.ac.weather = this._weather();
     if (name === 'fuelLiters' || name === 'startRunway' || name === 'engineRunningAtStart') { if (!this._flying) this._resetToRunway(); }

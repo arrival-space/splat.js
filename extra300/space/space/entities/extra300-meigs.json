@@ -30,6 +30,7 @@
       "cityDetail": "full",
       "easyMode": false,
       "playIntro": true,
+      "introOnLoad": false,
       "seatAnimation": "driving.glb",
       "avatarSeatHeight": 0.54,
       "avatarSeatForward": -0.9,

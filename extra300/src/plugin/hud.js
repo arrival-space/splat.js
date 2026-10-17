@@ -190,7 +190,7 @@ export class Hud {
     css(this.introCard, {
       position: 'fixed', left: '6vw', bottom: 'calc(11vh + 26px)', zIndex: 31, pointerEvents: 'none', display: 'none',
       color: '#fff', textShadow: '0 2px 14px rgba(0,0,0,0.65)', font: '15px/1.5 "Helvetica Neue", Arial, sans-serif',
-      maxWidth: '560px', transition: 'opacity 0.25s linear, transform 0.25s ease',
+      maxWidth: 'min(860px, 82vw)', transition: 'opacity 0.25s linear, transform 0.25s ease',
     });
     container.appendChild(this.introCard);
     this.introProgress = document.createElement('div');
@@ -224,7 +224,7 @@ export class Hud {
     if (this._introCardShown !== card) {
       this._introCardShown = card;
       this.introCard.innerHTML = `<div style="font:700 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.22em;text-transform:uppercase;color:#ff5a64;margin-bottom:6px">${card.kicker}</div>`
-        + `<div style="font:800 clamp(28px,4.6vw,54px)/1.05 'Helvetica Neue',Arial,sans-serif;letter-spacing:-0.01em;margin-bottom:10px">${card.title}</div>`
+        + `<div style="font:800 clamp(26px,4.2vw,54px)/1.05 'Helvetica Neue',Arial,sans-serif;letter-spacing:-0.01em;margin-bottom:10px;white-space:nowrap">${card.title}</div>`
         + card.lines.map((l) => `<div style="opacity:0.92">${l}</div>`).join('');
     }
     this.introCard.style.opacity = alpha.toFixed(3);
