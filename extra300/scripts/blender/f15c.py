@@ -48,7 +48,7 @@ RUD_Z0, RUD_Z1, RUD_FRAC = -0.85, -2.10, 0.30
 MAIN = dict(x=-0.9, y=1.375, z=2.27, r=0.44, w=0.25)     # contact point (strut extended), tyre
 NOSEW = dict(x=4.52, z=2.27, r=0.28, w=0.17)
 NOZZLE_Y = 0.64
-EYE = (xb(5.3), 0.0, -1.25)
+EYE = (xb(5.3), 0.0, -1.32)
 SILL_Z = -1.0
 
 COLORS = {
@@ -263,7 +263,7 @@ def cockpit():
     kit.new_object('cockpitTub', bm, ['panel'], smooth_angle=30)
     bm = bmesh.new()
     box(bm, (xb(4.45), 0, -0.72), (0.06, 1.0, 0.60), Matrix.Rotation(math.radians(12), 3, 'Y'))   # main panel
-    box(bm, (xb(4.32), 0, -0.99), (0.30, 0.90, 0.05))                                              # glareshield
+    box(bm, (xb(4.32), 0, -0.965), (0.30, 0.90, 0.05))                                             # glareshield
     outward(bm)
     kit.new_object('panel', bm, ['panel'], smooth_angle=30)
     bm = bmesh.new()
@@ -273,11 +273,11 @@ def cockpit():
     kit.new_object('displays', bm, ['gauge'], smooth_angle=30)
     # the head-up display's combiner glass above the glareshield
     bm = bmesh.new()
-    box(bm, (xb(4.30), 0, -1.12), (0.012, 0.17, 0.15), Matrix.Rotation(math.radians(-30), 3, 'Y'))
+    box(bm, (xb(4.30), 0, -1.07), (0.012, 0.17, 0.13), Matrix.Rotation(math.radians(-30), 3, 'Y'))
     outward(bm)
     kit.new_object('hudGlass', bm, ['hud'], smooth_angle=30, meta=dict(transparent=True))
     bm = bmesh.new()
-    box(bm, (xb(4.24), 0, -1.03), (0.16, 0.20, 0.06))
+    box(bm, (xb(4.24), 0, -0.995), (0.16, 0.20, 0.05))
     outward(bm)
     kit.new_object('hudBase', bm, ['black'], smooth_angle=30)
     # stick: from the floor between the knees, origin on its pivot

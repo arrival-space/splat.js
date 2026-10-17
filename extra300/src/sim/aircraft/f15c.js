@@ -241,8 +241,8 @@ export const F15C = {
     throttleRate: 0.4,
   },
 
-  // the pilot's eye under the bubble [est]
-  eye: [xb(5.3), 0, -1.25],
+  // the pilot's eye under the bubble, sitting high: ~15° to see over the nose [est]
+  eye: [xb(5.3), 0, -1.32],
 };
 
 export default F15C;

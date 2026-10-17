@@ -64,7 +64,7 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     const P = (dist, lat, h) => { const [n, e] = cv.onLanding(dist, lat); return [e, h, -n]; };
     // the film's fixed cameras (render metres, as the rig's deck view takes them)
     window.__cams = {
-      water: P(-420, -70, cv.deckH - 12),                       // on the water, short of the stern, under the glide slope
+      water: P(-330, -120, cv.deckH - 11),                      // on the water short of the stern, beside the glide slope
       lso: P(cv.wires[0].along - 25, -cv.data.landing.halfWidth - 9, cv.deckH + 1.8),
       foul: P(150, cv.data.landing.halfWidth + 12, cv.deckH + 2.5),   // the starboard foul line, abeam the run-out
     };
@@ -89,7 +89,7 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
       if (view === 'deck') rig.deckPos = window.__cams[shot];
       rig.centre();
       rig.chaseScale = shot === 'orbit' ? 0.9 : 0.75;
-      rig.fovScale = shot === 'water' ? 0.8 : 1;
+      rig.fovScale = shot === 'water' ? 3.2 : 1;    // wide enough for the ship behind the jet
       v._setAvatarVisible(view !== 'cockpit');
       v.visual.setCockpitView(view === 'cockpit');
       // the head-up display only from the seat, where it means something
@@ -103,6 +103,9 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     requestAnimationFrame(() => requestAnimationFrame(() => done({ phase: d.phase, stopT: window.__stopT, t })));
   }), { dt, i, fps: FPS });
 
+  // a second of pre-roll: the chase camera settles in behind before the first frame is kept
+  await page.evaluate(() => { window.__preroll = true; });
+  for (let k = 0; k < FPS; k++) await frame(1 / FPS, 0);
   if (have) {
     for (let i = 0; i < have; i++) await frame(1 / FPS, i);
     log(`resuming at frame ${have}`);
