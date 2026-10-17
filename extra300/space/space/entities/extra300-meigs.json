@@ -34,7 +34,7 @@
       "playIntro": true,
       "introOnLoad": false,
       "seatAnimation": "driving.glb",
-      "avatarSeatHeight": 0.54,
+      "avatarSeatHeight": 0.79,
       "avatarSeatForward": -0.9,
       "avatarLean": 20
     }

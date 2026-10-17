@@ -64,7 +64,7 @@ export class Extra300 extends ArrivalScript {
   introOnLoad = false;
   seatAnimation = 'driving.glb';
   avatarLean = 20;            // degrees the avatar leans back into the reclined seat
-  avatarSeatHeight = 0.54;    // the seated pose has its origin ~0.5 m under the hips: hips on the cushion, feet inside the floor
+  avatarSeatHeight = 0.79;    // the seated pose has its origin under the hips: low enough that the head stays under the canopy
   avatarSeatForward = -0.90;
 
   static properties = {
