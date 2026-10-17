@@ -175,3 +175,56 @@ test('easy mode: the held-key loop still goes round', () => {
   }
   assert.ok(turned >= 2 * Math.PI, `got ${(turned / DEG).toFixed(0)}° round in ${t.toFixed(0)} s`);
 });
+
+// ── easy mode on a phone: one thumb ────────────────────────────────────────
+function phoneTakeoff(stick) {
+  const world = buildMeigsSync();
+  const ac = new Aircraft(EXTRA, { ground: world.ground, datumMsl: world.elevation });
+  const s = world.startPosition();
+  ac.placeOnGround(s.n, s.e, s.heading);
+  ac.engine.running = true; ac.rpm = 750;
+  const m = new ControlMapper({ easy: true }); m.throttle = 0.75;   // what the plugin sets on a phone
+  const log = [];
+  for (let t = 0; t < 40; t += 1 / 60) {
+    const y = stick(t);
+    m.update({ keys: new Set(), left: y ? { x: 0, y } : null }, 1 / 60, ac.controls, { ...easyFlight(ac), pitchRate: ac.state.omega[1] });
+    ac.update(1 / 60);
+    log.push({ t, along: ac.state.pos[0] - s.n, agl: ac.agl, pitch: ac.euler.theta, kt: casKt(ac), ground: ac.gear.onGround, events: ac.events.length });
+  }
+  return { ac, log };
+}
+import { buildMeigs as buildMeigsSync } from '../src/world/meigs.js';
+
+test('phone, hands off: 75 % power, it rolls straight, rotates by itself and climbs away well inside the runway', () => {
+  const { ac, log } = phoneTakeoff(() => 0);
+  const off = log.find((r) => !r.ground && r.agl > 3);
+  assert.ok(off, 'it lifted off');
+  assert.ok(off.along < 450, `airborne ${off.along.toFixed(0)} m down the runway (1,200 m long)`);
+  assert.deepEqual(ac.events, []);
+  assert.ok(ac.agl > 150, `climbing: ${ac.agl.toFixed(0)} m at 40 s`);
+});
+
+test('phone: a thumb pulls, lets go, and the attitude it left is held (as far as the speed allows)', () => {
+  const { log } = phoneTakeoff((t) => (t > 14 && t < 15.5 ? -0.4 : 0));   // stick 40 % down (back) for 1.5 s
+  const late = log.filter((r) => r.t > 24);
+  const p = late.map((r) => r.pitch / DEG);
+  assert.ok(Math.max(...p) - Math.min(...p) < 4, `pitch wandered ${Math.min(...p).toFixed(1)}…${Math.max(...p).toFixed(1)}°`);
+  assert.ok(Math.min(...late.map((r) => r.kt)) > 65, 'never slower than a safe climb');
+  assert.equal(log[log.length - 1].events, 0);
+});
+
+test('phone: let go steeply nose-up and slow, it noses over by itself and flies on', () => {
+  const ac = level(90);
+  const m = new ControlMapper({ easy: true }); m.throttle = 0.75;
+  // pull hard for 3 s, then let go
+  let minAgl = Infinity;
+  for (let t = 0; t < 30; t += 1 / 60) {
+    const left = t < 3 ? { x: 0, y: -1 } : null;
+    m.update({ keys: new Set(), left }, 1 / 60, ac.controls, { ...easyFlight(ac), pitchRate: ac.state.omega[1] });
+    ac.update(1 / 60);
+    if (t > 3) minAgl = Math.min(minAgl, ac.altitudeMsl);
+  }
+  assert.ok(casKt(ac) > 60, `flying at ${casKt(ac).toFixed(0)} kt`);
+  assert.ok(Math.abs(ac.euler.theta) < 30 * DEG, `pitch ${(ac.euler.theta / DEG).toFixed(0)}°`);
+  assert.ok(ac.aero.wingStallFraction() === 0);
+});

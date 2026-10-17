@@ -29,6 +29,7 @@ import { carveBox } from '../render/carve.js';
 import { INTRO_CARDS, INTRO_LENGTH, INTRO_STARTER, introAt } from '../render/intro.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane
+const MOBILE_THROTTLE = 0.75; // a phone pilot starts rolling at once
 // m above the datum (the runway): over the airfield Google's tiles are cut away above this. Just under
 // our island's surface, so their water (photographed, not flat: it varies by a metre or more from
 // tile to tile) and low shore all stay, and what's left inside the island is hidden under it.
@@ -332,6 +333,18 @@ export class Extra300 extends ArrivalScript {
   _showTakeoffCard() {
     this._helpAutoHidden = false;
     this.hud.showQuick(this.ac.agl < 30);
+    // on a phone it should fly with one thumb: easy mode (stall-proof, rudder done for you, the
+    // attitude held when the stick is let go) and the engine already at 75 % — it rolls, lifts off
+    // at 65 kt by itself, and the left stick points it
+    if (this.isMobile) {
+      if (!this._mobileEasyOn) { this._mobileEasyOn = true; this._setEasy(true); }
+      if (this.ac.gear.onGround && this.ac.groundSpeed < 2 && !this.ac.damage.crashed) {
+        this.ac.engine.running = true;
+        this.ac.rpm = Math.max(this.ac.rpm, 750);
+        this.ac.controls.parkingBrake = false;
+        this.mapper.throttle = MOBILE_THROTTLE;
+      }
+    }
   }
 
   // ── the intro film ──────────────────────────────────────────────────────
@@ -623,7 +636,7 @@ export class Extra300 extends ArrivalScript {
       const e0 = this.ac.euler;
       this.mapper.update(raw, dt, this.ac.controls, {
         qbar: this.ac.out.qbar, alpha: this.ac.out.alpha, beta: this.ac.out.beta, loadFactor: this.ac.out.loadFactor,
-        yawRate: this.ac.state.omega[2], rollRate: this.ac.state.omega[0],
+        yawRate: this.ac.state.omega[2], rollRate: this.ac.state.omega[0], pitchRate: this.ac.state.omega[1],
         heading: e0.psi, bank: e0.phi, pitch: e0.theta, onGround: this.ac.gear.onGround,
       });
     }

@@ -11,6 +11,13 @@ const QUICK_START = [
   '<b>W A S D</b> or the arrows fly it, <b>V</b> changes the view, <b>Esc</b> gets out',
 ];
 
+// on a phone: one thumb flies it (easy mode, the engine at 75 % already)
+const QUICK_START_MOBILE = [
+  'Engine running, 75 % power: it rolls straight and lifts off by itself',
+  '<b>Left stick</b>: down climbs, up dives, sideways banks',
+  'Let go and it holds the attitude · <b>right stick</b>: throttle ↑↓',
+];
+
 const HELP = [
   ['Pitch', 'S / ↓ nose up (pull)    W / ↑ nose down (push)    + Shift: pull through the buffet'],
   ['Roll', 'A / ←  left    D / →  right'],
@@ -87,8 +94,9 @@ export class Hud {
       borderRadius: '10px', zIndex: 22, display: 'none', pointerEvents: 'none', boxShadow: '0 6px 24px rgba(0,0,0,0.3)',
     });
     this.quick.innerHTML = `<div style="font:700 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.12em;text-transform:uppercase;color:#e0505a;margin-bottom:4px">Take off</div>`
-      + QUICK_START.map((t) => `<div>${t}</div>`).join('')
-      + `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Everything else: <b>Controls</b> (or H)</div>`;
+      + (isMobile ? QUICK_START_MOBILE : QUICK_START).map((t) => `<div>${t}</div>`).join('')
+      + (isMobile ? `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Easy mode is on: no stalls, the rudder is done for you</div>`
+        : `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Everything else: <b>Controls</b> (or H)</div>`);
     container.appendChild(this.quick);
 
     // ODbL: the map data is credited wherever the city is on screen

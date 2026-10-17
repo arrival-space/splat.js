@@ -3,7 +3,7 @@
 // `ArrivalScript` / `ArrivalSpace` surface for the vibe to run. Lets the
 // plugin be loaded, flown and screenshotted headlessly (tests/e2e).
 //
-// URL parameters: ?fly=1 board immediately (?intro=1 with the intro film), ?view=chase|tower|flyby|cockpit,
+// URL parameters: ?fly=1 board immediately (?intro=1 with the intro film), ?mobile=1 as a phone, ?view=chase|tower|flyby|cockpit,
 // ?bundle=0 load the sources instead of dist/ (faster edit-reload).
 import * as pc from 'playcanvas';
 
@@ -57,7 +57,7 @@ window.ArrivalSpace = {
 };
 
 class ArrivalScript extends pc.Script {
-  get isMobile() { return false; }
+  get isMobile() { return params.get('mobile') === '1'; }   // ?mobile=1: the phone layout and behaviour
   getUIContainer() { return uiRoot; }
   createUI(tag, opts = {}) {
     const el = document.createElement(tag);
