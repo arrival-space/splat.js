@@ -3,7 +3,7 @@
 // `ArrivalScript` / `ArrivalSpace` surface for the vibe to run. Lets the
 // plugin be loaded, flown and screenshotted headlessly (tests/e2e).
 //
-// URL parameters: ?fly=1 board immediately (?intro=1 with the intro film), ?mobile=1 as a phone, ?view=chase|tower|flyby|cockpit, ?aircraft=f15 the F-15C (read by the plugin itself),
+// URL parameters: ?menu=1 the start menu, ?fly=1 board immediately (?intro=1 with the intro film), ?mobile=1 as a phone, ?view=chase|tower|flyby|cockpit, ?aircraft=f15 the F-15C (read by the plugin itself),
 // ?bundle=0 load the sources instead of dist/ (faster edit-reload), ?gpu=webgpu on a WebGPU device.
 import * as pc from 'playcanvas';
 
@@ -82,7 +82,8 @@ const host = new pc.Entity('vibe');
 app.root.addChild(host);
 host.addComponent('script');
 app.start();
-const vibe = host.script.create(mod.Extra300);
+// the start menu only when asked for (?menu=1): the rest of the harness drives the vibe itself
+const vibe = host.script.create(mod.Extra300, { properties: { startMenu: params.get('menu') === '1' } });
 window.vibe = vibe;
 window.app = app;
 

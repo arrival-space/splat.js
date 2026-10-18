@@ -5,6 +5,7 @@
 //   - ground flattened inside a published mask ("googletiles:flatten-region": an airport's runway)
 //   - the globe re-anchored on request ("googletiles:set-origin": another destination, its sun)
 //   - the room sun's shadow map on Google's unlit tiles ("googletiles:receive-shadows")
+//   - the streaming held while another vibe asks (app.googleTilesHold: its start menu)
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
 // the vibe is staged as it is, with a warning, rather than half-patched.
@@ -326,6 +327,11 @@ const PATCHES = [
       "        if (!this._tree) return;",
     ].join('\n'),
     insert: [
+      "        // another vibe holds the streaming (app.googleTilesHold: its start menu, where the globe goes",
+      "        // not chosen yet): nothing downloads, the loading card waits hidden, its timeout unspent",
+      "        const held = !!this.app.googleTilesHold;",
+      "        if (this._loadingEl) this._loadingEl.style.display = held ? \"none\" : \"\";",
+      "        if (held) { if (this._initialLoad) this._initialLoad.start = performance.now() / 1000; return; }",
       "        if (this._waterMasks.size) this._updateWaterFrame(dt);",
     ].join('\n'),
   },

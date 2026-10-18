@@ -28,6 +28,7 @@ import { CameraRig } from '../render/cameraRig.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
 import { AIRCRAFT_OPTIONS, nextProfile, PROFILES, profileByTitle } from './profiles.js';
+import { StartMenu } from './startMenu.js';
 import { SceneryVisual } from './sceneryVisual.js';
 import { Hud } from './hud.js';
 import { disposeMaterials, toMesh } from './pcMesh.js';
@@ -63,6 +64,21 @@ const AIRPORTS = {
 };
 /** The destination after this one, as the ✈ button goes round them. */
 const nextDestination = (id) => { const ids = Object.keys(DESTINATIONS); return ids[(ids.indexOf(id) + 1) % ids.length]; };
+// the start menu's words (plugin/startMenu.js)
+const PLACE_BLURBS = {
+  meigs: 'The lakefront island strip: the skyline next door, a carrier in the lake',
+  lowi: 'The Inn valley, mountains all round',
+  krnt: "Boeing's 737 field, at the south end of Lake Washington",
+};
+const AIRCRAFT_BLURBS = {
+  extra300l: 'Aerobatic two-seater',
+  f15c: 'Twin-engine air-superiority fighter',
+  xwing: 'T-65 starfighter: S-foils, lasers',
+  b777: 'Long-haul twin-jet airliner',
+};
+const placeFromAddress = (a) => (/lowi|inn/i.test(a) ? 'lowi' : /krnt|rnt|renton/i.test(a) ? 'krnt' : 'meigs');
+const aircraftFromAddress = (a) => (/f-?15/i.test(a) ? 'f15c' : /x-?wing/i.test(a) ? 'xwing' : /777|b7|boeing/i.test(a) ? 'b777' : 'extra300l');
+
 const destinationByTitle = (t) => Object.values(DESTINATIONS).find((d) => d.title === t || d.id === t) || DESTINATIONS.meigs;
 
 export class Extra300 extends ArrivalScript {
@@ -90,6 +106,7 @@ export class Extra300 extends ArrivalScript {
   easyMode = false;
   playIntro = true;
   introOnLoad = false;
+  startMenu = true;
   seatAnimation = 'driving.glb';
   avatarLean = 20;            // degrees the avatar leans back into the reclined seat
   avatarSeatHeight = 0.79;    // the seated pose has its origin under the hips: low enough that the head stays under the canopy
@@ -116,6 +133,7 @@ export class Extra300 extends ArrivalScript {
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
+    startMenu: { title: 'Start menu: pick the airport and airplane before anything loads (skipped when the address names both)' },
     introOnLoad: { title: 'Film mode: board and play the intro by itself after loading (or open the space with ?intro)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
     avatarSeatHeight: { title: 'Extra\'s pilot seat: avatar height (m, body z: + is down)', min: -1.5, max: 1.0, step: 0.01 },
@@ -154,19 +172,21 @@ export class Extra300 extends ArrivalScript {
     if (this.showCarrier) this.world.attachCarrier(this.carrier);
     this.carrierVisual = new CarrierVisual(this.app, this._worldRoot, this.carrier, this.world.water);
     this.carrierVisual.visible = this.showCarrier;
-    this._loadCity();
     this._loadPoses();
     // film mode: ?intro (or #intro) on the space's address, or the setting — board by itself once
     // everything has loaded and play the intro, ready to be screen-recorded
     try {
       this._filmPending = this.introOnLoad || new URLSearchParams(location.search).has('intro') || /(^|[#&])intro\b/.test(location.hash.slice(1));
     } catch { this._filmPending = this.introOnLoad; }
-    // ?aircraft=f15 (or f15c, extra, xwing, 777) on the address picks the airplane, as the setting does
+    // ?aircraft=f15 (or f15c, extra, xwing, 777) and ?airport=lowi (or innsbruck, krnt, renton) on the
+    // address pick the airplane and the place, as the settings do
+    let askedPlace = null, askedAircraft = null;
     try {
-      const want = new URLSearchParams(location.search).get('aircraft');
-      if (want) this.aircraft = /f-?15/i.test(want) ? PROFILES.f15c.title : /x-?wing/i.test(want) ? PROFILES.xwing.title
-        : /777|b7|boeing/i.test(want) ? PROFILES.b777.title : PROFILES.extra300l.title;
+      const q = new URLSearchParams(location.search);
+      if (q.get('airport')) askedPlace = placeFromAddress(q.get('airport'));
+      if (q.get('aircraft')) askedAircraft = aircraftFromAddress(q.get('aircraft'));
     } catch { /* no address to read */ }
+    if (askedAircraft) this.aircraft = PROFILES[askedAircraft].title;
     this._sky = null;
 
     this.profile = profileByTitle(this.aircraft);
@@ -229,14 +249,40 @@ export class Extra300 extends ArrivalScript {
     this._onPrerender = () => { this._applyCamera(); this._cloudsTick(); };
     this.app.on('prerender', this._onPrerender);
 
-    // ?airport=lowi (or innsbruck, krnt, renton) on the address, or the setting: start somewhere else
-    let want = destinationByTitle(this.destination).id;
-    try {
-      const a = new URLSearchParams(location.search).get('airport');
-      if (a) want = /lowi|inn/i.test(a) ? 'lowi' : /krnt|rnt|renton/i.test(a) ? 'krnt' : 'meigs';
-    } catch { /* no address to read */ }
-    if (want !== 'meigs') this._goTo(want);
+    // the start menu first: nothing heavy loads (the city, the airport, Google's tiles) until the
+    // airport and the airplane are both picked; the address naming both, or film mode, skips it
+    if (this.startMenu && !this._filmPending && !(askedPlace && askedAircraft)) {
+      this._worldRoot.enabled = false;
+      this.app.googleTilesHold = true;   // the tiles vibe streams nothing meanwhile (scripts/tilesWater.mjs)
+      this.hud.placeButton.style.display = 'none';
+      this._menu = new StartMenu((tag, opts) => this.createUI(tag, opts),
+        Object.values(DESTINATIONS).map((d) => ({ id: d.id, title: d.title, blurb: PLACE_BLURBS[d.id] })),
+        Object.entries(PROFILES).map(([id, p]) => ({ id, title: p.title, blurb: AIRCRAFT_BLURBS[id] || '' })),
+        { place: askedPlace, aircraft: askedAircraft, isMobile: this.isMobile, onStart: (place, ac) => this._start(place, ac) });
+      return;
+    }
+    const want = askedPlace || destinationByTitle(this.destination).id;
+    if (want === 'meigs') this._ensureCity();
+    else this._goTo(want);
   }
+
+  /** The start menu's choice: the airplane, the place loaded, Google's tiles let go, and aboard. */
+  async _start(place, aircraft) {
+    this._menu.setStatus(`Loading ${DESTINATIONS[place].short}…`);
+    this._switchAircraft(PROFILES[aircraft]);
+    if (place !== 'meigs') await this._goTo(place);
+    if (this._dest === 'meigs') this._ensureCity();   // also when the airport couldn't be loaded
+    if (this._destroyed) return;
+    this._menu.destroy();
+    this._menu = null;
+    this._worldRoot.enabled = true;
+    this.hud.placeButton.style.display = 'block';
+    this.app.googleTilesHold = false;
+    this._enter();
+  }
+
+  /** The OpenStreetMap city, loaded the first time Meigs is where we are. */
+  _ensureCity() { this._cityLoad ??= this._loadCity(); }
 
   // ── destinations ─────────────────────────────────────────────────────────
   get _place() { return DESTINATIONS[this._dest]; }
@@ -270,6 +316,7 @@ export class Extra300 extends ArrivalScript {
     if (flying) { this._attach?.detach?.(); this._attach = null; }
     this._dest = id;
     this.destination = DESTINATIONS[id].title;
+    if (id === 'meigs') this._ensureCity();
     this.world = id === 'meigs' ? this.meigs : this._airports[id].world;
     this._placeWorldRoot();
     this._applyDestination(true);
@@ -685,7 +732,7 @@ export class Extra300 extends ArrivalScript {
   // ── the intro film ──────────────────────────────────────────────────────
   /** Film mode: wait for the city (and Google's first tiles, if they come), settle, then board and roll. */
   _filmTick(dt) {
-    const cityUp = this.city && !this.city.queue.length;
+    const cityUp = this._dest !== 'meigs' || (this.city && !this.city.queue.length);
     const tilesUp = this.app.googleTilesLoading !== true;
     this._filmWait = cityUp && tilesUp ? (this._filmWait || 0) + dt : 0;
     if (this._filmWait < 2.5) return;
@@ -1013,6 +1060,7 @@ export class Extra300 extends ArrivalScript {
     this._dt = dt;
     if (!this.isEnabled) return;
     this.hud.tick();
+    if (this._menu) return;   // nothing is there yet
     this._lightsTick(dt);
     this._googleTick(dt);
     if (this.city && this.city.queue.length) {
@@ -1290,6 +1338,8 @@ export class Extra300 extends ArrivalScript {
 
   destroy() {
     this._destroyed = true;
+    if (this._menu) { this._menu.destroy(); this._menu = null; }
+    this.app.googleTilesHold = false;
     // Google's globe back where the space has it (Meigs), the flattening gone
     if (this._dest !== 'meigs') { this.world = this.meigs; this._publishOrigin(); }
     this.app.fire('googletiles:flatten-region-clear', `extra300-flatten-${this.entity.getGuid()}`);
