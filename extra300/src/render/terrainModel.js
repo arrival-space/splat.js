@@ -32,7 +32,9 @@ function colourAt(msl, slope) {
  * One grid as a mesh: every `skip`th sample, heights from h(n, e) (above the datum); cells for which
  * `keep(n, e)` is false are left out (the far grid where the near one lies).
  */
-function gridMesh(mb, g, skip, h, elevation, keep = () => true, drop = 0) {
+const WATER = [47, 93, 124].map((v) => Math.round(255 * Math.pow(v / 255, 2.2)));
+
+function gridMesh(mb, g, skip, h, elevation, keep = () => true, drop = 0, wet = () => false) {
   const n = Math.floor((g.n - 1) / skip) + 1, s = g.step * skip;
   const N = (j) => -g.half + j * s, E = (i) => -g.half + i * s;
   const H = new Float32Array(n * n);
@@ -44,7 +46,7 @@ function gridMesh(mb, g, skip, h, elevation, keep = () => true, drop = 0) {
     const y = H[j * n + i] - drop;
     // render: x = east, z = −north; the up normal of y = h(e, n)
     const nr = normalize([-dhe, 1, dhn]);
-    mb.vertex(fromNE(N(j), E(i), y), nr, null, colourAt(y + drop + elevation, Math.hypot(dhe, dhn)));
+    mb.vertex(fromNE(N(j), E(i), y), nr, null, wet(N(j), E(i)) ? WATER : colourAt(y + drop + elevation, Math.hypot(dhe, dhn)));
   }
   for (let j = 0; j < n - 1; j++) for (let i = 0; i < n - 1; i++) {
     if (!keep(N(j) + s / 2, E(i) + s / 2)) continue;
@@ -63,11 +65,12 @@ export function buildTerrainModel(world, dem) {
   const el = world.elevation;
   const terrain = new MeshBuilder({ color: true });
   const nearHalf = dem.near.half - dem.near.step * 2;
-  gridMesh(terrain, dem.near, 2, (n, e) => world.heightAt(n, e), el);
+  const wet = world.isWater || (() => false);
+  gridMesh(terrain, dem.near, 2, (n, e) => world.heightAt(n, e), el, undefined, 0, wet);
   gridMesh(terrain, dem.far, 2, (n, e) => {
     const k = Math.floor((n + dem.far.half) / dem.far.step), i = Math.floor((e + dem.far.half) / dem.far.step);
     return dem.far.h[Math.min(dem.far.n - 1, Math.max(0, k)) * dem.far.n + Math.min(dem.far.n - 1, Math.max(0, i))] - el;
-  }, el, (n, e) => Math.abs(n) > nearHalf || Math.abs(e) > nearHalf, 3);
+  }, el, (n, e) => Math.abs(n) > nearHalf || Math.abs(e) > nearHalf, 3, wet);
 
   // the pavement: strips and aprons, a few centimetres up
   const asphalt = new MeshBuilder(), paint = new MeshBuilder();

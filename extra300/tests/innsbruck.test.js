@@ -69,3 +69,19 @@ test('runway overlay: ICAO markings as measured, all on our pavement, which cove
   const keys = new Set(across.filter((c) => Math.abs(c) < 22).map((c) => Math.round(Math.abs(c) * 10) / 10));
   assert.ok(keys.has(1.2) && keys.has(3) && keys.has(19.5) && keys.has(21.3), [...keys].join(' '));
 });
+
+test('Renton: runway 34 toward the lake, the lake just past 16, and its FAA markings on our pavement', async () => {
+  const { buildRenton, inflateRentonDem } = await import('../src/world/renton.js');
+  const { buildIcaoRunway } = await import('../src/render/icaoRunway.js');
+  const r = buildRenton(await inflateRentonDem());
+  const s = r.startPosition();
+  assert.ok(Math.abs((((s.heading * 180) / Math.PI) + 360) % 360 - 354) < 2, `${(s.heading * 180) / Math.PI}`);
+  const [, north] = r.runway.thresholds, d = r.runway.dir;
+  assert.equal(r.ground(north[0] + d[0] * 60, north[1] + d[1] * 60).surface, 'asphalt');
+  const lake = r.ground(north[0] + d[0] * 300, north[1] + d[1] * 300);
+  assert.equal(lake.surface, 'water');
+  assert.ok(lake.h < -1 && lake.h > -5, `${lake.h}`);
+  assert.ok(r.waterMask && r.waterMask.shores.length > 0);
+  const b = buildIcaoRunway(r.runway, r.runway.layout);
+  for (let i = 0; i < b.paint.uvs.length; i += 2) assert.ok(Math.abs(b.paint.uvs[i]) <= 30.5 + 1e-6);
+});

@@ -13,12 +13,14 @@ const FAR_PX = 1024;
 
 /**
  * @param {object} device  the graphics device
- * @param {object} world   buildMeigs(), with the OSM attached
+ * @param {object} world   buildMeigs() with the OSM attached (the land out to the horizon), or an
+ *        airport (world/airport.js) with its waterMask (the shores and islands out to it)
  * @returns {{ near: { texture, box }, far: { texture, box } } | null}
  */
 export function buildWaterMasks(device, world) {
-  const osm = world.osm;
-  if (!osm?.mask || !world.farLand) return null;
+  const wm = world.waterMask;
+  const osm = wm ? { mask: wm.near, header: { box: wm.near.box } } : world.osm;
+  if (!osm?.mask || (!wm && !world.farLand)) return null;
   const { nx, ny, data } = osm.mask;
   const b = osm.header.box;
   // near: the raster as it is (row 0 = its south edge, which the engine reads at v = 0)
@@ -34,16 +36,31 @@ export function buildWaterMasks(device, world) {
   const c = document.createElement('canvas');
   c.width = c.height = FAR_PX;
   const g = c.getContext('2d');
-  g.fillStyle = '#fff';
-  g.fillRect(0, 0, FAR_PX, FAR_PX);
-  g.fillStyle = '#000';
-  g.beginPath();
-  world.farLand.forEach(([e, n], i) => {
-    const x = ((e + FAR) / (2 * FAR)) * FAR_PX, y = ((n + FAR) / (2 * FAR)) * FAR_PX;
-    if (i) g.lineTo(x, y); else g.moveTo(x, y);
-  });
-  g.closePath();
-  g.fill();
+  const ring = (pts, ne) => {
+    g.beginPath();
+    pts.forEach((p, i) => {
+      const [e, n] = ne ? [p[1], p[0]] : p;
+      const x = ((e + FAR) / (2 * FAR)) * FAR_PX, y = ((n + FAR) / (2 * FAR)) * FAR_PX;
+      if (i) g.lineTo(x, y); else g.moveTo(x, y);
+    });
+    g.closePath();
+    g.fill();
+  };
+  if (wm) {
+    // land everywhere, the lakes white, their islands land again ((n, e) rings)
+    g.fillStyle = '#000';
+    g.fillRect(0, 0, FAR_PX, FAR_PX);
+    g.fillStyle = '#fff';
+    for (const r of wm.shores) ring(r, true);
+    g.fillStyle = '#000';
+    for (const r of wm.islands) ring(r, true);
+  } else {
+    // water everywhere, the land ((e, n) polygon) black
+    g.fillStyle = '#fff';
+    g.fillRect(0, 0, FAR_PX, FAR_PX);
+    g.fillStyle = '#000';
+    ring(world.farLand, false);
+  }
   // and the near raster's land, coarsely, so the two agree where they meet
   const k = (2 * FAR) / FAR_PX;
   for (let y = 0; y < FAR_PX; y++) {

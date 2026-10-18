@@ -14,6 +14,7 @@ import { PatternPilot } from '../autopilot/platzrunde.js';
 import { CarrierPilot, CARRIER_APPROACH } from '../autopilot/carrierApproach.js';
 import { buildMeigs } from '../world/meigs.js';
 import { buildInnsbruck, inflateLowiDem } from '../world/innsbruck.js';
+import { buildRenton, inflateRentonDem } from '../world/renton.js';
 import { TerrainVisual } from './terrainVisual.js';
 import { CLOUD_PRESETS, CloudLayer } from './clouds.js';
 import { buildCarrier } from '../world/carrier.js';
@@ -53,7 +54,15 @@ const CARVE_FLOOR = -0.3;
 const DESTINATIONS = {
   meigs: { id: 'meigs', title: 'Chicago Meigs (KCGX)', short: 'Chicago', runways: ['36', '18'], credit: 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago' },
   lowi: { id: 'lowi', title: 'Innsbruck (LOWI)', short: 'Innsbruck', runways: ['26', '08'], credit: 'Map data © OpenStreetMap contributors (ODbL) · Elevation: Terrarium (Mapzen, AWS Open Data)' },
+  krnt: { id: 'krnt', title: 'Renton, Boeing 737 field (KRNT)', short: 'Renton', runways: ['34', '16'], credit: 'Map data © OpenStreetMap contributors (ODbL) · Elevation: Terrarium (Mapzen, AWS Open Data)' },
 };
+// the airports beyond Meigs: their worlds, made when first flown to
+const AIRPORTS = {
+  lowi: async () => { const dem = await inflateLowiDem(); return { dem, world: buildInnsbruck(dem) }; },
+  krnt: async () => { const dem = await inflateRentonDem(); return { dem, world: buildRenton(dem) }; },
+};
+/** The destination after this one, as the ✈ button goes round them. */
+const nextDestination = (id) => { const ids = Object.keys(DESTINATIONS); return ids[(ids.indexOf(id) + 1) % ids.length]; };
 const destinationByTitle = (t) => Object.values(DESTINATIONS).find((d) => d.title === t || d.id === t) || DESTINATIONS.meigs;
 
 export class Extra300 extends ArrivalScript {
@@ -89,7 +98,7 @@ export class Extra300 extends ArrivalScript {
   static properties = {
     isEnabled: { title: 'Enabled' },
     aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 or ?aircraft=xwing on the address)', options: AIRCRAFT_OPTIONS },
-    destination: { title: 'Where to fly (also the ✈ button on the top bar, or ?airport=lowi on the address)', options: Object.values(DESTINATIONS).map((d) => d.title) },
+    destination: { title: 'Where to fly (also the ✈ button on the top bar, or ?airport=lowi / krnt on the address)', options: Object.values(DESTINATIONS).map((d) => d.title) },
     startRunway: { title: 'Start: runway 36, 18 (at Innsbruck: 26, 08), or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
     showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
     waterReflections: { title: 'Reflections in the lake (screen-space: the airplane, the carrier, the skyline)' },
@@ -125,6 +134,13 @@ export class Extra300 extends ArrivalScript {
 
     this.world = this.meigs = buildMeigs();
     this._dest = 'meigs';
+    // per airport: its world and grids, its own terrain and runway, its water and flatten masks
+    this._airports = {};
+    this._terrains = {};
+    this._runways = {};
+    this._waters = {};
+    this._ssrs = {};
+    this._flatMasks = {};
     this._worldRoot = new pc.Entity('Extra300World');
     this.entity.addChild(this._worldRoot);
     this._placeWorldRoot();
@@ -188,7 +204,7 @@ export class Extra300 extends ArrivalScript {
     window.addEventListener('pointermove', this._onPointerMove);
 
     this.hud.aircraftButton.onclick = (ev) => { ev.stopPropagation(); this._action('aircraft'); };
-    this.hud.placeButton.onclick = (ev) => { ev.stopPropagation(); this._goTo(this._dest === 'meigs' ? 'lowi' : 'meigs'); };
+    this.hud.placeButton.onclick = (ev) => { ev.stopPropagation(); this._goTo(nextDestination(this._dest)); };
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
@@ -212,11 +228,11 @@ export class Extra300 extends ArrivalScript {
     this._onPrerender = () => { this._applyCamera(); this._cloudsTick(); };
     this.app.on('prerender', this._onPrerender);
 
-    // ?airport=lowi (or innsbruck) on the address, or the setting: start somewhere else
+    // ?airport=lowi (or innsbruck, krnt, renton) on the address, or the setting: start somewhere else
     let want = destinationByTitle(this.destination).id;
     try {
       const a = new URLSearchParams(location.search).get('airport');
-      if (a) want = /lowi|inn/i.test(a) ? 'lowi' : 'meigs';
+      if (a) want = /lowi|inn/i.test(a) ? 'lowi' : /krnt|rnt|renton/i.test(a) ? 'krnt' : 'meigs';
     } catch { /* no address to read */ }
     if (want !== 'meigs') this._goTo(want);
   }
@@ -237,15 +253,12 @@ export class Extra300 extends ArrivalScript {
     this._going = true;
     this.hud.setPlace(DESTINATIONS[id].short, true);
     try {
-      if (id === 'lowi' && !this._lowi) {
-        this._lowiDem = await inflateLowiDem();
-        this._lowi = buildInnsbruck(this._lowiDem);
-      }
+      if (AIRPORTS[id] && !this._airports[id]) this._airports[id] = await AIRPORTS[id]();
     } catch (e) {
-      console.warn('[extra300] Innsbruck unavailable:', e);
-      this.hud.flash('Innsbruck could not be loaded', 3);
+      console.warn(`[extra300] ${DESTINATIONS[id].short} unavailable:`, e);
+      this.hud.flash(`${DESTINATIONS[id].short} could not be loaded`, 3);
       this._going = false;
-      this.hud.setPlace(DESTINATIONS.lowi.short);
+      this.hud.setPlace(DESTINATIONS[nextDestination(this._dest)].short);
       return;
     }
     this._going = false;
@@ -256,7 +269,7 @@ export class Extra300 extends ArrivalScript {
     if (flying) { this._attach?.detach?.(); this._attach = null; }
     this._dest = id;
     this.destination = DESTINATIONS[id].title;
-    this.world = id === 'lowi' ? this._lowi : this.meigs;
+    this.world = id === 'meigs' ? this.meigs : this._airports[id].world;
     this._placeWorldRoot();
     this._applyDestination(true);
     this._buildAircraft(this.profile);
@@ -276,20 +289,21 @@ export class Extra300 extends ArrivalScript {
   /** What belongs to the place we're at: on, the rest off; Google's tiles told where we are. */
   _applyDestination(moved = false) {
     const meigs = this._dest === 'meigs';
-    const other = Object.values(DESTINATIONS).find((d) => d.id !== this._dest);
-    this.hud.setPlace(other.short);
+    this.hud.setPlace(DESTINATIONS[nextDestination(this._dest)].short);
     this.hud.setCredit(this._place.credit);
     this.scenery.visible = meigs && this.showScenery;
     this.lights.visible = meigs && this.showScenery;
     if (this.city) this.city.visible = meigs && this.showScenery;
     this.carrierVisual.visible = meigs && this.showCarrier;
     this.meigs.attachCarrier(meigs && this.showCarrier ? this.carrier : null);
-    if (this._ssr) this._ssr.visible = meigs && this.waterReflections;
-    if (!meigs && !this._terrain && this._lowiDem) this._terrain = new TerrainVisual(this.app, this._worldRoot, this._lowi, this._lowiDem);
-    if (this._terrain) this._terrain.visible = !meigs && !this._google;
-    // our own runway over the photograph of it (the photo cut away beneath, see _publishCarve)
-    if (!meigs && !this._runway && this.world.runway.layout) this._runway = new RunwayVisual(this.app, this._worldRoot, this.world.runway, this._dest);
-    if (this._runway) this._runway.visible = !meigs;
+    for (const [id, ssr] of Object.entries(this._ssrs)) ssr.visible = id === this._dest && this.waterReflections;
+    // the airport's own ground (when Google's tiles aren't there) and our own runway over the
+    // photograph of it (the photo cut away beneath, see _publishCarve)
+    const ap = this._airports[this._dest];
+    if (ap && !this._terrains[this._dest]) this._terrains[this._dest] = new TerrainVisual(this.app, this._worldRoot, ap.world, ap.dem);
+    if (ap && !this._runways[this._dest] && ap.world.runway.layout) this._runways[this._dest] = new RunwayVisual(this.app, this._worldRoot, ap.world.runway, this._dest);
+    for (const [id, t] of Object.entries(this._terrains)) t.visible = id === this._dest && !this._google;
+    for (const [id, r] of Object.entries(this._runways)) r.visible = id === this._dest;
     // the tower view's cab, the carrier's deck view
     const t = meigs ? this.meigs.landmarks.find((l) => l.name === 'Meigs Tower') : { ne: this.world.tower.ne, h: this.world.tower.h };
     this.cameraRig.towerPos = fromNE(t.ne[0], t.ne[1], t.h + 1.5);
@@ -326,7 +340,7 @@ export class Extra300 extends ArrivalScript {
   _publishFlatten() {
     const id = `extra300-flatten-${this.entity.getGuid()}`;
     if (this._dest === 'meigs' || !this._worldRoot) { this.app.fire('googletiles:flatten-region-clear', id); return; }
-    if (!this._flatMask) {
+    if (!this._flatMasks[this._dest]) {
       const m = this.world.flattenMask();
       const tex = new pc.Texture(this.app.graphicsDevice, {
         width: m.width, height: m.height, format: pc.PIXELFORMAT_R8, mipmaps: false,
@@ -334,12 +348,13 @@ export class Extra300 extends ArrivalScript {
       });
       tex.lock().set(m.data);
       tex.unlock();
-      this._flatMask = { texture: tex, box: m.box };
+      this._flatMasks[this._dest] = { texture: tex, box: m.box };
     }
+    const flat = this._flatMasks[this._dest];
     const root = this._worldRoot.getWorldTransform();
     this.app.fire('googletiles:flatten-region', id, {
-      texture: this._flatMask.texture,
-      inv: maskTransform(root, this._flatMask.box),
+      texture: flat.texture,
+      inv: maskTransform(root, flat.box),
       height: this._worldRoot.getPosition().y,
     });
   }
@@ -467,7 +482,7 @@ export class Extra300 extends ArrivalScript {
 
   _setGoogle(on) {
     this._google = on;
-    if (this._terrain) this._terrain.visible = this._dest !== 'meigs' && !on;
+    for (const [id, t] of Object.entries(this._terrains)) t.visible = id === this._dest && !on;
     this.city?.setGoogle(on);
     this.scenery.setGoogle(on);
     if (on) this.scenery.standInCity = false;
@@ -481,9 +496,9 @@ export class Extra300 extends ArrivalScript {
     if (this._dest === 'meigs') {
       // from just under the runway up: the island's park, hills and trees go, Google's water around it stays
       box = carveBox(this.world.airfieldBox(), CARVE_FLOOR, 400);
-    } else if (this._runway) {
+    } else if (this._runways[this._dest]) {
       // under our runway: Google's (flattened) photo of it, no higher than a few metres
-      const rw = this.world.runway, { u, v } = this._runway.extent, mid = (v[0] + v[1]) / 2;
+      const rw = this.world.runway, { u, v } = this._runways[this._dest].extent, mid = (v[0] + v[1]) / 2;
       box = carveBox({
         centre: [rw.centre[0] + rw.dir[0] * mid, rw.centre[1] + rw.dir[1] * mid], dir: rw.dir,
         halfAlong: (v[1] - v[0]) / 2, halfAcross: u[1],
@@ -497,16 +512,21 @@ export class Extra300 extends ArrivalScript {
     this.app.fire('googletiles:patch-region', `extra300-meigs-${this.entity.getGuid()}`, { inv: Array.from(inv.data), half });
   }
 
-  /** The lake from OpenStreetMap's land/water raster, for the tiles vibe to shade as water (waterMask.js). */
+  /**
+   * The lake from OpenStreetMap's land/water raster, for the tiles vibe to shade as water
+   * (waterMask.js): Chicago's lakefront, Renton's Lake Washington.
+   */
   _publishWater() {
-    if (this._dest !== 'meigs') { this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`); return; }
-    if (!this._worldRoot || !this.world.osm) return;
-    this._water ??= buildWaterMasks(this.app.graphicsDevice, this.meigs);
-    if (!this._water) return;
+    const wid = `extra300-meigs-${this.entity.getGuid()}`;
+    const has = this._dest === 'meigs' ? !!this.world.osm : !!this.world.waterMask;
+    if (!this._worldRoot || !has) { this.app.fire('googletiles:water-mask-clear', wid); return; }
+    if (!(this._dest in this._waters)) this._waters[this._dest] = buildWaterMasks(this.app.graphicsDevice, this.world);
+    const masks = this._waters[this._dest];
+    if (!masks) { this.app.fire('googletiles:water-mask-clear', wid); return; }
     const root = this._worldRoot.getWorldTransform();
-    const { near, far } = this._water;
+    const { near, far } = masks;
     this._waterXf = { nearInv: maskTransform(root, near.box), farInv: maskTransform(root, far.box), scale: 1 / this._ws };
-    this.app.fire('googletiles:water-mask', `extra300-meigs-${this.entity.getGuid()}`, {
+    this.app.fire('googletiles:water-mask', wid, {
       near: { texture: near.texture, inv: this._waterXf.nearInv },
       far: { texture: far.texture, inv: this._waterXf.farInv },
       level: this.world.water,
@@ -515,9 +535,9 @@ export class Extra300 extends ArrivalScript {
     });
     // the lake's mirror: screen-space reflections over the same mask
     // (GLSL: WebGL2 only for now)
-    if (!this._ssr && !this.app.graphicsDevice.isWebGPU) {
-      this._ssr = new WaterReflections(this.app, this._worldRoot, this.world.water, this._water, { steps: this.isMobile ? 40 : 160 });
-      this._ssr.visible = this.waterReflections && this._dest === 'meigs';
+    if (!this._ssrs[this._dest] && !this.app.graphicsDevice.isWebGPU) {
+      this._ssrs[this._dest] = new WaterReflections(this.app, this._worldRoot, this.world.water, masks, { steps: this.isMobile ? 40 : 160 });
+      this._ssrs[this._dest].visible = this.waterReflections;
     }
   }
 
@@ -1089,7 +1109,8 @@ export class Extra300 extends ArrivalScript {
     }
     if (this.showScenery) this.lights.update(dt, eye);
     if (this.showCarrier) this.carrierVisual.lod(eye);
-    if (this._ssr && this._waterXf) this._ssr.update(dt, this._waterXf);
+    const ssr = this._ssrs[this._dest];
+    if (ssr && this._waterXf) ssr.update(dt, this._waterXf);
   }
 
   postUpdate() {
@@ -1268,16 +1289,17 @@ export class Extra300 extends ArrivalScript {
     // Google's globe back where the space has it (Meigs), the flattening gone
     if (this._dest !== 'meigs') { this.world = this.meigs; this._publishOrigin(); }
     this.app.fire('googletiles:flatten-region-clear', `extra300-flatten-${this.entity.getGuid()}`);
-    this._flatMask?.texture.destroy();
-    this._terrain?.destroy();
-    this._runway?.destroy();
+    for (const f of Object.values(this._flatMasks)) f.texture.destroy();
+    for (const t of Object.values(this._terrains)) t.destroy();
+    for (const r of Object.values(this._runways)) r.destroy();
     this.cloudLayer?.destroy();
     this.app.fire('googletiles:receive-shadows', 0);
     this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`);
-    this._ssr?.destroy();
-    this._ssr = null;
-    if (this._water) { this._water.near.texture.destroy(); this._water.far.texture.destroy(); this._water = null; }
+    for (const ssr of Object.values(this._ssrs)) ssr.destroy();
+    this._ssrs = {};
+    for (const w of Object.values(this._waters)) if (w) { w.near.texture.destroy(); w.far.texture.destroy(); }
+    this._waters = {};
     this._exit();
     window.removeEventListener('keydown', this._onKeyDown, true);
     window.removeEventListener('keyup', this._onKeyUp, true);

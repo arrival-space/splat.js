@@ -49,12 +49,12 @@ export function buildIcaoRunway(rw, L) {
       const c0 = L.piano.first + k * L.piano.pitch, c1 = c0 + L.piano.width;
       for (const side of [-1, 1]) q(end, L.piano.at, L.piano.at + L.piano.length, Math.min(side * c0, side * c1), Math.max(side * c0, side * c1));
     }
-    // the designator, 9 m numerals, read from the approach
-    numerals(paint, rw, rw.ident[i], at(end, L.numerals), -end, Y_PAINT, 9 / (60 * 0.3048));
+    // the designator, read from the approach: ICAO's 9 m numerals, the FAA's 60 ft
+    numerals(paint, rw, rw.ident[i], at(end, L.numerals), -end, Y_PAINT, (L.numeralHeight || 9) / (60 * 0.3048));
     // aiming point and touchdown zone bars, one either side
     for (const side of [-1, 1]) {
       q(end, L.aiming.at, L.aiming.at + L.aiming.length, ...(side > 0 ? [L.aiming.c[0], L.aiming.c[1]] : [-L.aiming.c[1], -L.aiming.c[0]]));
-      for (const t of L.tdz.at) q(end, t, t + L.tdz.length, ...(side > 0 ? [L.tdz.c[0], L.tdz.c[1]] : [-L.tdz.c[1], -L.tdz.c[0]]));
+      for (const t of L.tdz?.at || []) q(end, t, t + L.tdz.length, ...(side > 0 ? [L.tdz.c[0], L.tdz.c[1]] : [-L.tdz.c[1], -L.tdz.c[0]]));
     }
   }
   // centre line: 30 m stripes, 20 m gaps, 0.9 m wide, between the designators
@@ -65,8 +65,8 @@ export function buildIcaoRunway(rw, L) {
     const a = c0 + off + k * (L.centre.stripe + L.centre.gap);
     rwQuad(paint, rw, a, a + L.centre.stripe, -L.centre.width / 2, L.centre.width / 2, Y_PAINT);
   }
-  // edge lines, broken where taxiways join
-  for (const side of [-1, 1]) {
+  // edge lines, broken where taxiways join (where it has them)
+  for (const side of L.edgeLines === false ? [] : [-1, 1]) {
     const gaps = (side > 0 ? L.edgeGaps.right : L.edgeGaps.left).map(([a, b]) => [a - H, b - H]).sort((x, y) => x[0] - y[0]);
     let a = -H - L.edgeFrom[0];
     for (const [g0, g1] of [...gaps, [H + L.edgeFrom[1], Infinity]]) {
@@ -74,12 +74,20 @@ export function buildIcaoRunway(rw, L) {
       a = g1;
     }
   }
-  // what's painted before the low end's threshold: a bar across and an arrow down the middle
+  // what's painted before a threshold (a displaced one's stretch): a bar across, arrows down the
+  // middle toward the threshold, arrowheads across just short of it
   for (const m of L.preThreshold) {
-    q(m.end, m.bar - L.bar / 1.5, m.bar, -W + L.edge, W - L.edge);
-    strokeOn(paint, rw, [[at(m.end, m.arrow[0]), 0], [at(m.end, m.arrow[1]), 0]], 0.6, Y_PAINT);
-    const tip = at(m.end, m.arrow[1] - 1), back = at(m.end, m.arrow[1] - 7);
-    for (const side of [-1, 1]) strokeOn(paint, rw, [[tip, 0], [back, side * 2.2]], 0.6, Y_PAINT);
+    if (m.bar != null) q(m.end, m.bar - L.bar / 1.5, m.bar, -W + L.edge, W - L.edge);
+    const aw = m.arrowWidth || 0.6, head = m.head || [6, 2.2];
+    for (const [a0, a1] of m.arrows || [m.arrow]) {
+      strokeOn(paint, rw, [[at(m.end, a0), 0], [at(m.end, a1), 0]], aw, Y_PAINT);
+      const tip = at(m.end, a1 - 1), back = at(m.end, a1 - 1 - head[0]);
+      for (const side of [-1, 1]) strokeOn(paint, rw, [[tip, 0], [back, side * head[1]]], aw, Y_PAINT);
+    }
+    if (m.chevrons) {
+      const { at: t, c, length = 13.7, width = 1, spread = 3 } = m.chevrons;
+      for (const cc of c) for (const side of [-1, 1]) strokeOn(paint, rw, [[at(m.end, t), cc], [at(m.end, t - length), cc + side * spread]], width, Y_PAINT);
+    }
   }
   // yellow taxi lines (0.15 m): lead-ins from the taxiways and the turn pads' loops, given in metres
   // from the low end's threshold, clipped to the pavement we draw

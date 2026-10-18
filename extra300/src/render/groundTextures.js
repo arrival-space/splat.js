@@ -95,7 +95,7 @@ export const RUNWAY_STYLES = {
     rubber: 24, rubberZone: [260, 170], rubberBand: 1, rubberHalf: 5.5, track: 2.4, trackWidth: 1.1, carpet: 0,
     centreWear: 3, shoulder: 0,
     skids: 46, skidFrom: 150, skidSpread: 380, skidTrack: [1.6, 6], twinWheels: 0,
-    skidLen: [18, 73], skidDark: [12, 32], skidBroken: 1, skidWander: 0,
+    skidLen: [18, 73], skidDark: [12, 32], skidBroken: 1, skidWander: 0, skidAcross: 6,
   },
   // Innsbruck (LOWI), as Google's imagery shows it (2026, around our runway): fresh dark asphalt with
   // the satellite's blue cast (~78 79 96 between the wheels and the edges), its paving lanes ~3.7 m
@@ -109,8 +109,20 @@ export const RUNWAY_STYLES = {
     rubber: 8, rubberZone: [300, 170], rubberBand: 0.75, rubberHalf: 6, track: 3.5, trackWidth: 1.4, carpet: 0.55,
     centreWear: 30, wearTracks: true, shoulder: -26,
     skids: 150, skidFrom: 120, skidSpread: 520, skidTrack: [3.5, 8], twinWheels: 0.7,
-    skidLen: [40, 170], skidDark: [8, 22], skidBroken: 0.2, skidWander: 0.25,
+    skidLen: [40, 170], skidDark: [8, 22], skidBroken: 0.2, skidWander: 0.25, skidAcross: 6,
     paint: { clean: 112, flakes: false },     // fresh paint: no flakes; the rubber still shows on it
+  },
+  // Renton (KRNT), as Google's imagery shows it: a lighter, neutral grey (~137 133 141), its middle a
+  // shade paler than the sides rather than darker, and thin dark tyre streaks all along a wide band
+  // (every new 737 rolls here); the displaced thresholds' stretches and the first ~140 m past them
+  // paler still; no shoulders, no sealed cracks or patches
+  krnt: {
+    grey: 166, warm: 0, tint: [0.99, 0.99, 1.02], lane: 3.7, laneTone: 0, streaks: 8, patches: 0, cracks: false,
+    rubber: 0, rubberZone: [300, 170], rubberBand: 0.75, rubberHalf: 6, track: 3, trackWidth: 1.4, carpet: 0.5,
+    centreWear: -7, wearTracks: true, shoulder: 0, ends: { tone: 22, length: 140 },
+    skids: 340, skidFrom: 60, skidSpread: 1100, skidTrack: [5, 7.6], twinWheels: 0.8,
+    skidLen: [60, 320], skidDark: [8, 20], skidBroken: 0.15, skidWander: 0.35, skidAcross: 18,
+    paint: { clean: 170, flakes: false },
   },
 };
 
@@ -196,6 +208,13 @@ export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 
           * (0.75 + 0.25 * vnoise(uu * 0.5, vv / 30, seed + 11));
       } else g -= S.centreWear * Math.exp(-((uu / 3) ** 2));
       if (S.shoulder && Math.abs(uu) > W2) g += S.shoulder;
+      // a paler stretch at each end (concrete, or older asphalt): the displaced threshold's and on
+      if (S.ends) {
+        for (const end of [-1, 1]) {
+          const fromThr = L2 - end * vv;
+          if (fromThr < S.ends.length + 40) g += S.ends.tone * smooth(Math.min(1, Math.max(0, (S.ends.length + 40 - fromThr) / 80)));
+        }
+      }
     }
     // sealed cracks: tar snakes, meandering, mostly across the paving
     const crackField = vnoise(uu / 7 + fbm(uu / 3, vv / 3, seed + 4, 2) * 1.8, vv / 2.2, seed + 5);
@@ -228,7 +247,7 @@ export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 
         const fromThr = S.skidFrom + S.skidSpread * r(0) ** 1.4;   // past the aiming point, most in the first few hundred metres
         const v0 = end * (L2 - fromThr);                      // touch-down point
         const track = S.skidTrack[0] + r(1) * (S.skidTrack[1] - S.skidTrack[0]);   // main-gear track
-        const off = (r(2) - 0.5) * 6;                         // landed off the centreline
+        const off = (r(2) - 0.5) * S.skidAcross;              // landed off the centreline
         const len = S.skidLen[0] + r(3) * (S.skidLen[1] - S.skidLen[0]);   // long, fading streaks
         const ang = (r(4) - 0.5) * 0.02;                      // drifting a touch on contact
         const wid = 0.14 + r(5) * 0.16;
