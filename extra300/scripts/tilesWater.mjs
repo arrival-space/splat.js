@@ -3,7 +3,7 @@
 //     src/plugin/waterMask.js)
 //   - the room's own directional light turned onto the atmosphere's sun, so shadows agree with the sky
 //   - ground flattened inside a published mask ("googletiles:flatten-region": an airport's runway)
-//   - the globe re-anchored on request ("googletiles:set-origin": another destination)
+//   - the globe re-anchored on request ("googletiles:set-origin": another destination, its sun)
 //   - the room sun's shadow map on Google's unlit tiles ("googletiles:receive-shadows")
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
@@ -242,6 +242,7 @@ const PATCHES = [
       "    _onFlatten = null;",
       "    _onFlattenClear = null;",
       "    _onSetOrigin = null;",
+      "    _spaceSun = null;   // the space's own time and day while a place has set its sun",
     ].join('\n'),
   },
   {
@@ -286,12 +287,22 @@ const PATCHES = [
       "",
       "        // Another vibe moves the globe under us, as the Latitude / Longitude / Ground Altitude",
       "        // settings do (the tiles already streamed are re-anchored, nothing is re-downloaded):",
-      "        //   app.fire(\"googletiles:set-origin\", { latitude, longitude, groundAltitude })",
+      "        //   app.fire(\"googletiles:set-origin\", { latitude, longitude, groundAltitude, sun })",
+      "        // sun: { timeUTC, dayOfYear } for the place (its imagery's shadows), or none: the space's own",
       "        this._onSetOrigin = (o) => {",
       "            if (!o || !Number.isFinite(o.latitude) || !Number.isFinite(o.longitude)) return;",
       "            this.latitude = o.latitude;",
       "            this.longitude = o.longitude;",
       "            if (Number.isFinite(o.groundAltitude)) this.groundAltitude = o.groundAltitude;",
+      "            const sun = o.sun && Number.isFinite(o.sun.timeUTC) ? o.sun : null;",
+      "            if (sun) {",
+      "                this._spaceSun ??= { timeUTC: this.timeUTC, dayOfYear: this.dayOfYear };",
+      "                this.timeUTC = sun.timeUTC;",
+      "                if (Number.isFinite(sun.dayOfYear)) this.dayOfYear = sun.dayOfYear;",
+      "            } else if (this._spaceSun) {",
+      "                ({ timeUTC: this.timeUTC, dayOfYear: this.dayOfYear } = this._spaceSun);",
+      "                this._spaceSun = null;",
+      "            }",
       "            if (this._anchor) this._applyOrigin();",
       "            this._computeSunDir();",
       "        };",

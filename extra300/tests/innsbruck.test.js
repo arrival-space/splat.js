@@ -85,3 +85,17 @@ test('Renton: runway 34 toward the lake, the lake just past 16, and its FAA mark
   const b = buildIcaoRunway(r.runway, r.runway.layout);
   for (let i = 0; i < b.paint.uvs.length; i += 2) assert.ok(Math.abs(b.paint.uvs[i]) <= 30.5 + 1e-6);
 });
+
+test("Renton's sun: high and south-south-east, as its imagery's shadows (the tiles plugin's formula)", async () => {
+  const { RENTON } = await import('../src/world/renton.js');
+  const { timeUTC, dayOfYear } = RENTON.sun;
+  const lat = (47.49 * Math.PI) / 180, lon = -122.21;
+  const decl = -0.40928 * Math.cos((2 * Math.PI / 365) * (dayOfYear + 10));
+  const H = ((timeUTC + lon / 15 - 12) * 15 * Math.PI) / 180;
+  const sinEl = Math.sin(lat) * Math.sin(decl) + Math.cos(lat) * Math.cos(decl) * Math.cos(H);
+  const el = Math.asin(sinEl);
+  let az = Math.acos((Math.sin(decl) - Math.sin(lat) * sinEl) / (Math.cos(lat) * Math.cos(el)));
+  if (H > 0) az = 2 * Math.PI - az;
+  assert.ok((el * 180) / Math.PI > 55, `${(el * 180) / Math.PI}`);
+  assert.ok(Math.abs((az * 180) / Math.PI - 163) < 8, `${(az * 180) / Math.PI}`);
+});

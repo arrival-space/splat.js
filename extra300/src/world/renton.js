@@ -42,6 +42,10 @@ export const RENTON = {
   runway: { ident: ['34', '16'] }, // OpenStreetMap draws it south to north: 34's threshold first
   tower: { at: [47.4919, -122.2173], h: 20 },
   start: 'low',                    // on 34, toward the lake
+  // the sun of Google's imagery: its trees' and hangars' shadows fall short and north-north-west, a
+  // summer's late morning (sun 163° true, 63° up; 12:36 PDT on 19 July). Sent with the origin, as the
+  // tiles plugin's timeUTC / dayOfYear
+  sun: { timeUTC: 19.6, dayOfYear: 200 },
   style: 'krnt',
   get layout() { return KRNT_LAYOUT; },
 };

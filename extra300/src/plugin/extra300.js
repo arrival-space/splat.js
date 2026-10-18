@@ -334,7 +334,10 @@ export class Extra300 extends ArrivalScript {
   _publishOrigin() {
     const s = this.world.startPosition();
     const [latitude, longitude] = this.world.frame.toLatLon(s.n, s.e);
-    this.app.fire('googletiles:set-origin', { latitude, longitude, groundAltitude: this.world.elevation + this.world.data.geoidM });
+    this.app.fire('googletiles:set-origin', {
+      latitude, longitude, groundAltitude: this.world.elevation + this.world.data.geoidM,
+      sun: this.world.data.sun,      // the place's own (Renton's imagery), else the space's
+    });
   }
 
   /** Google's ground levelled where the airplane rolls (Innsbruck's runway, taxiways, aprons). */
