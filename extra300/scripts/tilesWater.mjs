@@ -387,13 +387,12 @@ const PATCHES = [
   },
   {
     after: [
-      "        this._sunEntity.setLocalRotation(q);",
       "        this._sunEntity.light.intensity = dy > 0 ? 1.4 * Math.min(1, dy * 4) : 0;",
-    ].join('\n'),
-    insert: [
       "    }",
       "",
       "    /**",
+    ].join('\n'),
+    insert: [
       "     * The room's own directional lights shine from where the atmosphere draws the sun: turned onto",
       "     * it (their rotations kept, and given back when the vibe goes), so shadows and highlights on",
       "     * everything else in the space agree with the sky.",
@@ -413,6 +412,21 @@ const PATCHES = [
       "            if (!this._roomSunRot.has(l.entity)) this._roomSunRot.set(l.entity, l.entity.getRotation().clone());",
       "            l.entity.setRotation(q);",
       "        }",
+      "    }",
+      "",
+      "    /**",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "        if (mi) sky.addComponent(\"render\", { meshInstances: [mi], castShadows: false });",
+      "        else sky.addComponent(\"render\", { type: \"sphere\", material: mat, castShadows: false });",
+    ].join('\n'),
+    insert: [
+      "        // The sky is behind everything: drawn first among the transparent geometry, whichever way the",
+      "        // camera looks. (By its centre \u2014 the planet's, straight down \u2014 it would sort last whenever the",
+      "        // camera looks above the horizon, and lay its haze over clouds and glass drawn before it.)",
+      "        for (const smi of sky.render.meshInstances) smi.calculateSortDistance = () => 1e15;",
     ].join('\n'),
   },
 ];
