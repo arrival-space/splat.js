@@ -21,6 +21,9 @@ import { detailNoise, shapeSlices, weatherMap } from '../render/cloudNoise.js';
 import { releaseSceneMaps, requestSceneMaps } from './sceneMaps.js';
 
 const SHAPE_N = 64;
+const SHADOW_PX = 256;       // the clouds' shadow map: texels across
+const SHADOW_SIZE = 24000;   // m across
+const IDENTITY = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
 
 // ── the march ───────────────────────────────────────────────────────────────
 const MARCH_VS_GLSL = /* glsl */ `
@@ -303,7 +306,58 @@ fn sphere(ro: vec3f, rd: vec3f, c: vec3f, r: f32) -> vec2f {
 }
 `;
 
+// ── the clouds' shadow on the ground: a map round the camera, transmittance along the sun ──
+// (the march's density, with the uniforms it reads; texel (i, j) is ground x, z: uv from the pixel,
+// which both backends index the same way)
+const SHADOW_FS_GLSL = MARCH_FS_GLSL.slice(0, MARCH_FS_GLSL.indexOf('vec2 sphere(')) + /* glsl */ `
+uniform vec4 uShadowArea;      // centre x, z (m), size (m), the ground's height (m above sea level)
+uniform vec4 uShadowPx;        // the map's size in texels
+void main(void) {
+    vec2 uv = gl_FragCoord.xy / uShadowPx.x;
+    vec3 G = vec3(uShadowArea.x + (uv.x - 0.5) * uShadowArea.z, uShadowArea.w, uShadowArea.y + (uv.y - 0.5) * uShadowArea.z);
+    vec3 sd = normalize(vec3(uSunDir.x, max(uSunDir.y, 0.15), uSunDir.z));
+    float base = uLayer.x, top = uLayer.y;
+    vec3 P0 = G + sd * ((base - G.y) / sd.y);
+    float seg = (top - base) / sd.y / 8.0;
+    float od = 0.0;
+    for (int i = 0; i < 8; i++) {
+        vec3 p = P0 + sd * (seg * (float(i) + 0.5));
+        od += density(p, (p.y - base) / (top - base), false) * seg;
+    }
+    // (light scattered through the cloud reaches its shadow too: a thinner shadow than the cloud is opaque)
+    float T = exp(-od * 0.25);
+    gl_FragColor = vec4(T, T, T, 1.0);
+}
+`;
+const SHADOW_FS_WGSL = MARCH_FS_WGSL.slice(0, MARCH_FS_WGSL.indexOf('fn sphere(')) + /* wgsl */ `
+uniform uShadowArea: vec4f;
+uniform uShadowPx: vec4f;
+@fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput {
+    var output: FragmentOutput;
+    let uv = pcPosition.xy / uniform.uShadowPx.x;
+    let A = uniform.uShadowArea;
+    let G = vec3f(A.x + (uv.x - 0.5) * A.z, A.w, A.y + (uv.y - 0.5) * A.z);
+    let sd = normalize(vec3f(uniform.uSunDir.x, max(uniform.uSunDir.y, 0.15), uniform.uSunDir.z));
+    let base = uniform.uLayer.x;
+    let top = uniform.uLayer.y;
+    let P0 = G + sd * ((base - G.y) / sd.y);
+    let seg = (top - base) / sd.y / 8.0;
+    var od = 0.0;
+    for (var i = 0; i < 8; i++) {
+        let p = P0 + sd * (seg * (f32(i) + 0.5));
+        od += density(p, (p.y - base) / (top - base), false) * seg;
+    }
+    let T = exp(-od * 0.25);
+    output.color = vec4f(T, T, T, 1.0);
+    return output;
+}
+`;
+
 // ── the composite, in the main camera ────────────────────────────────────────
+// The clouds over the scene, behind what stands in front of them; and the shadows on whatever was
+// drawn (Google's unlit tiles as much as our own ground): the clouds' from their map, the airplane's
+// from its silhouette seen from the sun (planeShadow.js). The shadow rides on the premultiplied
+// blend: out = clouds + scene × (1 − alpha) with alpha = 1 − (1 − clouds' alpha) × shade.
 const COMP_VS_GLSL = MARCH_VS_GLSL;
 const COMP_VS_WGSL = MARCH_VS_WGSL;
 
@@ -311,30 +365,66 @@ const COMP_FS_GLSL = /* glsl */ `
 #include "screenDepthPS"
 uniform sampler2D uCloudColor;
 uniform sampler2D uCloudDepth;
+uniform sampler2D uCloudShadow;
+uniform sampler2D uPlaneShadow;
 uniform mat4 uInvViewProj;
 uniform vec3 uCamWorld;
 uniform vec3 uCamFwd;
-uniform vec4 uComp;            // metres per world unit, tonemap in-shader (1) or linear (0), exposure, -
+uniform vec4 uComp;            // metres per world unit, tonemap in-shader (1) or linear (0), exposure, clouds on
+uniform vec4 uShadowArea;      // the clouds' shadow map: centre x, z (m), size (m), strength (0: none)
+uniform vec3 uRootWorld;       // the metre frame's origin, world
+uniform mat4 uPlaneVP;         // world -> the airplane seen from the sun (clip)
+uniform vec4 uPlaneInfo;       // the airplane's centre (world), strength (0: none)
+uniform vec4 uSunDirW;         // toward the sun (world), the airplane's half-thickness (world units)
 varying vec2 vNdc;
 
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
 
 void main(void) {
     vec2 uv = gl_FragCoord.xy * uScreenSize.zw;
-    vec4 c = texture2D(uCloudColor, uv);
-    if (c.a > 0.998) discard;
-    float cd = texture2D(uCloudDepth, uv).r;
-    // what stands in front of the clouds hides them (the sky, ours a dome near the far plane, doesn't)
     float z = getLinearScreenDepth(uv);
     vec4 w = uInvViewProj * vec4(vNdc, 1.0, 1.0);
     vec3 rd = normalize(w.xyz / w.w - uCamWorld);
-    float scene = z / max(dot(rd, uCamFwd), 1e-3) * uComp.x;
-    float vis = z > camera_params.y * 0.8 ? 1.0 : smoothstep(cd * 0.85, cd * 1.05, scene);
-    float a = (1.0 - c.a) * vis;
-    if (a < 0.002) discard;
-    vec3 u = c.rgb / max(1.0 - c.a, 1e-4) * uComp.z;
-    if (uComp.y > 0.5) u = pow(aces(u), vec3(1.0 / 2.2));
-    gl_FragColor = vec4(u * a, a);
+    float along = z / max(dot(rd, uCamFwd), 1e-3);           // world units to the surface
+    bool sky = along > camera_params.y * 0.85;               // (ours a dome at 0.9 of the far plane)
+    // the shade on the surface: the clouds' shadow, the airplane's
+    float shade = 1.0;
+    if (!sky) {
+        vec3 P = uCamWorld + rd * along;
+        if (uShadowArea.w > 0.0) {
+            vec2 m = ((P.xz - uRootWorld.xz) * uComp.x - uShadowArea.xy) / uShadowArea.z + 0.5;
+            float edge = smoothstep(0.0, 0.08, min(min(m.x, m.y), min(1.0 - m.x, 1.0 - m.y)));
+            shade *= mix(1.0, texture2D(uCloudShadow, m).r, uShadowArea.w * edge);
+        }
+        if (uPlaneInfo.w > 0.0 && dot(P - uPlaneInfo.xyz, uSunDirW.xyz) < -uSunDirW.w) {
+            vec4 c = uPlaneVP * vec4(P, 1.0);
+            vec2 pu = c.xy / c.w * 0.5 + 0.5;
+            if (pu.x > 0.0 && pu.x < 1.0 && pu.y > 0.0 && pu.y < 1.0) {
+                float k = 0.006, occ = 0.0;
+                occ += texture2D(uPlaneShadow, pu).a * 0.4;
+                occ += texture2D(uPlaneShadow, pu + vec2(k, 0.0)).a * 0.15;
+                occ += texture2D(uPlaneShadow, pu - vec2(k, 0.0)).a * 0.15;
+                occ += texture2D(uPlaneShadow, pu + vec2(0.0, k)).a * 0.15;
+                occ += texture2D(uPlaneShadow, pu - vec2(0.0, k)).a * 0.15;
+                shade *= 1.0 - uPlaneInfo.w * occ;
+            }
+        }
+    }
+    // the clouds, unless what's in front of them hides them (the sky, ours a dome near the far plane, doesn't)
+    vec4 c = uComp.w > 0.5 ? texture2D(uCloudColor, uv) : vec4(0.0, 0.0, 0.0, 1.0);
+    float a = 0.0;
+    vec3 col = vec3(0.0);
+    if (c.a < 0.998) {
+        float cd = texture2D(uCloudDepth, uv).r;
+        float vis = sky ? 1.0 : smoothstep(cd * 0.85, cd * 1.05, along * uComp.x);
+        a = (1.0 - c.a) * vis;
+        vec3 u = c.rgb / max(1.0 - c.a, 1e-4) * uComp.z;
+        if (uComp.y > 0.5) u = pow(aces(u), vec3(1.0 / 2.2));
+        col = u * a;
+    }
+    float alpha = 1.0 - (1.0 - a) * shade;
+    if (alpha < 0.002) discard;
+    gl_FragColor = vec4(col, alpha);
 }
 `;
 const COMP_FS_WGSL = /* wgsl */ `
@@ -343,34 +433,70 @@ var uCloudColor: texture_2d<f32>;
 var uCloudColorSampler: sampler;
 var uCloudDepth: texture_2d<f32>;
 var uCloudDepthSampler: sampler;
+var uCloudShadow: texture_2d<f32>;
+var uCloudShadowSampler: sampler;
+var uPlaneShadow: texture_2d<f32>;
+var uPlaneShadowSampler: sampler;
 uniform uInvViewProj: mat4x4f;
 uniform uCamWorld: vec3f;
 uniform uCamFwd: vec3f;
 uniform uComp: vec4f;
+uniform uShadowArea: vec4f;
+uniform uRootWorld: vec3f;
+uniform uPlaneVP: mat4x4f;
+uniform uPlaneInfo: vec4f;
+uniform uSunDirW: vec4f;
 varying vNdc: vec2f;
 
 fn aces(x: vec3f) -> vec3f { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0)); }
+fn planeOcc(pu: vec2f) -> f32 { return textureSampleLevel(uPlaneShadow, uPlaneShadowSampler, pu, 0.0).a; }
 
 @fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput {
     var output: FragmentOutput;
     let uv = pcPosition.xy * uniform.uScreenSize.zw;
-    let c = textureSampleLevel(uCloudColor, uCloudColorSampler, uv, 0.0);
-    let cd = textureSampleLevel(uCloudDepth, uCloudDepthSampler, uv, 0.0).r;
     let z = getLinearScreenDepth(uv);
     let w = uniform.uInvViewProj * vec4f(input.vNdc, 1.0, 1.0);
     let rd = normalize(w.xyz / w.w - uniform.uCamWorld);
-    let scene = z / max(dot(rd, uniform.uCamFwd), 1e-3) * uniform.uComp.x;
-    let vis = select(smoothstep(cd * 0.85, cd * 1.05, scene), 1.0, z > uniform.camera_params.y * 0.8);
-    let a = (1.0 - c.a) * vis;
-    if (c.a > 0.998 || a < 0.002) { discard; }
-    var u = c.rgb / max(1.0 - c.a, 1e-4) * uniform.uComp.z;
-    if (uniform.uComp.y > 0.5) { u = pow(aces(u), vec3f(1.0 / 2.2)); }
-    output.color = vec4f(u * a, a);
+    let along = z / max(dot(rd, uniform.uCamFwd), 1e-3);
+    let sky = along > uniform.camera_params.y * 0.85;
+    var shade = 1.0;
+    if (!sky) {
+        let P = uniform.uCamWorld + rd * along;
+        if (uniform.uShadowArea.w > 0.0) {
+            let m = ((P.xz - uniform.uRootWorld.xz) * uniform.uComp.x - uniform.uShadowArea.xy) / uniform.uShadowArea.z + 0.5;
+            let edge = smoothstep(0.0, 0.08, min(min(m.x, m.y), min(1.0 - m.x, 1.0 - m.y)));
+            shade *= mix(1.0, textureSampleLevel(uCloudShadow, uCloudShadowSampler, m, 0.0).r, uniform.uShadowArea.w * edge);
+        }
+        if (uniform.uPlaneInfo.w > 0.0 && dot(P - uniform.uPlaneInfo.xyz, uniform.uSunDirW.xyz) < -uniform.uSunDirW.w) {
+            let c = uniform.uPlaneVP * vec4f(P, 1.0);
+            let pu = c.xy / c.w * 0.5 + 0.5;
+            if (pu.x > 0.0 && pu.x < 1.0 && pu.y > 0.0 && pu.y < 1.0) {
+                let k = 0.006;
+                let occ = planeOcc(pu) * 0.4 + (planeOcc(pu + vec2f(k, 0.0)) + planeOcc(pu - vec2f(k, 0.0)) + planeOcc(pu + vec2f(0.0, k)) + planeOcc(pu - vec2f(0.0, k))) * 0.15;
+                shade *= 1.0 - uniform.uPlaneInfo.w * occ;
+            }
+        }
+    }
+    var c = vec4f(0.0, 0.0, 0.0, 1.0);
+    if (uniform.uComp.w > 0.5) { c = textureSampleLevel(uCloudColor, uCloudColorSampler, uv, 0.0); }
+    var a = 0.0;
+    var col = vec3f(0.0);
+    if (c.a < 0.998) {
+        let cd = textureSampleLevel(uCloudDepth, uCloudDepthSampler, uv, 0.0).r;
+        let vis = select(smoothstep(cd * 0.85, cd * 1.05, along * uniform.uComp.x), 1.0, sky);
+        a = (1.0 - c.a) * vis;
+        var u = c.rgb / max(1.0 - c.a, 1e-4) * uniform.uComp.z;
+        if (uniform.uComp.y > 0.5) { u = pow(aces(u), vec3f(1.0 / 2.2)); }
+        col = u * a;
+    }
+    let alpha = 1.0 - (1.0 - a) * shade;
+    if (alpha < 0.002) { discard; }
+    output.color = vec4f(col, alpha);
     return output;
 }
 `;
 
-export const CLOUD_SHADERS = { MARCH_VS_GLSL, MARCH_FS_GLSL, MARCH_VS_WGSL, MARCH_FS_WGSL, COMP_VS_GLSL, COMP_FS_GLSL, COMP_VS_WGSL, COMP_FS_WGSL };
+export const CLOUD_SHADERS = { MARCH_VS_GLSL, MARCH_FS_GLSL, MARCH_VS_WGSL, MARCH_FS_WGSL, SHADOW_FS_GLSL, SHADOW_FS_WGSL, COMP_VS_GLSL, COMP_FS_GLSL, COMP_VS_WGSL, COMP_FS_WGSL };
 
 // ── what the sky looks like at this sun ──────────────────────────────────────
 const smooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -452,6 +578,39 @@ export class CloudLayer {
     });
     app.root.addChild(this.camEntity);
 
+    // the clouds' shadow map: the same, into a small square round the camera
+    this.shadowLayer = new pc.Layer({ name: 'Extra300CloudShadow' });
+    app.scene.layers.push(this.shadowLayer);
+    this.shadowMat = new pc.ShaderMaterial({
+      uniqueName: 'extra300-clouds-shadow',
+      attributes: { vertex_position: pc.SEMANTIC_POSITION },
+      vertexGLSL: MARCH_VS_GLSL, fragmentGLSL: SHADOW_FS_GLSL,
+      vertexWGSL: MARCH_VS_WGSL, fragmentWGSL: SHADOW_FS_WGSL,
+    });
+    this.shadowMat.depthTest = false;
+    this.shadowMat.depthWrite = false;
+    this.shadowMat.cull = pc.CULLFACE_NONE;
+    this.shadowMat.setParameter('uDetail', this.detailTex);
+    this.shadowMat.setParameter('uWeather', this.weatherTex);
+    this.shadowMat.update();
+    this.shadowEntity = this._triangle('CloudShadow', this.shadowMat, [this.shadowLayer.id]);
+    app.root.addChild(this.shadowEntity);
+    this.shadowTex = new pc.Texture(dev, {
+      name: 'extra300-cloud-shadow', width: SHADOW_PX, height: SHADOW_PX, format: pc.PIXELFORMAT_RGBA8, mipmaps: false,
+      minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR, addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE,
+    });
+    this.shadowRt = new pc.RenderTarget({ colorBuffer: this.shadowTex, depth: false });
+    this.shadowCam = new pc.Entity('CloudShadowCamera');
+    this.shadowCam.addComponent('camera', {
+      layers: [this.shadowLayer.id], priority: -55, clearColor: new pc.Color(1, 1, 1, 1), renderTarget: this.shadowRt,
+      clearColorBuffer: true, clearDepthBuffer: false, clearStencilBuffer: false, frustumCulling: false,
+    });
+    app.root.addChild(this.shadowCam);
+    // stand-ins for the composite's maps when there are no clouds or no airplane
+    const one = (rgba) => new pc.Texture(dev, { width: 1, height: 1, format: pc.PIXELFORMAT_RGBA8, mipmaps: false, levels: [new Uint8Array(rgba)] });
+    this._white = one([255, 255, 255, 255]);
+    this._clear = one([0, 0, 0, 0]);
+
     // the composite: drawn with the transparent geometry, after the sky, before everything nearer
     this.compMat = new pc.ShaderMaterial({
       uniqueName: 'extra300-clouds-composite',
@@ -468,6 +627,8 @@ export class CloudLayer {
     this.compEntity.render.meshInstances[0].calculateSortDistance = () => 1e5;
     app.root.addChild(this.compEntity);
     this._target(1, 1);
+    this.compMat.setParameter('uCloudShadow', this._white);
+    this.compMat.setParameter('uPlaneShadow', this._clear);
     this._setEnabled(false);
   }
 
@@ -510,7 +671,9 @@ export class CloudLayer {
     const show = on && this.ready;
     this.marchEntity.enabled = show;
     this.camEntity.enabled = show;
-    this.compEntity.enabled = show;
+    this.shadowEntity.enabled = show;
+    this.shadowCam.enabled = show;
+    this._clouds = show;
   }
 
   /** Clouds on (a preset from CLOUD_PRESETS, base in m above sea level) or off (null). */
@@ -519,7 +682,6 @@ export class CloudLayer {
     this.base = baseMsl;
     this.enabled = !!preset;
     this._setEnabled(this.enabled);
-    if (!this.enabled) releaseSceneMaps(this.app, this);
   }
 
   /**
@@ -530,24 +692,29 @@ export class CloudLayer {
    *                      wind: [east, north] m/s, hdr: whether a later pass tonemaps }
    */
   update(dt, o) {
-    if (!this.enabled) return;
     // the shape volume, eight slices a frame until it's done
-    if (!this.ready) {
+    if (this.enabled && !this.ready) {
       const z1 = Math.min(SHAPE_N, this._shapeZ + 8);
       shapeSlices(this._shapeData, SHAPE_N, this._shapeZ, z1);
       this._shapeZ = z1;
-      if (z1 < SHAPE_N) return;
-      this.shapeTex = new pc.Texture(this.app.graphicsDevice, {
-        width: SHAPE_N, height: SHAPE_N, depth: SHAPE_N, volume: true, format: pc.PIXELFORMAT_RGBA8, mipmaps: false,
-        minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
-        addressU: pc.ADDRESS_REPEAT, addressV: pc.ADDRESS_REPEAT, addressW: pc.ADDRESS_REPEAT, levels: [this._shapeData],
-      });
-      this.marchMat.setParameter('uShape', this.shapeTex);
-      this.ready = true;
-      this._setEnabled(true);
+      if (z1 >= SHAPE_N) {
+        this.shapeTex = new pc.Texture(this.app.graphicsDevice, {
+          width: SHAPE_N, height: SHAPE_N, depth: SHAPE_N, volume: true, format: pc.PIXELFORMAT_RGBA8, mipmaps: false,
+          minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR,
+          addressU: pc.ADDRESS_REPEAT, addressV: pc.ADDRESS_REPEAT, addressW: pc.ADDRESS_REPEAT, levels: [this._shapeData],
+        });
+        this.marchMat.setParameter('uShape', this.shapeTex);
+        this.shadowMat.setParameter('uShape', this.shapeTex);
+        this.ready = true;
+        this._setEnabled(true);
+      }
     }
     const cam = o.cam;
-    if (!cam?.camera) return;
+    const plane = o.plane && o.sunDir[1] > 0.02 ? o.plane : null;
+    // the composite runs for the clouds and for the airplane's shadow
+    const comp = this._clouds || !!plane;
+    this.compEntity.enabled = comp;
+    if (!comp || !cam?.camera) { releaseSceneMaps(this.app, this); return; }
     requestSceneMaps(this.app, this, cam, { depth: true });
     const dev = this.app.graphicsDevice;
     this._target(Math.max(16, Math.round(dev.width * this.scale)), Math.max(16, Math.round(dev.height * this.scale)));
@@ -558,13 +725,13 @@ export class CloudLayer {
     this._wind[1] += o.wind[1] * dt;
 
     const camWorld = cam.getPosition();
+    const p = this.preset || CLOUD_PRESETS.Scattered;
     const view = new pc.Mat4().copy(cam.getWorldTransform()).invert();
     const vp = new pc.Mat4().mul2(cam.camera.projectionMatrix, view);
     const inv = vp.invert();
     const rootPos = o.root.getPosition();
     const camM = [(camWorld.x - rootPos.x) / o.ws, (camWorld.y - rootPos.y) / o.ws + o.datumMsl, (camWorld.z - rootPos.z) / o.ws];
     const sky = skyLight(o.sunDir[1]);
-    const p = this.preset;
     const m = this.marchMat;
     m.setParameter('uInvViewProj', inv.data);
     m.setParameter('uCamWorld', [camWorld.x, camWorld.y, camWorld.z]);
@@ -577,12 +744,31 @@ export class CloudLayer {
     m.setParameter('uLayer', [this.base, this.base + p.depth, p.coverage, 0.045]);
     m.setParameter('uWind', [this._wind[0], this._wind[1], this._time, 0]);
     m.setParameter('uMarch', [this.steps, 60000, this._frame, this.lightSteps]);
+    // the shadow map: 24 km square, its centre on the camera, snapped to its texels so it doesn't swim
+    const step = SHADOW_SIZE / SHADOW_PX;
+    const sx = Math.round(camM[0] / step) * step, sz = Math.round(camM[2] / step) * step;
+    const sm = this.shadowMat;
+    sm.setParameter('uSunDir', o.sunDir);
+    sm.setParameter('uLayer', [this.base, this.base + p.depth, p.coverage, 0.045]);
+    sm.setParameter('uWind', [this._wind[0], this._wind[1], this._time, 0]);
+    sm.setParameter('uShadowArea', [sx, sz, SHADOW_SIZE, o.datumMsl]);
+    sm.setParameter('uShadowPx', [SHADOW_PX, 0, 0, 0]);
+
     const fwd = cam.forward;
     const c = this.compMat;
     c.setParameter('uInvViewProj', inv.data);
     c.setParameter('uCamWorld', [camWorld.x, camWorld.y, camWorld.z]);
     c.setParameter('uCamFwd', [fwd.x, fwd.y, fwd.z]);
-    c.setParameter('uComp', [1 / o.ws, o.hdr ? 0 : 1, 1.0, 0]);
+    c.setParameter('uComp', [1 / o.ws, o.hdr ? 0 : 1, 1.0, this._clouds ? 1 : 0]);
+    c.setParameter('uRootWorld', [rootPos.x, rootPos.y, rootPos.z]);
+    // the clouds' shadow: weaker the lower the sun (the sky lights more of what the sun doesn't)
+    const sunShadow = smooth(0.02, 0.25, o.sunDir[1]) * 0.45;
+    c.setParameter('uCloudShadow', this._clouds ? this.shadowTex : this._white);
+    c.setParameter('uShadowArea', [sx, sz, SHADOW_SIZE, this._clouds ? sunShadow : 0]);
+    c.setParameter('uPlaneShadow', plane ? plane.texture : this._clear);
+    c.setParameter('uPlaneVP', plane ? plane.viewProj : IDENTITY);
+    c.setParameter('uPlaneInfo', plane ? [...plane.centre, sunShadow * 0.95] : [0, 0, 0, 0]);
+    c.setParameter('uSunDirW', [o.sunDir[0], o.sunDir[1], o.sunDir[2], plane ? plane.halfThickness : 0]);
   }
 
   destroy() {
@@ -590,9 +776,14 @@ export class CloudLayer {
     this.marchEntity.destroy();
     this.compEntity.destroy();
     this.camEntity.destroy();
+    this.shadowEntity.destroy();
+    this.shadowCam.destroy();
     this.app.scene.layers.remove(this.layer);
+    this.app.scene.layers.remove(this.shadowLayer);
     this.rt?.destroy();
-    for (const t of [this.colorTex, this.depthTex, this.shapeTex, this.detailTex, this.weatherTex]) t?.destroy();
+    this.shadowRt.destroy();
+    for (const t of [this.colorTex, this.depthTex, this.shapeTex, this.detailTex, this.weatherTex, this.shadowTex, this._white, this._clear]) t?.destroy();
+    this.shadowMat.destroy();
     for (const mesh of this._meshes) mesh.destroy();
     this.marchMat.destroy();
     this.compMat.destroy();

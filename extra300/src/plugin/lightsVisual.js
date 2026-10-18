@@ -1,7 +1,7 @@
 // lightsVisual.js — the airfield's lights in the scene (render/airfieldLights.js): the fixtures, one
-// additive glow mesh per colour, and the lights that change: the PAPIs (red or white per box, from
-// where the camera's eye is), the REIL strobes, the tower's rotating beacon (green, then white) and
-// its red obstruction light.
+// emissive lens mesh per colour (the room's HDR bloom is their glow), and the lights that change: the
+// PAPIs (red or white per box, from where the camera's eye is), the REIL strobes, the tower's
+// rotating beacon (green, then white) and its red obstruction light.
 
 import { buildAirfieldLights, glowQuads } from '../render/airfieldLights.js';
 import { MeshBuilder } from '../render/geometry.js';
@@ -30,20 +30,15 @@ export function discTexture(device) {
 }
 
 const mats = new Map();
+/** A lamp's lens: its colour, many times brighter than white, so the HDR bloom spreads its glow. */
 function glowMaterial(device, color) {
   if (mats.has(color)) return mats.get(color);
   const m = new pc.StandardMaterial();
   m.diffuse = new pc.Color(0, 0, 0);
   m.emissive = new pc.Color().fromString(color);
-  m.emissiveIntensity = 3;
-  m.emissiveMap = discTexture(device);
-  m.opacityMap = discTexture(device);
-  m.opacityMapChannel = 'a';
-  m.blendType = pc.BLEND_ADDITIVEALPHA;
-  m.depthWrite = false;
+  m.emissiveIntensity = 12;
   m.useLighting = false;
   m.useFog = false;
-  m.cull = pc.CULLFACE_NONE;
   m.update();
   mats.set(color, m);
   return m;
@@ -67,8 +62,8 @@ export class LightsVisual {
     }
     // the changing ones: one small glow entity each
     const single = (p, r, color) => {
-      const mb = new MeshBuilder({ uv: true });
-      glowQuads(mb, [0, 0, 0], r);
+      const mb = new MeshBuilder();
+      glowQuads(mb, [0, 0, 0], r * 0.2);
       const e = new pc.Entity('glow');
       e.addComponent('render', { meshInstances: [new pc.MeshInstance(toMesh(dev, mb), glowMaterial(dev, COLORS[color]))], castShadows: false, receiveShadows: false });
       e.setLocalPosition(p[0], p[1], p[2]);

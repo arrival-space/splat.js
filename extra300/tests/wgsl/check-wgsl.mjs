@@ -28,6 +28,7 @@ const { CLOUD_SHADERS: S } = await import('../../src/plugin/clouds.js');
 const shaders = [
   ['clouds march (vertex)', S.MARCH_VS_WGSL, 'vertex'],
   ['clouds march (fragment)', S.MARCH_FS_WGSL, 'fragment', 2],
+  ['clouds shadow map (fragment)', S.SHADOW_FS_WGSL, 'fragment'],
   ['clouds composite (fragment)', S.COMP_FS_WGSL, 'fragment'],
 ];
 

@@ -1,6 +1,6 @@
 // airfieldLights.js — Meigs' lights as geometry: the fixtures (small dark housings on stalks) and, for
-// each colour, the glow (three crossed quads per light, textured with a soft disc by the plugin, so a
-// light reads from any direction and from a few kilometres out). Render space, metres.
+// each colour, the lamps' lenses (small bright shapes the plugin draws strongly emissive, so the room's
+// HDR bloom makes their glow — no painted flares). Render space, metres.
 //
 //   runway edge   white, every 200 ft, 10 ft outside both edges
 //   threshold     green across each threshold (seen landing), red just beyond it (the far end's)
@@ -15,17 +15,12 @@ import { fromNE, MeshBuilder } from './geometry.js';
 const FT = 0.3048;
 const DEG = Math.PI / 180;
 
-/** Three crossed quads around p (render), half-size r, uv 0..1 on each. */
+/** A lamp's lens at p (render): an octahedron r across its middle (round enough at its size). */
 export function glowQuads(mb, p, r) {
   const [x, y, z] = p;
-  const quad = (a, b, c, d) => {
-    const n = [0, 1, 0];
-    const i = mb.vertex(a, n, [0, 0]); mb.vertex(b, n, [1, 0]); mb.vertex(c, n, [1, 1]); mb.vertex(d, n, [0, 1]);
-    mb.indices.push(i, i + 1, i + 2, i, i + 2, i + 3);
-  };
-  quad([x - r, y - r, z], [x + r, y - r, z], [x + r, y + r, z], [x - r, y + r, z]);
-  quad([x, y - r, z - r], [x, y - r, z + r], [x, y + r, z + r], [x, y + r, z - r]);
-  quad([x - r, y, z - r], [x + r, y, z - r], [x + r, y, z + r], [x - r, y, z + r]);
+  const v = [[x + r, y, z], [x - r, y, z], [x, y + r, z], [x, y - r, z], [x, y, z + r], [x, y, z - r]];
+  const faces = [[0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4], [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5]];
+  for (const [a, b, c] of faces) mb.tri(v[a], v[b], v[c]);
 }
 
 /**
@@ -42,13 +37,13 @@ export function buildAirfieldLights(world) {
   };
   const fixtures = new MeshBuilder();
   const glows = {};
-  const glow = (color) => (glows[color] ??= new MeshBuilder({ uv: true }));
+  const glow = (color) => (glows[color] ??= new MeshBuilder());
   /** A light on a short stalk: the housing, and its glow at the lens. */
   const light = (al, ac, color, h = 0.36, r = 0.55) => {
     const p = P(al, ac, 0);
     fixtures.box([p[0] - 0.05, 0, p[2] - 0.05], [p[0] + 0.05, h - 0.08, p[2] + 0.05]);
     fixtures.box([p[0] - 0.1, h - 0.08, p[2] - 0.1], [p[0] + 0.1, h + 0.04, p[2] + 0.1]);
-    glowQuads(glow(color), [p[0], h, p[2]], r);
+    glowQuads(glow(color), [p[0], h, p[2]], r * 0.22);
   };
 
   // runway edge lights, both sides, 200 ft apart from threshold to threshold
