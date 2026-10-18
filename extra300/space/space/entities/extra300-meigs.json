@@ -36,6 +36,7 @@
       "cityDetail": "full",
       "easyMode": false,
       "playIntro": true,
+      "debugSpheres": false,
       "startMenu": true,
       "introOnLoad": false,
       "seatAnimation": "driving.glb",
