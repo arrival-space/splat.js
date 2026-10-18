@@ -65,7 +65,6 @@ const AIRPORTS = {
   krnt: async () => { const dem = await inflateRentonDem(); return { dem, world: buildRenton(dem) }; },
 };
 /** The destination after this one, as the ✈ button goes round them. */
-const nextDestination = (id) => { const ids = Object.keys(DESTINATIONS); return ids[(ids.indexOf(id) + 1) % ids.length]; };
 // the start menu's words (plugin/startMenu.js)
 const PLACE_BLURBS = {
   meigs: 'The lakefront island strip: the skyline next door, a carrier in the lake',
@@ -105,7 +104,7 @@ export class Extra300 extends ArrivalScript {
   oatC = 15;
   skylineYear = 2026;
   cityDetail = 'full';
-  easyMode = false;
+  easyMode = true;            // the default: stall-proof, the attitude held hands off (the top bar's switch, or L)
   playIntro = true;
   introOnLoad = false;
   startMenu = true;
@@ -232,8 +231,11 @@ export class Extra300 extends ArrivalScript {
     window.addEventListener('pointerup', this._onPointerUp);
     window.addEventListener('pointermove', this._onPointerMove);
 
-    this.hud.aircraftButton.onclick = (ev) => { ev.stopPropagation(); this._action('aircraft'); };
-    this.hud.placeButton.onclick = (ev) => { ev.stopPropagation(); this._goTo(nextDestination(this._dest)); };
+    // the top bar's dropdowns: which airplane, where to fly
+    this.hud.setMenu('aircraft', Object.entries(PROFILES).map(([id, p]) => ({ id, title: p.title })),
+      () => Object.keys(PROFILES).find((id) => PROFILES[id] === this.profile), (id) => this._switchAircraft(PROFILES[id]));
+    this.hud.setMenu('place', Object.values(DESTINATIONS).map((d) => ({ id: d.id, title: d.title })),
+      () => this._dest, (id) => this._goTo(id));
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
@@ -313,7 +315,7 @@ export class Extra300 extends ArrivalScript {
       console.warn(`[extra300] ${DESTINATIONS[id].short} unavailable:`, e);
       this.hud.flash(`${DESTINATIONS[id].short} could not be loaded`, 3);
       this._going = false;
-      this.hud.setPlace(DESTINATIONS[nextDestination(this._dest)].short);
+      this.hud.setPlace(DESTINATIONS[this._dest].short);
       return;
     }
     this._going = false;
@@ -345,7 +347,7 @@ export class Extra300 extends ArrivalScript {
   /** What belongs to the place we're at: on, the rest off; Google's tiles told where we are. */
   _applyDestination(moved = false) {
     const meigs = this._dest === 'meigs';
-    this.hud.setPlace(DESTINATIONS[nextDestination(this._dest)].short);
+    this.hud.setPlace(DESTINATIONS[this._dest].short);
     this.hud.setCredit(this._place.credit);
     this.scenery.visible = meigs && this.showScenery;
     this.lights.visible = meigs && this.showScenery;

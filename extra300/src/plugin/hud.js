@@ -92,9 +92,27 @@ export class Hud {
     this.aircraftButton = button({ ...pill, width: `${wA}px`, left: `calc(50% + ${x0}px)` });
     this.easyButton = button({ ...pill, width: `${wE}px`, left: `calc(50% + ${x0 + wA + 8}px)` });
     this.controlsButton = button({ ...pill, width: `${wC}px`, left: `calc(50% + ${x0 + wA + wE + 16}px)` });
-    // where to fly: the other destination, one click away (in the airplane and out of it)
+    // where to fly: a dropdown of the airports (in the airplane and out of it)
     this.placeButton = button({ ...pill, width: `${wD}px`, left: `calc(50% + ${x0 + wA + wE + wC + 24}px)`, display: 'block' });
-    this.setPlace('Innsbruck');
+    this.setPlace('Chicago');
+    // the airplane and place buttons open dropdowns (setMenu): one at a time, closed by a pick, a
+    // click anywhere else or Esc
+    this._menu = createUI('div', { interactive: true, lockKeyboard: false });
+    css(this._menu, {
+      position: 'fixed', top: '52px', zIndex: 1001, display: 'none', minWidth: '210px', padding: '6px',
+      borderRadius: '12px', background: 'rgba(12,13,16,0.9)', border: '1px solid rgba(255,255,255,0.18)',
+      boxShadow: '0 8px 28px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', pointerEvents: 'auto',
+      font: `600 ${isMobile ? 13 : 14}px "Helvetica Neue", Arial, sans-serif`, color: '#f4f2ec',
+    });
+    this._menus = {};
+    this._menuOpen = null;
+    this._onOutside = (e) => {
+      if (!this._menuOpen || this._menu.contains(e.target) || e.target === this._menus[this._menuOpen]?.button) return;
+      this.closeMenu();
+    };
+    this._onMenuKey = (e) => { if (e.key === 'Escape' && this._menuOpen) this.closeMenu(); };
+    window.addEventListener('pointerdown', this._onOutside, true);
+    window.addEventListener('keydown', this._onMenuKey, true);
     this.controlsButton.innerHTML = 'Controls';
     this.controlsButton.title = 'All the keys (H)';
     this.setProfile(profile);
@@ -131,10 +149,55 @@ export class Hud {
     this.layout();
   }
 
-  /** The destination button names where it goes. */
-  setPlace(next, busy = false) {
-    this.placeButton.innerHTML = `<span style="opacity:0.75;margin-right:5px">${busy ? '…' : '✈'}</span>${next}`;
-    this.placeButton.title = `Fly at ${next} instead`;
+  /** The place button names where we are (or are going, busy), its dropdown the others. */
+  setPlace(here, busy = false) {
+    this.placeButton.innerHTML = `<span style="opacity:0.75;margin-right:5px">${busy ? '…' : '✈'}</span>${here}<span style="opacity:0.6;margin-left:5px">▾</span>`;
+    this.placeButton.title = 'Where to fly';
+  }
+
+  /**
+   * A dropdown on one of the top bar's buttons.
+   * @param {'aircraft'|'place'} key
+   * @param {{ id: string, title: string }[]} items
+   * @param {() => string} current  the id that is in use now (marked)
+   * @param {(id: string) => void} pick
+   */
+  setMenu(key, items, current, pick) {
+    const button = key === 'aircraft' ? this.aircraftButton : this.placeButton;
+    this._menus[key] = { button, items, current, pick };
+    button.onclick = (ev) => { ev.stopPropagation(); this._menuOpen === key ? this.closeMenu() : this.openMenu(key); };
+  }
+
+  openMenu(key) {
+    const m = this._menus[key];
+    if (!m) return;
+    this._menuOpen = key;
+    const now = m.current();
+    this._menu.innerHTML = '';
+    for (const it of m.items) {
+      const row = document.createElement('div');
+      const on = it.id === now;
+      row.innerHTML = `<span style="display:inline-block;width:18px;color:#ff5a64">${on ? '✓' : ''}</span>${it.title}`;
+      Object.assign(row.style, {
+        padding: '8px 12px 8px 8px', borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap',
+        background: on ? 'rgba(196,30,42,0.28)' : 'transparent',
+      });
+      row.onpointerenter = () => { if (!on) row.style.background = 'rgba(255,255,255,0.08)'; };
+      row.onpointerleave = () => { if (!on) row.style.background = 'transparent'; };
+      row.onclick = (ev) => { ev.stopPropagation(); this.closeMenu(); if (!on) m.pick(it.id); };
+      this._menu.appendChild(row);
+    }
+    // under its button, kept on the screen
+    const r = m.button.getBoundingClientRect();
+    this._menu.style.display = 'block';
+    const w = this._menu.offsetWidth;
+    this._menu.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left))}px`;
+    this._menu.style.top = `${r.bottom + 6}px`;
+  }
+
+  closeMenu() {
+    this._menuOpen = null;
+    this._menu.style.display = 'none';
   }
 
   /** The map data's credit line, for the place on screen. */
@@ -153,8 +216,8 @@ export class Hud {
       + (isMobile ? p.quickMobile : p.quick).map((t) => `<div>${t}</div>`).join('')
       + (isMobile ? `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Easy mode is on: ${p.easyOn.replace(/^Easy mode: /, '')}</div>`
         : `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Everything else: <b>Controls</b> (or H)</div>`);
-    this.aircraftButton.innerHTML = `<span style="opacity:0.7;margin-right:5px">⇄</span>${p.title}`;
-    this.aircraftButton.title = next ? `Switch to the ${next.title} (T)` : 'Switch airplane (T)';
+    this.aircraftButton.innerHTML = `${p.title}<span style="opacity:0.6;margin-left:5px">▾</span>`;
+    this.aircraftButton.title = 'Which airplane (T: the next)';
     this.panel.limits = p.spec.limits;
     this.setEasy(this._easy ?? false);
     // (from the constructor, the rest of the DOM isn't built yet)
@@ -281,6 +344,7 @@ export class Hud {
     this.easyButton.style.display = flying ? 'block' : 'none';
     this.controlsButton.style.display = flying ? 'block' : 'none';
     this.placeButton.style.display = 'block';
+    if (!flying && this._menuOpen === 'aircraft') this.closeMenu();
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
     if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); }
@@ -294,6 +358,9 @@ export class Hud {
   }
 
   destroy() {
+    window.removeEventListener('pointerdown', this._onOutside, true);
+    window.removeEventListener('keydown', this._onMenuKey, true);
+    this._menu.remove();
     for (const el of [this.panelCanvas, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
