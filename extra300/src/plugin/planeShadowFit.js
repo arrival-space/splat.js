@@ -6,12 +6,8 @@
 // is the airplane's own box seen down the sun (its whole map on the airplane, at any distance), deep
 // enough to reach the ground under it.
 
-const corner = new pc.Vec3();
-const pos = new pc.Vec3();
-const foot = new pc.Vec3();
-const box = new pc.BoundingBox();
-const sphereBox = new pc.BoundingBox();
-const R = new pc.Vec3(), U = new pc.Vec3(), F = new pc.Vec3();
+// scratch, made on first use (the engine's pc isn't there when the module loads)
+let corner, pos, foot, box, sphereBox, R, U, F;
 
 export class PlaneShadowFit {
   /**
@@ -21,6 +17,11 @@ export class PlaneShadowFit {
    */
   constructor(app, focus) {
     this.focus = focus;
+    if (!box) {
+      [corner, pos, foot, R, U, F] = [0, 0, 0, 0, 0, 0].map(() => new pc.Vec3());
+      box = new pc.BoundingBox();
+      sphereBox = new pc.BoundingBox();
+    }
     this.saved = new Map();      // light → its own shadowDistance, while we've changed it
     const sr = app.renderer?._shadowRendererDirectional;
     if (!sr?.cull) return;
