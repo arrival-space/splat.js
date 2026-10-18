@@ -25,14 +25,11 @@ const chunk = (name) => {
 // what to check: the clouds (pc globals stubbed: the module only reads pc when it builds)
 globalThis.pc = new Proxy({}, { get: () => 0 });
 const { CLOUD_SHADERS: S } = await import('../../src/plugin/clouds.js');
-const { PLANE_SHADOW_SHADERS: P } = await import('../../src/plugin/planeShadow.js');
 const shaders = [
   ['clouds march (vertex)', S.MARCH_VS_WGSL, 'vertex'],
   ['clouds march (fragment)', S.MARCH_FS_WGSL, 'fragment', 2],
   ['clouds shadow map (fragment)', S.SHADOW_FS_WGSL, 'fragment'],
   ['clouds composite (fragment)', S.COMP_FS_WGSL, 'fragment'],
-  ['plane shadow depth (vertex)', P.DEPTH_VS_WGSL, 'vertex'],
-  ['plane shadow depth (fragment)', P.DEPTH_FS_WGSL, 'fragment'],
 ];
 
 const server = await serve(8762);

@@ -16,7 +16,6 @@ import { buildMeigs } from '../world/meigs.js';
 import { buildInnsbruck, inflateLowiDem } from '../world/innsbruck.js';
 import { TerrainVisual } from './terrainVisual.js';
 import { CLOUD_PRESETS, CloudLayer } from './clouds.js';
-import { PlaneShadow } from './planeShadow.js';
 import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
@@ -160,8 +159,6 @@ export class Extra300 extends ArrivalScript {
     this.hud = new Hud(this.getUIContainer(), this.profile, this.isMobile, (tag, opts) => this.createUI(tag, opts));
     this.lasers = new Lasers(this.app, this._worldRoot);
     this._fire = false;
-    // the airplane's shadow on any ground (Google's tiles too), drawn by the clouds' composite
-    this.planeShadow = new PlaneShadow(this.app);
     this._buildAircraft(this.profile);
     this.hud.setEasy(this.mapper.easy);
 
@@ -299,6 +296,19 @@ export class Extra300 extends ArrivalScript {
     this._publishCarve();
     this._publishWater();
     this._publishFlatten();
+    this._publishShadows();
+  }
+
+  /**
+   * The room sun's shadow map: only the airplane (and the player, the room's own) casts into it,
+   * nothing else of ours; Google's unlit tiles take it too (darkened by the sun's share of light).
+   */
+  _publishShadows() {
+    const plane = this.visual?.root;
+    for (const r of this._worldRoot?.findComponents('render') || []) {
+      if (r.castShadows && !(plane && (r.entity === plane || r.entity.isDescendantOf(plane)))) r.castShadows = false;
+    }
+    this.app.fire('googletiles:receive-shadows', 0.55);
   }
 
   /** Google's globe under the place: its start on the runway where the vibe stands. */
@@ -359,7 +369,6 @@ export class Extra300 extends ArrivalScript {
     this.visual?.destroy();
     this.visual = new AircraftVisual(this.app, this._worldRoot, profile.buildModel(), profile.title);
     if (profile.cockpitDisplay) this.display = new CockpitDisplay(this.app, this.visual.root, this.world);
-    this.planeShadow?.setCaster(this.visual.root);
     this.sound?.stop();
     this.sound = new profile.Sound();
     this.hud.setProfile(profile, nextProfile(profile));
@@ -443,6 +452,7 @@ export class Extra300 extends ArrivalScript {
       this._publishCarve();
       this._publishWater();
       this._publishFlatten();
+      this._publishShadows();
       // the tiles vibe may have started after we moved: tell it again where we are
       if (this._dest !== 'meigs') this._publishOrigin();
       // with no API key yet the tiles vibe lays a 50 km green disc at the runway's height, over our lake
@@ -1157,10 +1167,9 @@ export class Extra300 extends ArrivalScript {
     const up = L ? L.entity.up : { x: 0.3, y: 0.8, z: 0.3 };
     const w = this._weather().wind;          // NED, toward
     const sunDir = [up.x, up.y, up.z];
-    const plane = this.planeShadow?.update(sunDir, this.ac.spec.wing.span * 1.15 * this._ws);
     this.cloudLayer.update(this._dt || 1 / 60, {
       cam, root: this._worldRoot, ws: this._ws, datumMsl: this.world.elevation,
-      sunDir, wind: [w[1], w[0]], hdr: !!this.app.customTravelCenter?.cameraFrame, plane,
+      sunDir, wind: [w[1], w[0]], hdr: !!this.app.customTravelCenter?.cameraFrame,
     });
   }
 
@@ -1241,7 +1250,7 @@ export class Extra300 extends ArrivalScript {
     this._flatMask?.texture.destroy();
     this._terrain?.destroy();
     this.cloudLayer?.destroy();
-    this.planeShadow?.destroy();
+    this.app.fire('googletiles:receive-shadows', 0);
     this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this._ssr?.destroy();

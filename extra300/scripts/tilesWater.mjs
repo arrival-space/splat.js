@@ -4,6 +4,7 @@
 //   - the room's own directional light turned onto the atmosphere's sun, so shadows agree with the sky
 //   - ground flattened inside a published mask ("googletiles:flatten-region": an airport's runway)
 //   - the globe re-anchored on request ("googletiles:set-origin": another destination)
+//   - the room sun's shadow map on Google's unlit tiles ("googletiles:receive-shadows")
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
 // the vibe is staged as it is, with a warning, rather than half-patched.
@@ -154,6 +155,15 @@ const PATCHES = [
   },
   {
     after: [
+      "uniform float uSsaoOnColor;  // 1: an unlit tile takes the screen-space AO (see the main chunk)",
+      "uniform float uLitAmount;    // re-lit tiles: 0 = Google's photo as is \u2026 1 = fully lit (1 on unlit tiles: no-op)",
+    ].join('\n'),
+    insert: [
+      "uniform float uShadowOnColor; // an unlit tile under the room sun's shadow map: how much it darkens (0: off)",
+    ].join('\n'),
+  },
+  {
+    after: [
       "${ATMO_DECL_GLSL}",
       "${ATMO_FUNC_GLSL}",
     ].join('\n'),
@@ -167,6 +177,18 @@ const PATCHES = [
       "gl_FragColor.rgb = mix(litArgs_albedo, gl_FragColor.rgb, uLitAmount);",
     ].join('\n'),
     insert: [
+      "// The room sun's shadows on an unlit tile (another vibe asks: googletiles:receive-shadows). The tile",
+      "// is switched to lit only so the engine evaluates the sun and its shadow map, with nothing for it to",
+      "// light (no diffuse, specular or sky); the photo is darkened by the sun's share where shadow falls.",
+      "#if defined(LIGHT0) && defined(LIGHT0CASTSHADOW)",
+      "#if LIGHT0TYPE == DIRECTIONAL",
+      "if (uShadowOnColor > 0.0) {",
+      "    dLightDirNormW = light0_direction;",
+      "    float gtShadow = mix(1.0, getShadow0(vec3(0.0)), light0_shadowIntensity);",
+      "    gl_FragColor.rgb *= mix(1.0, gtShadow, uShadowOnColor);",
+      "}",
+      "#endif",
+      "#endif",
       "// Water from a published land/water mask (see WATER_GLSL), before the grade and the haze",
       "if (uWaterEnable > 0.5) {",
       "    float wm = gtWaterMask(vPositionW);",
@@ -176,6 +198,33 @@ const PATCHES = [
       "    float wfw = sqrt(length(dFdx(wp)) * length(dFdy(wp)));",
       "    if (wm > 0.001) gl_FragColor.rgb = mix(gl_FragColor.rgb, gtWaterShade(vPositionW, gl_FragColor.rgb, wfw), wm);",
       "}",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "uniform uSsaoOnColor: f32;",
+      "uniform uLitAmount: f32;",
+    ].join('\n'),
+    insert: [
+      "uniform uShadowOnColor: f32;",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "// Direct Light Amount: the photo as it is ... the re-lit result (see the GLSL note).",
+      "output.color = vec4f(mix(litArgs_albedo, output.color.rgb, uniform.uLitAmount), output.color.a);",
+    ].join('\n'),
+    insert: [
+      "// The room sun's shadows on an unlit tile (see the GLSL note).",
+      "#if defined(LIGHT0) && defined(LIGHT0CASTSHADOW)",
+      "#if LIGHT0TYPE == DIRECTIONAL",
+      "if (uniform.uShadowOnColor > 0.0) {",
+      "    dLightDirNormW = uniform.light0_direction;",
+      "    let gtShadow = mix(1.0, getShadow0(vec3f(0.0)), uniform.light0_shadowIntensity);",
+      "    output.color = vec4f(output.color.rgb * mix(1.0, gtShadow, uniform.uShadowOnColor), output.color.a);",
+      "}",
+      "#endif",
+      "#endif",
     ].join('\n'),
   },
   {
@@ -248,6 +297,16 @@ const PATCHES = [
       "        };",
       "        this.app.on(\"googletiles:set-origin\", this._onSetOrigin, this);",
       "",
+      "        // The room sun's shadows on Google's unlit tiles (what casts them is the room's business):",
+      "        //   app.fire(\"googletiles:receive-shadows\", strength)   0 \u2026 1, the sun's share of the light; 0 off",
+      "        this._onReceiveShadows = (strength) => {",
+      "            const v = Number(strength);",
+      "            this._shadowReceive = Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0;",
+      "            this._chunkAllTiles();",
+      "            for (const mat of this._chunkedMaterials) this._setShadowOn(mat);",
+      "        };",
+      "        this.app.on(\"googletiles:receive-shadows\", this._onReceiveShadows, this);",
+      "",
     ].join('\n'),
   },
   {
@@ -278,6 +337,7 @@ const PATCHES = [
       "        if (this._onWaterMask) this.app.off(\"googletiles:water-mask\", this._onWaterMask, this);",
       "        if (this._onWaterClear) this.app.off(\"googletiles:water-mask-clear\", this._onWaterClear, this);",
       "        if (this._onFlatten) this.app.off(\"googletiles:flatten-region\", this._onFlatten, this);",
+      "        if (this._onReceiveShadows) this.app.off(\"googletiles:receive-shadows\", this._onReceiveShadows, this);",
       "        if (this._onFlattenClear) this.app.off(\"googletiles:flatten-region-clear\", this._onFlattenClear, this);",
       "        if (this._onSetOrigin) this.app.off(\"googletiles:set-origin\", this._onSetOrigin, this);",
       "        if (this._waterBlank) { this._waterBlank.destroy(); this._waterBlank = null; }",
@@ -315,6 +375,45 @@ const PATCHES = [
     insert: [
       "        this._setWaterOn(mat);",
       "        this._setFlattenOn(mat);",
+      "        this._setShadowOn(mat);",
+      "    }",
+      "",
+      "    // \u2500\u2500 The room sun's shadows on unlit tiles (see the main chunk) \u2500\u2500",
+      "    /** Lit with nothing to light, so the engine brings the sun's shadow map; or back as it was. */",
+      "    _setShadowOn(mat) {",
+      "        const on = (this._shadowReceive || 0) > 0 && !this._tunedMaterials.has(mat);",
+      "        if (on && !mat._gtShadowOrig && !mat.useLighting) {",
+      "            mat._gtShadowOrig = {",
+      "                diffuse: mat.diffuse.clone(), specular: mat.specular.clone(), useMetalness: mat.useMetalness,",
+      "                gloss: mat.gloss, ambient: mat.ambient.clone(), useSkybox: mat.useSkybox,",
+      "            };",
+      "            mat.useLighting = true;",
+      "            mat.diffuse.set(0, 0, 0);",
+      "            mat.specular.set(0, 0, 0);",
+      "            mat.useMetalness = false;",
+      "            mat.gloss = 0;",
+      "            mat.ambient.set(0, 0, 0);",
+      "            mat.useSkybox = false;",
+      "            mat.update();",
+      "        } else if (!on && mat._gtShadowOrig) {",
+      "            this._unshadowMaterial(mat);",
+      "        }",
+      "        mat.setParameter(\"uShadowOnColor\", on && mat._gtShadowOrig ? this._shadowReceive : 0);",
+      "    }",
+      "",
+      "    _unshadowMaterial(mat) {",
+      "        const o = mat._gtShadowOrig;",
+      "        if (!o) return;",
+      "        mat.useLighting = false;",
+      "        mat.diffuse.copy(o.diffuse);",
+      "        mat.specular.copy(o.specular);",
+      "        mat.useMetalness = o.useMetalness;",
+      "        mat.gloss = o.gloss;",
+      "        mat.ambient.copy(o.ambient);",
+      "        mat.useSkybox = o.useSkybox;",
+      "        mat._gtShadowOrig = null;",
+      "        mat.setParameter(\"uShadowOnColor\", 0);",
+      "        mat.update();",
       "    }",
       "",
       "    // \u2500\u2500 Flattened ground (see FLAT_VS_MAIN_GLSL) \u2500\u2500",
@@ -427,6 +526,24 @@ const PATCHES = [
       "        // camera looks. (By its centre \u2014 the planet's, straight down \u2014 it would sort last whenever the",
       "        // camera looks above the horizon, and lay its haze over clouds and glass drawn before it.)",
       "        for (const smi of sky.render.meshInstances) smi.calculateSortDistance = () => 1e15;",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "    _tuneMaterial(mat) {",
+      "        if (!mat) return;",
+    ].join('\n'),
+    insert: [
+      "        this._unshadowMaterial(mat);   // (lit for real now: the engine shadows it the usual way)",
+    ].join('\n'),
+  },
+  {
+    after: [
+      "        mat.update();",
+      "        this._tunedMaterials.delete(mat);",
+    ].join('\n'),
+    insert: [
+      "        this._setShadowOn(mat);        // unlit again: back under the sun's shadow map, if asked",
     ].join('\n'),
   },
 ];
