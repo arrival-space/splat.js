@@ -2,9 +2,9 @@
   "id": "RoomInfo",
   "type": "Simple",
   "data": {
-    "roomTitle": "Meigs Field — Extra 300L",
+    "roomTitle": "Flight Simulator",
     "roomDescription": "Chicago's Meigs Field (CGX), closed in 2003, reopened: runway 36 on Northerly Island, the default start of Microsoft Flight Simulator for twenty years. Walk up to the Extra 300L and press E to fly.",
-    "roomPrivacy": "Closed",
+    "roomPrivacy": "Open",
     "hideArchitecture": true,
     "hideRoomTitle": true,
     "hideBackPortal": true,
@@ -43,18 +43,18 @@
     "skyboxHidden": true,
     "skyboxIntensity": 1.7749999999999986,
     "envLightFinal": 1.7749999999999986,
-    "stageLightIntensity": 1.6874999999999998
+    "stageLightIntensity": 1.6874999999999998,
+    "allowRemix": true,
+    "spaceDomain": "arrival.space"
   },
   "state": {
     "files": 2,
-    "memory": 3022698,
-    "updated": 1792341228216,
+    "memory": 3027806,
+    "updated": 1792343458657,
     "entities": 11,
     "entitySizes": {
-      "extra300-meigs": 2883624,
+      "extra300-meigs": 2888732,
       "google-3d-tiles": 139074
-    },
-    "screenshotTime": 1792190186738,
-    "screenshotDataHash": "71d5775a92f9678cc2693174d1bf46e96c10579bad564a4177ec1530f3a1b47b"
+    }
   }
 }
