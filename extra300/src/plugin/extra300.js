@@ -35,7 +35,7 @@ import { SceneryVisual } from './sceneryVisual.js';
 import { Hud } from './hud.js';
 import { disposeMaterials, toMesh } from './pcMesh.js';
 import { disposeGroundTextures } from './groundMaterial.js';
-import { disposeFinishes, setReflectionCube } from './finishes.js';
+import { disposeFinishes, glassReflectionMaterial, mirrorMaterial, paintMaterial, setReflectionCube } from './finishes.js';
 import { OsmVisual } from './osmVisual.js';
 import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
@@ -109,6 +109,7 @@ export class Extra300 extends ArrivalScript {
   playIntro = true;
   introOnLoad = false;
   startMenu = true;
+  debugSpheres = false;
   seatAnimation = 'driving.glb';
   avatarLean = 20;            // degrees the avatar leans back into the reclined seat
   avatarSeatHeight = 0.79;    // the seated pose has its origin under the hips: low enough that the head stays under the canopy
@@ -135,6 +136,7 @@ export class Extra300 extends ArrivalScript {
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
+    debugSpheres: { title: 'Debug: three spheres over the airplane (its white paint, a mirror, clear glass), lit and reflecting as it is (or ?spheres on the address)' },
     startMenu: { title: 'Start menu: pick the airport and airplane before anything loads (skipped when the address names both)' },
     introOnLoad: { title: 'Film mode: board and play the intro by itself after loading (or open the space with ?intro)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
@@ -401,12 +403,60 @@ export class Extra300 extends ArrivalScript {
   _probeTick() {
     const root = this.visual?.root, cam = ArrivalSpace.getCamera?.();
     const on = !!root && !!cam && cam.getPosition().distance(root.getPosition()) < 400 * this._ws;
-    if (on && (this._probeRoot !== root || (this._probeHideAt = (this._probeHideAt || 0) + 1) % 60 === 0)) {
+    const tick = (this._probeAt = (this._probeAt || 0) + 1);
+    if (on && (this._probeRoot !== root || tick % 60 === 0)) {
       this._probeRoot = root;
       const player = ArrivalSpace.getPlayer?.();
-      this._probe.hide([root, player].filter(Boolean).flatMap((e) => e.findComponents('render').flatMap((r) => r.meshInstances)));
+      // out of the cube: the airplane and its pilot, and the skies drawn for the eye (Google's
+      // atmosphere shell, our own dome and sun): the cube has its own sky
+      const gsky = this.app.root.findByName('google-tiles-atmosphere-sky');
+      const mis = [root, player, gsky, this._sky].filter(Boolean).flatMap((e) => e.findComponents('render').flatMap((r) => r.meshInstances));
+      for (const mi of mis) mi.cull = true;   // (an unculled instance never asks its isVisibleFunc)
+      this._probe.hide(mis);
     }
-    setReflectionCube(this._probe.update(on ? root.getPosition() : null, on, this._ws) ? this._probe.texture : null);
+    const L = this._sunLight || this.app.root.findComponents('light').find((l) => l.type === 'directional' && l.enabled);
+    const sun = L ? [L.entity.up.x, L.entity.up.y, L.entity.up.z] : null;
+    this._spheresTick(root);
+    const whole = this._probe.update(on ? root.getPosition() : null, on, this._ws, sun);
+    setReflectionCube(whole ? this._probe.texture : null);
+    // and its light on the airplane, about once a second
+    if (whole && tick % 60 === 30) {
+      this._probe.irradiance().then((sh) => {
+        if (!sh || this._destroyed || !this.visual) return;
+        const mats = new Set(this.visual.root.findComponents('render').flatMap((r) => r.meshInstances.map((mi) => mi.material)));
+        for (const m of mats) {
+          if (!m.useLighting) continue;
+          m.ambientSH = sh;
+          m.update();
+        }
+      }).catch(() => { /* no readback here: the room's light stays */ });
+    }
+  }
+
+  /**
+   * Debug: three balls a couple of metres over the airplane, riding with it: its white paint (the very
+   * material, so lit by the probe as it is), a perfect mirror, and clear glass with acrylic's own
+   * Fresnel (4 % head on). They're the airplane's for the probe: kept out of its cube.
+   */
+  _spheresTick(root) {
+    let want = this.debugSpheres;
+    try { want ||= new URLSearchParams(location.search).has('spheres'); } catch { /* no address */ }
+    if (!want || !root) { if (this._spheres) { this._spheres.destroy(); this._spheres = null; } return; }
+    if (this._spheres?.parent === root) return;
+    this._spheres?.destroy();
+    const dev = this.app.graphicsDevice;
+    const ws = this._ws, ps = root.getWorldTransform().getScale().x || 1;
+    this._spheres = new pc.Entity('DebugSpheres');
+    root.addChild(this._spheres);
+    const up = this.profile.spec.wing.span * 0.2 + 2;
+    [paintMaterial(dev, '#f3f1ec'), mirrorMaterial(dev), null].forEach((mat, i) => {
+      const e = new pc.Entity(['debugWhite', 'debugMirror', 'debugGlass'][i]);
+      e.addComponent('render', { type: 'sphere', material: mat || glassReflectionMaterial(dev, 0.04), castShadows: false });
+      e.setLocalPosition(((i - 1) * 1.6 * ws) / ps, (up * ws) / ps, 0);
+      e.setLocalScale(ws / ps, ws / ps, ws / ps);
+      this._spheres.addChild(e);
+    });
+    this._probeRoot = null;   // hidden from the cube with the airplane, next tick
   }
 
   /** Google's globe under the place: its start on the runway where the vibe stands. */

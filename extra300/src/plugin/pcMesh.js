@@ -3,8 +3,10 @@
 
 const materialCache = new Map();
 
-export function material(color, { transparent = false, opacity = 1, emissive = null, twoSided = true } = {}) {
-  const key = `${color}|${transparent}|${opacity}|${emissive}|${twoSided}`;
+/** A plain material, shared by colour and options; `scope` keeps a set apart (the airplane's: its ambient
+ * light is its own, plugin/reflectionProbe.js). */
+export function material(color, { transparent = false, opacity = 1, emissive = null, twoSided = true, scope = '' } = {}) {
+  const key = `${color}|${transparent}|${opacity}|${emissive}|${twoSided}|${scope}`;
   if (materialCache.has(key)) return materialCache.get(key);
   const m = new pc.StandardMaterial();
   m.diffuse = new pc.Color().fromString(color);

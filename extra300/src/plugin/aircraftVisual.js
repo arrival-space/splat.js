@@ -31,17 +31,17 @@ export class AircraftVisual {
     const byName = new Map();
     const dev = app.graphicsDevice;
     for (const part of parts) {
-      const mat = part.name === 'hudGlass' ? material('#b8ffd2', { transparent: true, opacity: 0.1 })
+      const mat = part.name === 'hudGlass' ? material('#b8ffd2', { transparent: true, opacity: 0.1, scope: 'aircraft' })
         // the cockpit's screens and lamps light themselves
-        : /^(screen|lamp)/.test(part.material) ? material(part.color, { emissive: part.color })
+        : /^(screen|lamp)/.test(part.material) ? material(part.color, { emissive: part.color, scope: 'aircraft' })
         : part.kind === 'abFlame' ? flameMaterial(part.color)
         : part.kind === 'engineGlow' ? flameMaterial('#ff6a48')
-        : part.kind === 'propDisc' ? material('#202226', { transparent: true, opacity: 0.07 })
+        : part.kind === 'propDisc' ? material('#202226', { transparent: true, opacity: 0.07, scope: 'aircraft' })
           : GLASS.has(part.material) || part.name === 'canopy' ? glassTintMaterial(dev, part.color)
             : PAINTED.has(part.material) ? paintMaterial(dev, part.color)
               : SATIN.has(part.material) ? paintMaterial(dev, part.color, true)
                 : METAL.has(part.material) ? metalMaterial(dev, part.color, part.material === 'chrome', true)
-                  : material(part.color, part.transparent ? { transparent: true, opacity: 0.28 } : {});
+                  : material(part.color, part.transparent ? { transparent: true, opacity: 0.28, scope: 'aircraft' } : { scope: 'aircraft' });
       const glass = part.name !== 'hudGlass' && (GLASS.has(part.material) || part.name === 'canopy');
       if (!part.hinge) {
         const e = meshEntity(app, this.root, part.name, part.mesh, mat);

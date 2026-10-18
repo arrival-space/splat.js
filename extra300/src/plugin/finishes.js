@@ -138,20 +138,36 @@ export function glassTintMaterial(device, tint) {
   return m;
 }
 
-export function glassReflectionMaterial(device) {
-  const key = 'glassReflection';
+export function glassReflectionMaterial(device, f0 = 0.06) {
+  const key = `glassReflection${f0}`;
   if (cache.has(key)) return cache.get(key);
   cube ??= skyCube(device);
   const m = new pc.StandardMaterial();
   m.diffuse = new pc.Color(0, 0, 0);
   m.ambient = new pc.Color(0, 0, 0);
   m.useMetalness = false;
-  m.specular = new pc.Color(0.06, 0.06, 0.06);   // acrylic's 4 % a surface, a little over for the pair
+  m.specular = new pc.Color(f0, f0, f0);   // acrylic's 4 % a surface; the canopy a little over, for the pair
   m.gloss = 0.97;
   reflecting(m, true);
   m.reflectivity = 1;
   m.blendType = pc.BLEND_ADDITIVE;
   m.depthWrite = false;
+  m.update();
+  cache.set(key, m);
+  return m;
+}
+
+/** A perfect mirror (the debug spheres': plugin/extra300.js), reflecting the live cube. */
+export function mirrorMaterial(device) {
+  const key = 'mirror';
+  if (cache.has(key)) return cache.get(key);
+  cube ??= skyCube(device);
+  const m = new pc.StandardMaterial();
+  m.diffuse = new pc.Color(1, 1, 1);
+  m.useMetalness = true;
+  m.metalness = 1;
+  m.gloss = 1;
+  reflecting(m, true);
   m.update();
   cache.set(key, m);
   return m;
