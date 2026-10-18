@@ -18,7 +18,7 @@
     "params": {
       "isEnabled": true,
       "aircraft": "Extra 300L",
-      "destination": "Chicago Meigs (KCGX)",
+      "destination": "Innsbruck (LOWI)",
       "startRunway": "36",
       "showCarrier": true,
       "waterReflections": true,
@@ -37,7 +37,8 @@
       "easyMode": true,
       "playIntro": true,
       "debugSpheres": false,
-      "startMenu": true,
+      "autoStart": true,
+      "startMenu": false,
       "introOnLoad": false,
       "seatAnimation": "driving.glb",
       "avatarSeatHeight": 0.79,
