@@ -759,6 +759,9 @@ export class Extra300 extends ArrivalScript {
     if (attached && attached !== this.visual.root) return;
     this._flying = true;
     this._colliders.enabled = false;
+    // boarding starts outside, in the chase view (V goes round the others, the cockpit among them)
+    this.cameraRig.view = 'chase';
+    this.cameraRig.chasePos = null;
     this.lockKeyboard();
     this._prevMode = ArrivalSpace.getCameraMode?.() || 'third';
     // the client re-parents the camera per mode and keeps its world pose: remember the local
