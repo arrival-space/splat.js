@@ -26,6 +26,7 @@ import { CockpitDisplay } from './cockpitDisplay.js';
 import { discTexture, LightsVisual } from './lightsVisual.js';
 import { CameraRig } from '../render/cameraRig.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
+import { AircraftColliders } from './aircraftColliders.js';
 import { AircraftVisual } from './aircraftVisual.js';
 import { AIRCRAFT_OPTIONS, nextProfile, PROFILES, profileByTitle } from './profiles.js';
 import { PlaneShadowFit } from './planeShadowFit.js';
@@ -525,7 +526,11 @@ export class Extra300 extends ArrivalScript {
     this.display?.destroy();
     this.display = null;
     this.visual?.destroy();
-    this.visual = new AircraftVisual(this.app, this._worldRoot, profile.buildModel(), profile.title);
+    const parts = profile.buildModel();
+    this.visual = new AircraftVisual(this.app, this._worldRoot, parts, profile.title);
+    // solid to the avatars walking round it while it is parked (plugin/aircraftColliders.js)
+    this._colliders = new AircraftColliders(this.app, this.visual.root, parts, this._ws);
+    this._colliders.enabled = !this._flying;
     if (profile.cockpitDisplay) this.display = new CockpitDisplay(this.app, this.visual.root, this.world);
     this.sound?.stop();
     this.sound = new profile.Sound();
@@ -753,6 +758,7 @@ export class Extra300 extends ArrivalScript {
     const attached = ArrivalSpace.getLocalAttachedEntity?.();
     if (attached && attached !== this.visual.root) return;
     this._flying = true;
+    this._colliders.enabled = false;
     this.lockKeyboard();
     this._prevMode = ArrivalSpace.getCameraMode?.() || 'third';
     // the client re-parents the camera per mode and keeps its world pose: remember the local
@@ -892,6 +898,7 @@ export class Extra300 extends ArrivalScript {
     this._intro = null;
     if (this._demo) this._stopDemo('Demo ended');
     this._flying = false;
+    this._colliders.enabled = true;
     this.unlockKeyboard();
     this._keys.clear();
     this._attach?.detach?.();
@@ -1159,6 +1166,7 @@ export class Extra300 extends ArrivalScript {
     this.hud.tick();
     if (this._menu) return;   // nothing is there yet
     this._probeTick();
+    this._colliders?.tick();
     this._lightsTick(dt);
     this._googleTick(dt);
     if (this.city && this.city.queue.length) {
