@@ -23,7 +23,7 @@ export function buildWaterMasks(device, world) {
   const b = osm.header.box;
   // near: the raster as it is (row 0 = its south edge, which the engine reads at v = 0)
   const near = new pc.Texture(device, {
-    width: nx, height: ny, format: pc.PIXELFORMAT_L8, mipmaps: true,
+    width: nx, height: ny, format: pc.PIXELFORMAT_R8, mipmaps: true,
     minFilter: pc.FILTER_LINEAR_MIPMAP_LINEAR, magFilter: pc.FILTER_LINEAR,
     addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE,
   });

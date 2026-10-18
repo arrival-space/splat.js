@@ -303,7 +303,7 @@ export class Extra300 extends ArrivalScript {
     if (!this._flatMask) {
       const m = this.world.flattenMask();
       const tex = new pc.Texture(this.app.graphicsDevice, {
-        width: m.width, height: m.height, format: pc.PIXELFORMAT_L8, mipmaps: false,
+        width: m.width, height: m.height, format: pc.PIXELFORMAT_R8, mipmaps: false,
         minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR, addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE,
       });
       tex.lock().set(m.data);
@@ -477,7 +477,8 @@ export class Extra300 extends ArrivalScript {
       origin: (({ x, y, z }) => [x, y, z])(this._worldRoot.getPosition()),
     });
     // the lake's mirror: screen-space reflections over the same mask
-    if (!this._ssr) {
+    // (GLSL: WebGL2 only for now)
+    if (!this._ssr && !this.app.graphicsDevice.isWebGPU) {
       this._ssr = new WaterReflections(this.app, this._worldRoot, this.world.water, this._water, { steps: this.isMobile ? 40 : 160 });
       this._ssr.visible = this.waterReflections && this._dest === 'meigs';
     }
