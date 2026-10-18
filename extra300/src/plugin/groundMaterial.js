@@ -2,7 +2,7 @@
 // the variation (sRGB) under a small tileable detail layer for the grain
 // (overlay, grey-centred), both mapped in runway metres (see render/groundTextures.js).
 
-import { asphaltNormal, asphaltSurface, grassDetail, grassMacro, paintWear, runwayMacro } from '../render/groundTextures.js';
+import { asphaltNormal, asphaltSurface, grassDetail, grassMacro, paintWear, RUNWAY_STYLES, runwayMacro } from '../render/groundTextures.js';
 
 export function upload(device, img, { srgb, repeat }) {
   const c = document.createElement('canvas');
@@ -35,6 +35,14 @@ function pavedMacro(kind, L, W, paved) {
   return macros.get(kind);
 }
 
+// another runway's image (icaoRunway.js), painted once per key
+function ownMacro(o, L, W) {
+  if (!macros.has(o.key)) {
+    macros.set(o.key, runwayMacro({ u: o.u, v: o.v, length: L, width: W, areas: o.areas, style: RUNWAY_STYLES[o.style] }, ...(o.size || [512, 2048])));
+  }
+  return macros.get(o.key);
+}
+
 // the asphalt's surface (render/groundTextures.js asphaltSurface): one 2 m tile, its maps made together
 const SURFACE = 2;
 let surface = null;
@@ -58,12 +66,23 @@ export function detail(device, kind) {
  * @param {{ length: number, width: number }} rw   the runway
  * @param {{ kind: string, u: number[], v: number[] }[]} paved  runway / taxiway / apron rectangles
  * @param {string|null} paint  for markings: the paint colour, worn by the asphalt image it lies on
+ * @param {{ key: string, u: number[], v: number[], areas: object[], style: string, size?: number[] }|null} [own]
+ *        another runway's own image (where it lies, its areas, its style) instead of Meigs'
  */
-export function groundMaterial(device, kind, rw, paved, bias = 0, paint = null) {
+export function groundMaterial(device, kind, rw, paved, bias = 0, paint = null, own = null) {
   const L = rw.length, W = rw.width;
   const base = kind.replace('paint-', '');
   let macro, u, v, period;
-  if (base === 'runway' || base === 'taxiway') {
+  if (own) {
+    ({ u, v } = own);
+    macro = ownMacro(own, L, W);
+    if (paint) {
+      const k = `${own.key}-paint`;
+      if (!macros.has(k)) macros.set(k, paintWear(macro));
+      macro = macros.get(k);
+    }
+    period = SURFACE;
+  } else if (base === 'runway' || base === 'taxiway') {
     ({ u, v } = PAVED[base](L, W));
     macro = pavedMacro(base, L, W, paved);
     if (paint) macro = paintWear(macro);

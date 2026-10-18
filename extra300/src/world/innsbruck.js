@@ -22,6 +22,36 @@ export const INNSBRUCK = {
   tower: { at: [47.2583, 11.3476], h: 32 },
 };
 
+/**
+ * Runway 08/26 as painted (render/icaoRunway.js), measured on basemap.at's 2025 orthophoto: metres
+ * in from each threshold (OpenStreetMap's runway ends are the thresholds), across from the centre
+ * line (+ to the right landing 08, the south side). Edge-line gaps and the yellow lines are in metres
+ * from the 08 threshold.
+ */
+export const LOWI_LAYOUT = {
+  shoulder: 7.5,                   // paved beyond the 45 m runway, each side
+  before: [96, 36],                // pavement before the 08 threshold (the turn pad), past the 26 one
+  bar: 1.8, edge: 0.9,             // the threshold bar's depth, the edge lines' width
+  piano: { n: 6, first: 1.2, pitch: 3.65, width: 1.8, at: 6.6, length: 30 },
+  numerals: 49,                    // the designator's foot
+  aiming: { at: 227.5, length: 45, c: [9, 15] },
+  tdz: { at: [150, 450, 600], length: 22.5, c: [9, 12] },
+  centre: { from: 70, stripe: 30, gap: 20, width: 0.9 },
+  edgeFrom: [59.5, 0],             // the edge lines from the bar before 08 to the 26 threshold
+  edgeGaps: { right: [[40, 48], [349, 441], [1555, 1622], [1826, 1838]], left: [[1258, 1291]] },
+  // 08's pre-threshold area: a bar across 59 m out, an arrow down the middle to the threshold
+  preThreshold: [{ end: -1, bar: -59, arrow: [-50, -12] }],
+  yellow: [
+    { bezier: [[100, 0], [62, 0], [33, 30]] },                      // from the taxiway onto 08
+    { line: [[-17, 0], [-61, 0]] },                                 // 08's turn pad
+    { arc: [-61, 26, 26, -Math.PI / 2, -1.5 * Math.PI] },
+    { bezier: [[1770, 0], [1800, 0], [1823, 30]] },                 // from the taxiway onto 26
+    { line: [[1870, 0], [1945, 0]] },                               // 26's turn pad
+    { arc: [1945, 26, 26, -Math.PI / 2, Math.PI / 2] },
+    { line: [[1940, -24], [1973, -24], [1973, 30]] },              // the end of the pavement
+  ],
+};
+
 const UP = [0, 0, -1];
 const CELL = 2.5;          // the airport raster's cell (m)
 const FEATHER = 14;        // m: Google's ground eases onto the flattened pavement over this
@@ -195,7 +225,7 @@ export function buildInnsbruck(dem = null, data = INNSBRUCK, osm = LOWI_DATA) {
     osm: null,
     carrier: null,
     landmarks: [],
-    runway: { centre: c, dir, length: len, width: wid, bearing: brg, thr08, thr26, ident: data.runway.ident },
+    runway: { centre: c, dir, length: len, width: wid, bearing: brg, thr08, thr26, ident: data.runway.ident, layout: LOWI_LAYOUT, style: 'lowi' },
     tower: { ne: tw, h: data.tower.h },
     /** The flatten mask for Google's tiles: 1 on the pavement, easing to 0 over FEATHER metres. */
     flattenMask() {

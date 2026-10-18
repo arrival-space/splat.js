@@ -49,3 +49,23 @@ test('start: on runway 26 heading west, and 08 the other way; an airplane settle
   assert.ok(ac.gear.onGround, 'on its wheels');
   assert.ok(Math.abs(ac.altitudeMsl - w.elevation - ac.agl) < 0.5, `msl ${ac.altitudeMsl.toFixed(1)}`);
 });
+
+test('runway overlay: ICAO markings as measured, all on our pavement, which covers the thresholds and turn pads', async () => {
+  const { buildIcaoRunway } = await import('../src/render/icaoRunway.js');
+  const rw = w.runway, H = rw.length / 2;
+  const b = buildIcaoRunway(rw, rw.layout);
+  const { u, v } = b.areas[0];
+  assert.deepEqual(u, [-30, 30]);
+  assert.ok(Math.abs(v[0] + H + 96) < 1e-6 && Math.abs(v[1] - H - 36) < 1e-6);
+  // every painted vertex lies on the pavement (uvs are runway metres: across, along)
+  for (const mb of [b.paint, b.yel]) {
+    for (let i = 0; i < mb.uvs.length; i += 2) {
+      assert.ok(Math.abs(mb.uvs[i]) <= 30 + 1e-6 && mb.uvs[i + 1] >= v[0] - 1e-6 && mb.uvs[i + 1] <= v[1] + 1e-6, `${mb.uvs[i]}, ${mb.uvs[i + 1]}`);
+    }
+  }
+  // the 12 piano keys at each end: paint across the 08 end 20 m in, in runs
+  const at = -H + 20, across = [];
+  for (let i = 0; i < b.paint.uvs.length; i += 2) if (Math.abs(b.paint.uvs[i + 1] - at) < 16) across.push(b.paint.uvs[i]);
+  const keys = new Set(across.filter((c) => Math.abs(c) < 22).map((c) => Math.round(Math.abs(c) * 10) / 10));
+  assert.ok(keys.has(1.2) && keys.has(3) && keys.has(19.5) && keys.has(21.3), [...keys].join(' '));
+});

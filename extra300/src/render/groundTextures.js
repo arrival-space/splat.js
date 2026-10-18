@@ -83,6 +83,33 @@ export function grassDetail(S = 256, seed = 11) {
 
 // ── macro layers ───────────────────────────────────────────────────────────
 /**
+ * How runways look (runwayMacro): the asphalt's grey (sRGB) and warmth, the paving lanes' width, the
+ * rubber in the touchdown zones (centre and width of the zone from the threshold, how dark, how wide
+ * the band and where the main-gear tracks run, how much it runs together), the worn centre all
+ * along, the shoulders' tone, and the touchdown skids (how many per end, where, which gear tracks).
+ */
+export const RUNWAY_STYLES = {
+  // Meigs: dark compact asphalt, a general-aviation field's light rubber in broken streaks
+  meigs: {
+    grey: 80, warm: 1.5, tint: [1, 1, 1], lane: 7.62, laneTone: 4,
+    rubber: 24, rubberZone: [260, 170], rubberBand: 1, rubberHalf: 5.5, track: 2.4, trackWidth: 1.1, carpet: 0,
+    centreWear: 3, shoulder: 0,
+    skids: 46, skidFrom: 150, skidSpread: 380, skidTrack: [1.6, 6], twinWheels: 0,
+  },
+  // Innsbruck (LOWI), as Google's imagery shows it (2026, around our runway): fresh dark asphalt with
+  // the satellite's blue cast (~78 79 96 between the wheels and the edges), its paving lanes ~3.7 m
+  // wide in stripes of their own shade; a dark band ±6 m round the centre the whole length (~30 %
+  // under the sides: rubber, wear, the main gear's tracks ±3.5 m off the centre), a little more in the
+  // touchdown zones; shoulders darker than the runway (~59 58 72)
+  lowi: {
+    grey: 108, warm: 0, tint: [0.94, 0.95, 1.18], lane: 3.7, laneTone: 12,
+    rubber: 8, rubberZone: [300, 170], rubberBand: 0.75, rubberHalf: 6, track: 3.5, trackWidth: 1.4, carpet: 0.55,
+    centreWear: 30, wearTracks: true, shoulder: -26,
+    skids: 120, skidFrom: 120, skidSpread: 520, skidTrack: [3.5, 8], twinWheels: 0.7,
+  },
+};
+
+/**
  * The runway, taxiway and apron, one image in runway coordinates.
  * @param {object} o
  * @param {number[]} o.u  [u0, u1] across range the image covers (m)
@@ -90,8 +117,10 @@ export function grassDetail(S = 256, seed = 11) {
  * @param {number} o.length  runway length (m)
  * @param {number} o.width   runway width (m)
  * @param {{ u: number[], v: number[], kind: string }[]} o.areas  paved rectangles (runway / taxiway / apron)
+ * @param {object} [o.style]  the runway's look (RUNWAY_STYLES): Meigs' general-aviation strip by default
  */
-export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, seed = 3) {
+export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 2048, seed = 3) {
+  const S = { ...RUNWAY_STYLES.meigs, ...style };
   const du = (u[1] - u[0]) / w, dv = (v[1] - v[0]) / h;
   // repair patches: rectangles of newer (darker) or older (paler) asphalt
   const patches = [];
@@ -121,39 +150,47 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
     // compact asphalt, dark, its broad tone varying only a few per cent
     const big = fbm(uu / 60, vv / 60, seed, 4);
     const mid = fbm(uu / 9, vv / 9, seed + 1, 3);
-    let g = 80 + (big - 0.5) * 12 + (mid - 0.5) * 6;
-    let warm = 1.5 + (big - 0.5) * 3;
+    let g = S.grey + (big - 0.5) * 12 + (mid - 0.5) * 6;
+    let warm = S.warm + (big - 0.5) * 3;
     if (area?.kind === 'taxiway') { g += 10; warm += 2; }
     if (area?.kind === 'apron') { g += 6; warm += 1; }
     if (area?.kind === 'runway' || !area) {
       // paving lanes: 25 ft strips laid side by side, each its own shade, joints between
-      const lane = Math.floor((uu + W2) / 7.62);
-      g += (hash(lane, 0, seed) - 0.5) * 4;
-      const inLane = (((uu + W2) % 7.62) + 7.62) % 7.62;
-      if (inLane < 0.12 || inLane > 7.62 - 0.12) g -= 5;
+      const lane = Math.floor((uu + W2) / S.lane);
+      g += (hash(lane, 0, seed) - 0.5) * S.laneTone;
+      const inLane = (((uu + W2) % S.lane) + S.lane) % S.lane;
+      if (inLane < 0.12 || inLane > S.lane - 0.12) g -= 5;
       // rubber: the touchdown zones of both ends, densest a few hundred metres in, along the wheel tracks
       for (const end of [-1, 1]) {
         const s = end * vv;                          // distance toward this end
         const fromThr = L2 - s;
-        if (fromThr > 40 && fromThr < 650) {
-          const zone = Math.exp(-(((fromThr - 260) / 170) ** 2));
-          const across = Math.exp(-((uu / 5.5) ** 2)) + 0.55 * Math.exp(-(((Math.abs(uu) - 2.4) / 1.1) ** 2));
-          // broken streaks along the runway, no carpet: thin runs of rubber with clean asphalt between
-          const streak = smooth(Math.min(1, Math.max(0, (vnoise(uu * 2.4, vv / 11, seed + 9) - 0.42) / 0.4)))
+        if (fromThr > 40 && fromThr < S.rubberZone[0] + 2.4 * S.rubberZone[1]) {
+          const zone = Math.exp(-(((fromThr - S.rubberZone[0]) / S.rubberZone[1]) ** 2));
+          const across = S.rubberBand * Math.exp(-((uu / S.rubberHalf) ** 2)) + 0.55 * Math.exp(-(((Math.abs(uu) - S.track) / S.trackWidth) ** 2));
+          // broken streaks along the runway: thin runs of rubber with cleaner asphalt between (on an
+          // airliner runway they run together into a carpet)
+          const streak = S.carpet + (1 - S.carpet) * smooth(Math.min(1, Math.max(0, (vnoise(uu * 2.4, vv / 11, seed + 9) - 0.42) / 0.4)))
             * (0.5 + 0.5 * vnoise(uu * 0.7, vv / 40, seed + 10));
-          g -= 24 * zone * Math.min(1, across) * streak;     // a general-aviation field: lighter than an airliner runway
+          g -= S.rubber * zone * Math.min(1, across) * streak;
           warm -= 2 * zone * across * streak;
         }
       }
-      // a polished, slightly darker track down the middle from rolling out
-      g -= 3 * Math.exp(-((uu / 3) ** 2));
+      // a polished, slightly darker track down the middle from rolling out (and the rubber and the
+      // drips of everything that ever taxied along it), fading in past the thresholds
+      if (S.wearTracks) {
+        const inside = Math.min(L2 - vv, L2 + vv);
+        const wear = S.centreWear * smooth(Math.min(1, Math.max(0, (inside - 30) / 120)));
+        g -= wear * Math.min(1, 0.6 * Math.exp(-((uu / 6) ** 2)) + 0.5 * Math.exp(-(((Math.abs(uu) - S.track) / 1.3) ** 2)))
+          * (0.75 + 0.25 * vnoise(uu * 0.5, vv / 30, seed + 11));
+      } else g -= S.centreWear * Math.exp(-((uu / 3) ** 2));
+      if (S.shoulder && Math.abs(uu) > W2) g += S.shoulder;
     }
     // sealed cracks: tar snakes, meandering, mostly across the paving
     const crackField = vnoise(uu / 7 + fbm(uu / 3, vv / 3, seed + 4, 2) * 1.8, vv / 2.2, seed + 5);
     if (Math.abs(crackField - 0.5) < 0.008 && fbm(uu / 25, vv / 25, seed + 6, 2) > 0.6) g = 46;
     // edges of the runway: paler, less traffic
     if (Math.abs(uu) > W2 - 4 && Math.abs(uu) < W2 + 1 && Math.abs(vv) < L2 + 30) g += 3;
-    return [g + warm, g + warm * 0.4, g - warm * 0.6];
+    return [(g + warm) * S.tint[0], (g + warm * 0.4) * S.tint[1], (g - warm * 0.6) * S.tint[2]];
   });
   // stamp the patches and stains over their own pixels
   const stamp = (u0, u1, v0, v1, f) => {
@@ -174,18 +211,20 @@ export function runwayMacro({ u, v, length, width, areas }, w = 512, h = 2048, s
   const rw = areas.find((a) => a.kind === 'runway');
   if (rw) {
     for (const end of [-1, 1]) {
-      for (let k = 0; k < 46; k++) {
+      for (let k = 0; k < S.skids; k++) {
         const r = (q) => hash(k * 7 + q, end + 5, seed + 21);
-        const fromThr = 150 + 380 * r(0) ** 1.4;              // past the aiming point, most in the first few hundred metres
+        const fromThr = S.skidFrom + S.skidSpread * r(0) ** 1.4;   // past the aiming point, most in the first few hundred metres
         const v0 = end * (L2 - fromThr);                      // touch-down point
-        const track = 1.6 + r(1) * 4.4;                       // main-gear track: light aircraft to bizjets
+        const track = S.skidTrack[0] + r(1) * (S.skidTrack[1] - S.skidTrack[0]);   // main-gear track
         const off = (r(2) - 0.5) * 6;                         // landed off the centreline
         const len = 18 + r(3) * 55;                           // long, fading streaks
         const ang = (r(4) - 0.5) * 0.02;                      // drifting a touch on contact
         const wid = 0.14 + r(5) * 0.16;
         const dark = 12 + r(6) * 20;
-        for (const side of [-1, 1]) {
-          const u0 = off + side * track / 2;
+        // an airliner's main gear has two wheels a side, a metre apart: a pair of streaks each
+        const wheels = r(7) < S.twinWheels ? [-0.46, 0.46] : [0];
+        for (const side of [-1, 1]) for (const wo of wheels) {
+          const u0 = off + side * track / 2 + wo;
           // along the landing direction: toward the far end (v decreasing for the north end)
           const dirV = -end;
           const vEnd = v0 + dirV * len, uEnd = u0 + ang * len;

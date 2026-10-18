@@ -49,7 +49,7 @@ function wall(mb, ne, y0, y1, closed = true) {
 }
 
 /** A quad on the runway, given in runway-local (along, across) metres. */
-function rwQuad(mb, rw, a0, a1, c0, c1, y) {
+export function rwQuad(mb, rw, a0, a1, c0, c1, y) {
   const P = (al, ac) => {
     const n = rw.centre[0] + al * rw.dir[0] - ac * rw.dir[1];
     const e = rw.centre[1] + al * rw.dir[1] + ac * rw.dir[0];
@@ -78,7 +78,7 @@ export const GLYPHS = {
 };
 
 /** A painted stroke along a polyline of runway-local points [along, across] (m). */
-function strokeOn(mb, rw, pts, width, y) {
+export function strokeOn(mb, rw, pts, width, y) {
   const P = (al, ac) => {
     const n = rw.centre[0] + al * rw.dir[0] - ac * rw.dir[1];
     const e = rw.centre[1] + al * rw.dir[1] + ac * rw.dir[0];
@@ -98,15 +98,18 @@ function strokeOn(mb, rw, pts, width, y) {
   }
 }
 
-/** Paint a runway designator; `at` = along-runway position of the numbers' base, facing `facing` (+1 = 36). */
-function numerals(mb, rw, text, at, facing, y) {
-  const w = 20 * FT, gap = 10 * FT, stroke = 5 * FT;
+/**
+ * Paint a runway designator; `at` = along-runway position of the numbers' base, facing `facing` (+1 = 36).
+ * `scale` sizes the FAA's 60 ft numerals (ICAO's are 9 m: 0.49).
+ */
+export function numerals(mb, rw, text, at, facing, y, scale = 1) {
+  const w = 20 * FT * scale, gap = 10 * FT * scale, stroke = 5 * FT * scale;
   const total = text.length * w + (text.length - 1) * gap;
   [...text].forEach((ch, i) => {
     const x0 = -total / 2 + i * (w + gap);
     for (const path of GLYPHS[ch]) {
       // cell feet → runway-local metres: across = x (right of the landing direction), along = y
-      const pts = path.map(([x, yy]) => [at + facing * yy * FT, facing * (x0 + x * FT)]);
+      const pts = path.map(([x, yy]) => [at + facing * yy * FT * scale, facing * (x0 + x * FT * scale)]);
       strokeOn(mb, rw, pts, stroke, y);
     }
   });

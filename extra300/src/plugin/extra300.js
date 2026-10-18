@@ -20,6 +20,7 @@ import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
 import { Lasers } from './lasers.js';
+import { RunwayVisual } from './runwayVisual.js';
 import { CockpitDisplay } from './cockpitDisplay.js';
 import { discTexture, LightsVisual } from './lightsVisual.js';
 import { CameraRig } from '../render/cameraRig.js';
@@ -286,6 +287,9 @@ export class Extra300 extends ArrivalScript {
     if (this._ssr) this._ssr.visible = meigs && this.waterReflections;
     if (!meigs && !this._terrain && this._lowiDem) this._terrain = new TerrainVisual(this.app, this._worldRoot, this._lowi, this._lowiDem);
     if (this._terrain) this._terrain.visible = !meigs && !this._google;
+    // our own runway over the photograph of it (the photo cut away beneath, see _publishCarve)
+    if (!meigs && !this._runway && this.world.runway.layout) this._runway = new RunwayVisual(this.app, this._worldRoot, this.world.runway, this._dest);
+    if (this._runway) this._runway.visible = !meigs;
     // the tower view's cab, the carrier's deck view
     const t = meigs ? this.meigs.landmarks.find((l) => l.name === 'Meigs Tower') : { ne: this.world.tower.ne, h: this.world.tower.h };
     this.cameraRig.towerPos = fromNE(t.ne[0], t.ne[1], t.h + 1.5);
@@ -473,9 +477,19 @@ export class Extra300 extends ArrivalScript {
 
   _publishCarve() {
     if (!this._worldRoot) return;
-    if (this._dest !== 'meigs') { this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`); return; }
-    // from just under the runway up: the island's park, hills and trees go, Google's water around it stays
-    const { local, half } = carveBox(this.world.airfieldBox(), CARVE_FLOOR, 400);
+    let box;
+    if (this._dest === 'meigs') {
+      // from just under the runway up: the island's park, hills and trees go, Google's water around it stays
+      box = carveBox(this.world.airfieldBox(), CARVE_FLOOR, 400);
+    } else if (this._runway) {
+      // under our runway: Google's (flattened) photo of it, no higher than a few metres
+      const rw = this.world.runway, { u, v } = this._runway.extent, mid = (v[0] + v[1]) / 2;
+      box = carveBox({
+        centre: [rw.centre[0] + rw.dir[0] * mid, rw.centre[1] + rw.dir[1] * mid], dir: rw.dir,
+        halfAlong: (v[1] - v[0]) / 2, halfAcross: u[1],
+      }, CARVE_FLOOR, 3);
+    } else { this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`); return; }
+    const { local, half } = box;
     const m = new pc.Mat4();
     m.set(local);
     const world = new pc.Mat4().mul2(this._worldRoot.getWorldTransform(), m);
@@ -1256,6 +1270,7 @@ export class Extra300 extends ArrivalScript {
     this.app.fire('googletiles:flatten-region-clear', `extra300-flatten-${this.entity.getGuid()}`);
     this._flatMask?.texture.destroy();
     this._terrain?.destroy();
+    this._runway?.destroy();
     this.cloudLayer?.destroy();
     this.app.fire('googletiles:receive-shadows', 0);
     this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
