@@ -84,9 +84,32 @@ host.addComponent('script');
 app.start();
 // the start menu only when asked for (?menu=1); Meigs unless ?airport= says (the vibe's own default
 // is Innsbruck): the rest of the harness drives the vibe itself
+// ?vibes=1: the space's airport and airplane vibes too (the seven a new space gets, and a tuned Extra);
+// without, the flight vibe lists its own (and doesn't wait for any)
+const withVibes = params.get('vibes') === '1';
 const vibe = host.script.create(mod.Extra300, { properties: {
   startMenu: params.get('menu') === '1', destination: params.get('home') === 'lowi' ? 'Innsbruck (LOWI)' : 'Chicago Meigs (KCGX)',
+  registryWait: withVibes ? 3 : 0,
 } });
+if (withVibes) {
+  const [ap, ac] = await Promise.all([import(`../../dist/flight-airport.mjs?t=${Date.now()}`), import(`../../dist/flight-aircraft.mjs?t=${Date.now()}`)]);
+  const add = (Cls, properties) => {
+    const e = new pc.Entity(`${Cls.scriptName}`);
+    app.root.addChild(e);
+    e.addComponent('script');
+    return e.script.create(Cls, { properties });
+  };
+  window.configVibes = [
+    add(ap.FlightAirport, { airport: 'Chicago Meigs (KCGX)', order: 0 }),
+    add(ap.FlightAirport, { airport: 'Innsbruck (LOWI)', order: 1, startHere: true }),
+    add(ap.FlightAirport, { airport: 'Renton, Boeing 737 field (KRNT)', order: 2 }),
+    add(ac.FlightAircraft, { airplane: 'Extra 300L', order: 0, startHere: true }),
+    add(ac.FlightAircraft, { airplane: 'F-15C Eagle', order: 1 }),
+    add(ac.FlightAircraft, { airplane: 'X-wing', order: 2 }),
+    add(ac.FlightAircraft, { airplane: 'Boeing 777-300ER', order: 3 }),
+    add(ac.FlightAircraft, { airplane: 'Extra 300L', title: 'Extra 300L Turbo', paint: '#1f6fd1', power: 2, order: 4 }),
+  ];
+}
 window.vibe = vibe;
 window.app = app;
 

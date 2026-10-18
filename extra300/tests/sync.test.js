@@ -89,3 +89,28 @@ test('the Google tiles host is git-ignored (it holds the API key)', () => {
   const ignore = readFileSync(new URL('../.gitignore', import.meta.url), 'utf8');
   assert.match(ignore, /^space\/space\/entities\/google-3d-tiles\.json$/m);
 });
+
+test('the airport and airplane vibes: modules always staged, their entities made only for a space without them', async () => {
+  const { stage, CONFIG_VIBES, loadConfig } = await import('../scripts/sync.mjs');
+  const { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const space = mkdtempSync(join(tmpdir(), 'stage-vibes-'));
+  const srcs = { 'flight-airport': '// airport', 'flight-aircraft': '// aircraft' };
+  stage(space, loadConfig(), '', {}, srcs);
+  for (const v of CONFIG_VIBES) assert.ok(readdirSync(join(space, 'entities')).includes(`${v.id}.json`), v.id);
+  assert.equal(readFileSync(join(space, 'plugins', 'flight-airport.mjs'), 'utf8'), '// airport');
+  // tuned in the browser, one deleted, one duplicated: a later push leaves all that alone
+  const lowi = join(space, 'entities', 'flight-airport-lowi.json');
+  const e = JSON.parse(readFileSync(lowi, 'utf8'));
+  e.data.params.title = 'Innsbruck at dusk';
+  writeFileSync(lowi, JSON.stringify(e));
+  rmSync(join(space, 'entities', 'flight-aircraft-xwing.json'));
+  writeFileSync(join(space, 'entities', 'abc-dup.json'), JSON.stringify({ ...e, id: 'abc-dup' }));
+  stage(space, loadConfig(), '', {}, { ...srcs, 'flight-airport': '// airport v2' });
+  assert.equal(JSON.parse(readFileSync(lowi, 'utf8')).data.params.title, 'Innsbruck at dusk');
+  assert.ok(!readdirSync(join(space, 'entities')).includes('flight-aircraft-xwing.json'), 'the deleted one came back');
+  assert.ok(readdirSync(join(space, 'entities')).includes('abc-dup.json'));
+  assert.equal(readFileSync(join(space, 'plugins', 'flight-airport.mjs'), 'utf8'), '// airport v2');
+  rmSync(space, { recursive: true, force: true });
+});

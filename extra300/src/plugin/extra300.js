@@ -28,7 +28,9 @@ import { CameraRig } from '../render/cameraRig.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftColliders } from './aircraftColliders.js';
 import { AircraftVisual } from './aircraftVisual.js';
-import { AIRCRAFT_OPTIONS, nextProfile, PROFILES, profileByTitle } from './profiles.js';
+import { AIRCRAFT_OPTIONS, PROFILES } from './profiles.js';
+import { aircraftBase, airportBase, flightRegistry, listed } from './flightRegistry.js';
+import { plainAircraft, tunedProfile } from './tuning.js';
 import { PlaneShadowFit } from './planeShadowFit.js';
 import { ReflectionProbe } from './reflectionProbe.js';
 import { StartMenu } from './startMenu.js';
@@ -81,7 +83,6 @@ const AIRCRAFT_BLURBS = {
 const placeFromAddress = (a) => (/lowi|inn/i.test(a) ? 'lowi' : /krnt|rnt|renton/i.test(a) ? 'krnt' : 'meigs');
 const aircraftFromAddress = (a) => (/f-?15/i.test(a) ? 'f15c' : /x-?wing/i.test(a) ? 'xwing' : /777|b7|boeing/i.test(a) ? 'b777' : 'extra300l');
 
-const destinationByTitle = (t) => Object.values(DESTINATIONS).find((d) => d.title === t || d.id === t) || DESTINATIONS.meigs;
 
 export class Extra300 extends ArrivalScript {
   static scriptName = 'extra300Meigs';
@@ -109,6 +110,7 @@ export class Extra300 extends ArrivalScript {
   playIntro = true;
   introOnLoad = false;
   startMenu = false;
+  registryWait = 3;
   debugSpheres = false;
   seatAnimation = 'driving.glb';
   avatarLean = 20;            // degrees the avatar leans back into the reclined seat
@@ -137,6 +139,7 @@ export class Extra300 extends ArrivalScript {
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
     debugSpheres: { title: 'Debug: three spheres over the airplane (its white paint, a mirror, clear glass), lit and reflecting as it is (or ?spheres on the address)' },
+    registryWait: { title: 'At load: wait this long (s) for the airport and airplane vibes before starting', min: 0, max: 15 },
     startMenu: { title: 'Start menu: pick the airport and airplane before anything loads (skipped when the address names both)' },
     introOnLoad: { title: 'Film mode: board and play the intro by itself after loading (or open the space with ?intro)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
@@ -190,10 +193,10 @@ export class Extra300 extends ArrivalScript {
       if (q.get('airport')) askedPlace = placeFromAddress(q.get('airport'));
       if (q.get('aircraft')) askedAircraft = aircraftFromAddress(q.get('aircraft'));
     } catch { /* no address to read */ }
-    if (askedAircraft) this.aircraft = PROFILES[askedAircraft].title;
     this._sky = null;
 
-    this.profile = profileByTitle(this.aircraft);
+    // the airplane until the start picks one (plugin/flightRegistry.js: the space's airplane vibes)
+    this.profile = tunedProfile(plainAircraft(askedAircraft || aircraftBase(this.aircraft)));
     this.mapper = new ControlMapper({ easy: this.easyMode });
     const tower = this.world.landmarks.find((l) => l.name === 'Meigs Tower');
     this.cameraRig = new CameraRig({ eye: this.profile.spec.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
@@ -233,10 +236,14 @@ export class Extra300 extends ArrivalScript {
     window.addEventListener('pointermove', this._onPointerMove);
 
     // the top bar's dropdowns: which airplane, where to fly
-    this.hud.setMenu('aircraft', Object.entries(PROFILES).map(([id, p]) => ({ id, title: p.title })),
-      () => Object.keys(PROFILES).find((id) => PROFILES[id] === this.profile), (id) => this._switchAircraft(PROFILES[id]));
-    this.hud.setMenu('place', Object.values(DESTINATIONS).map((d) => ({ id: d.id, title: d.title })),
-      () => this._dest, (id) => this._goTo(id));
+    // (what the space's airport and airplane vibes list, as it is when opened)
+    this.hud.setMenu('aircraft', () => this._planeEntries().map((e) => ({ id: e.id, title: e.title })),
+      () => this._planeId, (id) => this._pickAircraft(id));
+    this.hud.setMenu('place', () => this._placeEntries().map((e) => ({ id: e.id, title: e.title })),
+      () => this._placeId, (id) => this._goTo(id));
+    // an airport or airplane vibe tuned, added or deleted: taken on as it is
+    this._onRegistry = (kind) => this._registryChanged(kind);
+    this.app.on('flightsim:changed', this._onRegistry);
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
@@ -260,32 +267,117 @@ export class Extra300 extends ArrivalScript {
     this._onPrerender = () => { this._applyCamera(); this._cloudsTick(); };
     this.app.on('prerender', this._onPrerender);
 
-    // the start menu first: nothing heavy loads (the city, the airport, Google's tiles) until the
-    // airport and the airplane are both picked; the address naming both, or film mode, skips it
-    if (this.startMenu && !this._filmPending && !(askedPlace && askedAircraft)) {
-      this._worldRoot.enabled = false;
-      this.app.googleTilesHold = true;   // the tiles vibe streams nothing meanwhile (scripts/tilesWater.mjs)
-      this.hud.placeButton.style.display = 'none';
-      this._menu = new StartMenu((tag, opts) => this.createUI(tag, opts),
-        Object.values(DESTINATIONS).map((d) => ({ id: d.id, title: d.title, blurb: PLACE_BLURBS[d.id] })),
-        Object.entries(PROFILES).map(([id, p]) => ({ id, title: p.title, blurb: AIRCRAFT_BLURBS[id] || '' })),
-        { place: askedPlace, aircraft: askedAircraft, isMobile: this.isMobile, onStart: (place, ac) => this._start(place, ac) });
+    // nothing heavy loads (the city, the airport, Google's tiles: held) until the start is picked,
+    // once the space's airport and airplane vibes are there to pick from
+    this._worldRoot.enabled = false;
+    this.app.googleTilesHold = true;   // the tiles vibe streams nothing meanwhile (scripts/tilesWater.mjs)
+    this._awaitRegistry().then(() => {
+      if (this._destroyed) return;
+      const places = this._placeEntries(), planes = this._planeEntries();
+      const place = this._pick(places, askedPlace, airportBase(this.destination));
+      const plane = this._pick(planes, askedAircraft, aircraftBase(this.aircraft));
+      // the start menu, when it's on: the address naming both, or film mode, skips it
+      if (this.startMenu && !this._filmPending && !(askedPlace && askedAircraft)) {
+        this.hud.placeButton.style.display = 'none';
+        this._menu = new StartMenu((tag, opts) => this.createUI(tag, opts),
+          places.map((e) => ({ id: e.id, title: e.title, blurb: PLACE_BLURBS[e.base] })),
+          planes.map((e) => ({ id: e.id, title: e.title, blurb: AIRCRAFT_BLURBS[e.base] || '' })),
+          { place: askedPlace && place.id, aircraft: askedAircraft && plane.id, isMobile: this.isMobile, onStart: (pl, ac) => this._start(pl, ac) });
+        return;
+      }
+      // the airport and the airplane, parked with its engine off; the visitor arrives on foot to walk
+      // to it (E boards)
+      this._start(place.id, plane.id);
+    });
+  }
+
+  // ── the airports and airplanes in the space (plugin/flightRegistry.js) ───────
+  /** The airports listed: the space's airport vibes, or (none there) the three as they are. */
+  _placeEntries() {
+    const l = listed(this.app, 'airports');
+    return l.length ? l : Object.keys(DESTINATIONS).map((base, i) => ({
+      id: base, base, title: DESTINATIONS[base].title, runwayEnd: null, sun: null, clouds: null, startHere: false, order: i,
+    }));
+  }
+
+  /** The airplanes listed: the space's airplane vibes, or (none there) the four as they are. */
+  _planeEntries() {
+    const l = listed(this.app, 'aircraft');
+    return l.length ? l : Object.keys(PROFILES).map(plainAircraft);
+  }
+
+  _placeEntry(id) { return this._placeEntries().find((e) => e.id === id) || null; }
+  _planeEntry(id) { return this._planeEntries().find((e) => e.id === id) || null; }
+
+  /** Where we are, as its vibe has it now (its runway end, sun, clouds). */
+  get _placeCfg() { return this._placeEntry(this._placeId); }
+
+  /** The one to start with: the address's, one marked to start, the setting's, or the first. */
+  _pick(entries, asked, settingBase) {
+    return (asked && entries.find((e) => e.base === asked)) || entries.find((e) => e.startHere)
+      || entries.find((e) => e.base === settingBase) || entries[0];
+  }
+
+  /** At load: the airport and airplane vibes register as they load (after us, perhaps); wait for them a little. */
+  _awaitRegistry() {
+    const reg = flightRegistry(this.app);
+    const ready = () => reg.airports.size > 0 && reg.aircraft.size > 0;
+    if (!(this.registryWait > 0)) return Promise.resolve();
+    return new Promise((resolve) => {
+      let settle = null;
+      const done = () => { clearTimeout(limit); clearTimeout(settle); this.app.off('flightsim:changed', check); resolve(); };
+      // all there: a moment more for the rest of a space's vibes to come in, then go
+      const check = () => { if (ready()) { clearTimeout(settle); settle = setTimeout(done, 300); } };
+      const limit = setTimeout(done, this.registryWait * 1000);
+      this.app.on('flightsim:changed', check);
+      check();
+    });
+  }
+
+  /** The airplane an entry describes, tuned (plugin/tuning.js). */
+  _pickAircraft(id) {
+    const e = this._planeEntry(id);
+    if (!e) return;
+    this._planeId = id;
+    this._switchAircraft(tunedProfile(e));
+  }
+
+  /** An airport or airplane vibe changed, came or went. Parked, it's taken on now; flying, on landing (leaving the airplane). */
+  _registryChanged(kind) {
+    if (!this._started) return;   // the start picks from what is there by then
+    if (kind === 'aircraft') {
+      const e = this._planeEntry(this._planeId);
+      if (!e) {
+        // ours was deleted (or the plain list gave way to the space's vibes): the first one
+        const f = this._planeEntries()[0];
+        if (f && !this._flying) this._pickAircraft(f.id);
+        else this._retune = true;
+        return;
+      }
+      if (tunedProfile(e) === this.profile) return;
+      if (this._flying) this._retune = true;
+      else this._switchAircraft(tunedProfile(e));
       return;
     }
-    // the destination and the airplane, parked with its engine off, Google's tiles held till the globe
-    // is there; the visitor arrives on foot to walk to it (E boards)
-    const want = askedPlace || destinationByTitle(this.destination).id;
-    this._worldRoot.enabled = false;
-    this.app.googleTilesHold = true;
-    this._start(want, Object.keys(PROFILES).find((id) => PROFILES[id] === this.profile));
+    const e = this._placeCfg;
+    if (!e) {
+      const f = this._placeEntries()[0];
+      if (f && !this._flying) this._goTo(f.id);
+      return;
+    }
+    // its sun and clouds at once; its runway end once parked
+    this._applyClouds();
+    this._publishOrigin();
+    if (!this._flying) this._resetToRunway();
   }
 
   /** The start (the menu's choice, or the settings'): the airplane, the place loaded, Google's tiles let go, the visitor on foot. */
-  async _start(place, aircraft) {
-    this._menu?.setStatus(`Loading ${DESTINATIONS[place].short}…`);
-    this._switchAircraft(PROFILES[aircraft]);
-    if (place !== 'meigs') await this._goTo(place);
+  async _start(placeId, planeId) {
+    this._menu?.setStatus(`Loading ${this._placeEntry(placeId)?.title || ''}…`);
+    this._pickAircraft(planeId);
+    await this._goTo(placeId);
     if (this._dest === 'meigs') this._ensureCity();   // also when the airport couldn't be loaded
+    this._started = true;
     if (this._destroyed) return;
     this._menu?.destroy();
     this._menu = null;
@@ -302,8 +394,20 @@ export class Extra300 extends ArrivalScript {
   // ── destinations ─────────────────────────────────────────────────────────
   get _place() { return DESTINATIONS[this._dest]; }
 
+  /** Start on the runway's other end: the airport vibe's choice, or (the plain list) the setting's. */
+  get _reverse() {
+    const e = this._placeCfg;
+    return e && e.runwayEnd != null ? e.runwayEnd === 1 : this.startRunway === '18';
+  }
+
   /** The runway the airplane starts on (and goes back to). */
-  get _runwayName() { return this._place.runways[this.startRunway === '18' ? 1 : 0]; }
+  get _runwayName() { return this._place.runways[this._reverse ? 1 : 0]; }
+
+  /** The ✈ button's word for an airport: its own short name, or the name its vibe gives it. */
+  _shortOf(e) {
+    if (!e) return DESTINATIONS[this._dest].short;
+    return e.title === DESTINATIONS[e.base].title ? DESTINATIONS[e.base].short : e.title;
+  }
 
   /**
    * Fly somewhere else: the world under the airplane (its ground, its height, its runway), Google's
@@ -311,16 +415,18 @@ export class Extra300 extends ArrivalScript {
    * a pilot already aboard with it.
    */
   async _goTo(id) {
-    if (id === this._dest || this._going || !DESTINATIONS[id]) return;
+    const entry = this._placeEntry(id);
+    if (!entry || id === this._placeId || this._going) return;
+    const base = entry.base;
     this._going = true;
-    this.hud.setPlace(DESTINATIONS[id].short, true);
+    this.hud.setPlace(this._shortOf(entry), true);
     try {
-      if (AIRPORTS[id] && !this._airports[id]) this._airports[id] = await AIRPORTS[id]();
+      if (AIRPORTS[base] && !this._airports[base]) this._airports[base] = await AIRPORTS[base]();
     } catch (e) {
-      console.warn(`[extra300] ${DESTINATIONS[id].short} unavailable:`, e);
-      this.hud.flash(`${DESTINATIONS[id].short} could not be loaded`, 3);
+      console.warn(`[extra300] ${entry.title} unavailable:`, e);
+      this.hud.flash(`${entry.title} could not be loaded`, 3);
       this._going = false;
-      this.hud.setPlace(DESTINATIONS[this._dest].short);
+      this.hud.setPlace(this._shortOf(this._placeCfg));
       return;
     }
     this._going = false;
@@ -329,10 +435,12 @@ export class Extra300 extends ArrivalScript {
     if (this._intro) this._endIntro();
     if (this._demo) this._stopDemo('Demo ended');
     if (flying) { this._attach?.detach?.(); this._attach = null; }
-    this._dest = id;
-    this.destination = DESTINATIONS[id].title;
-    if (id === 'meigs') this._ensureCity();
-    this.world = id === 'meigs' ? this.meigs : this._airports[id].world;
+    this._placeId = id;
+    this._dest = base;
+    this.destination = DESTINATIONS[base].title;
+    if (base === 'meigs') this._ensureCity();
+    this.world = base === 'meigs' ? this.meigs : this._airports[base].world;
+    this._applyClouds();
     this._placeWorldRoot();
     this._applyDestination(true);
     this._buildAircraft(this.profile);
@@ -346,13 +454,13 @@ export class Extra300 extends ArrivalScript {
       this.visual.setCockpitView(this.cameraRig.view === 'cockpit');
       this._showTakeoffCard();
     }
-    this.hud.flash(`${this._place.short}: ${this.profile.title} on runway ${this._runwayName}`, 3);
+    this.hud.flash(`${entry.title}: ${this.profile.title} on runway ${this._runwayName}`, 3);
   }
 
   /** What belongs to the place we're at: on, the rest off; Google's tiles told where we are. */
   _applyDestination(moved = false) {
     const meigs = this._dest === 'meigs';
-    this.hud.setPlace(DESTINATIONS[this._dest].short);
+    this.hud.setPlace(this._shortOf(this._placeCfg));
     this.hud.setCredit(this._place.credit);
     this.scenery.visible = meigs && this.showScenery;
     this.lights.visible = meigs && this.showScenery;
@@ -472,7 +580,7 @@ export class Extra300 extends ArrivalScript {
     const [latitude, longitude] = this.world.frame.toLatLon(s.n, s.e);
     this.app.fire('googletiles:set-origin', {
       latitude, longitude, groundAltitude: this.world.elevation + this.world.data.geoidM,
-      sun: this.world.data.sun,      // the place's own (Renton's imagery), else the space's
+      sun: this._placeCfg?.sun || this.world.data.sun,   // the airport vibe's, the place's own (Renton's imagery), else the space's
     });
   }
 
@@ -512,7 +620,7 @@ export class Extra300 extends ArrivalScript {
     this.ac = new Aircraft(spec, {
       ground: this.world.ground,
       datumMsl: this.world.elevation,
-      load: spec.engine ? { fuelCenterL: this.fuelLiters } : {},
+      load: spec.engine ? { fuelCenterL: profile.fuelL ?? this.fuelLiters } : {},
       weather: this._weather(),
     });
     this.instruments = new Instruments(spec, { kollsman: this.qnhInHg * INHG });
@@ -534,7 +642,7 @@ export class Extra300 extends ArrivalScript {
     if (profile.cockpitDisplay) this.display = new CockpitDisplay(this.app, this.visual.root, this.world);
     this.sound?.stop();
     this.sound = new profile.Sound();
-    this.hud.setProfile(profile, nextProfile(profile));
+    this.hud.setProfile(profile);
     this.hud.jetHud.setColor(profile.hudColor || '#6dff9e');
     this.lasers?.hide();
     this.mapper.sfoils = 0;
@@ -553,7 +661,7 @@ export class Extra300 extends ArrivalScript {
     if (this._demo) this._stopDemo('Demo ended');
     if (flying) { this._attach?.detach?.(); this._attach = null; }
     this._buildAircraft(profile);
-    this.aircraft = profile.title;
+    this.aircraft = PROFILES[profile.id].title;   // (the setting: the base airplane)
     if (flying) {
       this._attachPilot();
       this.sound.start();
@@ -711,8 +819,8 @@ export class Extra300 extends ArrivalScript {
     this.mapper.resetHolds();
     // on final to the carrier only once aboard: parked, the airplane waits on runway 36
     if (this._onFinalStart) { this._startOnFinal(); return; }
-    const { n, e, heading } = this.world.startPosition(this.startRunway === '18');
-    if (this.ac.spec.engine) this.ac.load.fuelCenterL = this.fuelLiters;
+    const { n, e, heading } = this.world.startPosition(this._reverse);
+    if (this.ac.spec.engine) this.ac.load.fuelCenterL = this.profile.fuelL ?? this.fuelLiters;
     this.ac.updateMass();
     this.ac.placeOnGround(n, e, heading);
     // the brake holds it on the runway until the pilot opens the throttle (update)
@@ -799,7 +907,10 @@ export class Extra300 extends ArrivalScript {
   _attachPilot() {
     // the avatar sits in a seated pose (as the vehicle demo seats its driver): its root goes below the
     // seat pan by the pose's hip height, so the hips land on the cushion
-    const seat = this.profile.seat || { forward: this.avatarSeatForward, height: this.avatarSeatHeight, lean: this.avatarLean };
+    const own = this.profile.seat || { forward: this.avatarSeatForward, height: this.avatarSeatHeight, lean: this.avatarLean };
+    // moved as its airplane vibe says (up, forward)
+    const adj = this.profile.seatAdjust || { up: 0, forward: 0 };
+    const seat = { ...own, forward: own.forward + adj.forward, height: own.height - adj.up };
     const pose = this.seatAnimation || 'driving.glb';
     this._attach = ArrivalSpace.attachPlayerToEntity?.(this.visual.root, {
       offset: { x: this.profile.spec.eye[1], y: -seat.height, z: -seat.forward },
@@ -902,6 +1013,8 @@ export class Extra300 extends ArrivalScript {
     if (this._demo) this._stopDemo('Demo ended');
     this._flying = false;
     this._colliders.enabled = true;
+    // an airplane vibe tuned while it flew: taken on now it's parked
+    if (this._retune) { this._retune = false; this._registryChanged('aircraft'); }
     this.unlockKeyboard();
     this._keys.clear();
     this._attach?.detach?.();
@@ -1116,7 +1229,11 @@ export class Extra300 extends ArrivalScript {
         this.mapper.speedbrake = !this.mapper.speedbrake;
         this.hud.flash(this.mapper.speedbrake ? 'Speed brake out' : 'Speed brake in', 1.2);
         break;
-      case 'aircraft': this._switchAircraft(nextProfile(this.profile)); break;
+      case 'aircraft': {
+        const l = this._planeEntries(), i = l.findIndex((e) => e.id === this._planeId);
+        if (l.length) this._pickAircraft(l[(i + 1) % l.length].id);
+        break;
+      }
       case 'hook':
         if (!this.ac.spec.hook) break;
         this.mapper.hook = this.mapper.hook ? 0 : 1;
@@ -1372,7 +1489,7 @@ export class Extra300 extends ArrivalScript {
    */
   /** The clouds' settings: the preset, the base above this field. */
   _applyClouds() {
-    this.cloudLayer?.set(CLOUD_PRESETS[this.clouds] || null, this.world.elevation + this.cloudBaseFt * 0.3048);
+    this.cloudLayer?.set(CLOUD_PRESETS[this._placeCfg?.clouds || this.clouds] || null, this.world.elevation + this.cloudBaseFt * 0.3048);
   }
 
   _cloudsTick() {
@@ -1441,14 +1558,14 @@ export class Extra300 extends ArrivalScript {
 
   onPropertyChanged(name) {
     if (name === 'showScenery' || name === 'waterReflections' || name === 'showCarrier') this._applyDestination();
-    if (name === 'destination') this._goTo(destinationByTitle(this.destination).id);
+    if (name === 'destination') { const e = this._placeEntries().find((x) => x.base === airportBase(this.destination)); if (e) this._goTo(e.id); }
     if (name === 'clouds' || name === 'cloudBaseFt') this._applyClouds();
     if ((name === 'skylineYear' || name === 'cityDetail') && this.city) {
       this.meigs.setSkylineYear(this.skylineYear);
       this.city.build(this._cityOptions());
     }
     if (name === 'easyMode') this._setEasy(this.easyMode);
-    if (name === 'aircraft') this._switchAircraft(profileByTitle(this.aircraft));
+    if (name === 'aircraft') { const e = this._planeEntries().find((x) => x.base === aircraftBase(this.aircraft)); if (e && e.id !== this._planeId) this._pickAircraft(e.id); }
     if (name === 'introOnLoad' && this.introOnLoad && !this._flying) this._filmPending = true;
     if (name === 'showPanel') { this._panelVisible = this.showPanel; this.hud.setFlying(this._flying, this._panelVisible); }
     if (['windKt', 'windFromDeg', 'qnhInHg', 'oatC'].includes(name)) this.ac.weather = this._weather();
@@ -1460,6 +1577,7 @@ export class Extra300 extends ArrivalScript {
 
   destroy() {
     this._destroyed = true;
+    this.app.off('flightsim:changed', this._onRegistry);
     if (this._menu) { this._menu.destroy(); this._menu = null; }
     this._shadowFit?.destroy();
     this.app.googleTilesHold = false;

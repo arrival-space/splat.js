@@ -158,7 +158,7 @@ export class Hud {
   /**
    * A dropdown on one of the top bar's buttons.
    * @param {'aircraft'|'place'} key
-   * @param {{ id: string, title: string }[]} items
+   * @param {{ id: string, title: string }[] | (() => { id: string, title: string }[])} items  (a function: listed as it is when opened)
    * @param {() => string} current  the id that is in use now (marked)
    * @param {(id: string) => void} pick
    */
@@ -174,7 +174,7 @@ export class Hud {
     this._menuOpen = key;
     const now = m.current();
     this._menu.innerHTML = '';
-    for (const it of m.items) {
+    for (const it of typeof m.items === 'function' ? m.items() : m.items) {
       const row = document.createElement('div');
       const on = it.id === now;
       row.innerHTML = `<span style="display:inline-block;width:18px;color:#ff5a64">${on ? '✓' : ''}</span>${it.title}`;
@@ -340,11 +340,10 @@ export class Hud {
     this.panelCanvas.style.display = flying && panelVisible && !hud ? 'block' : 'none';
     this.hudCanvas.style.display = flying && panelVisible && hud ? 'block' : 'none';
     this.credit.style.display = flying ? 'block' : 'none';
-    this.aircraftButton.style.display = flying ? 'block' : 'none';
+    this.aircraftButton.style.display = 'block';   // which airplane: on foot as well, before boarding
     this.easyButton.style.display = flying ? 'block' : 'none';
     this.controlsButton.style.display = flying ? 'block' : 'none';
     this.placeButton.style.display = 'block';
-    if (!flying && this._menuOpen === 'aircraft') this.closeMenu();
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
     if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); }

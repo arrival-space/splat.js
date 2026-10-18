@@ -14,6 +14,11 @@
 //   space/entities/extra300-meigs.json      the vibe's host entity + its params
 //   space/entities/spawn-runway36.json      where visitors appear: behind the airplane, facing north
 //   room.json keys in MANAGED_ROOM_KEYS     hub hidden, far clip for the skyline
+//   space/plugins/flight-airport.mjs        the airport vibe, and the airplane vibe (flight-aircraft.mjs):
+//                                           small vibes the flight vibe lists (src/plugin/flightRegistry.js)
+//   space/entities/flight-airport-*.json    one per airport and airplane (flight-aircraft-*), made only when
+//   space/entities/flight-aircraft-*.json   the space has none of that kind: after that they are the space's
+//                                           to tune, duplicate and delete in the browser
 //   space/plugins/google-3d-tiles.mjs       the Arrival library's Google 3D Tiles vibe (from the pulled reference/),
 //                                           patched: lake water, room sun on the atmosphere's (scripts/tilesWater.mjs)
 //   space/entities/google-3d-tiles.json     its host, centred on the parking spot; only its position and
@@ -31,6 +36,9 @@ import { fileURLToPath } from 'node:url';
 import { buildMeigs } from '../src/world/meigs.js';
 import { patchTilesWater } from './tilesWater.mjs';
 
+// (the build's list of the airport and airplane vibes; kept here so importing this file builds nothing)
+const VIBES = { 'flight-airport': 1, 'flight-aircraft': 1 };
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const CONFIG = join(ROOT, 'arrival.json');
 const WORKSPACE = join(ROOT, 'space');           // the CLI workspace (space/, .arrival/, AGENTS.md …)
@@ -45,6 +53,17 @@ export const MANAGED_ROOM_KEYS = {
   farClip: 40000,           // the Loop is 4 km away
   defaultCamera: 'third',
 };
+
+/** The airport and airplane vibes a space starts with (the flight vibe's three airports, four airplanes). */
+export const CONFIG_VIBES = [
+  { id: 'flight-airport-meigs', plugin: 'flight-airport', name: 'Airport — Chicago Meigs', params: { airport: 'Chicago Meigs (KCGX)', order: 0 } },
+  { id: 'flight-airport-lowi', plugin: 'flight-airport', name: 'Airport — Innsbruck', params: { airport: 'Innsbruck (LOWI)', order: 1, startHere: true } },
+  { id: 'flight-airport-krnt', plugin: 'flight-airport', name: 'Airport — Renton', params: { airport: 'Renton, Boeing 737 field (KRNT)', order: 2 } },
+  { id: 'flight-aircraft-extra300l', plugin: 'flight-aircraft', name: 'Airplane — Extra 300L', params: { airplane: 'Extra 300L', order: 0, startHere: true } },
+  { id: 'flight-aircraft-f15c', plugin: 'flight-aircraft', name: 'Airplane — F-15C Eagle', params: { airplane: 'F-15C Eagle', order: 1 } },
+  { id: 'flight-aircraft-xwing', plugin: 'flight-aircraft', name: 'Airplane — X-wing', params: { airplane: 'X-wing', order: 2 } },
+  { id: 'flight-aircraft-b777', plugin: 'flight-aircraft', name: 'Airplane — Boeing 777', params: { airplane: 'Boeing 777-300ER', order: 3 } },
+];
 
 export function loadConfig() {
   return JSON.parse(readFileSync(CONFIG, 'utf8'));
@@ -68,11 +87,12 @@ async function pluginDefaults() {
  * @param {string} pluginSrc  built module source
  * @param {object} params     plugin params
  */
-export function stage(spaceDir, cfg, pluginSrc, params) {
+export function stage(spaceDir, cfg, pluginSrc, params, vibeSrcs = {}) {
   const ents = join(spaceDir, 'entities');
   mkdirSync(ents, { recursive: true });
   mkdirSync(join(spaceDir, 'plugins'), { recursive: true });
   writeFileSync(join(spaceDir, 'plugins', `${PLUGIN_NAME}.mjs`), pluginSrc);
+  stageConfigVibes(spaceDir, cfg, vibeSrcs);
 
   const host = {
     id: cfg.entityId,
@@ -118,6 +138,38 @@ export function stage(spaceDir, cfg, pluginSrc, params) {
   const room = existsSync(roomPath) ? JSON.parse(readFileSync(roomPath, 'utf8')) : { id: 'RoomInfo', type: 'Simple', data: {} };
   room.data = { ...room.data, ...MANAGED_ROOM_KEYS };
   writeJson(roomPath, room);
+}
+
+/**
+ * The airport and airplane vibes: their modules always (the code is ours); their entities only when the
+ * space has none using that module — once there, they are the space's (tuned, duplicated, deleted in
+ * the browser, and a pull brings that back before we stage).
+ * @param {Record<string, string>} vibeSrcs  module name → built source
+ */
+export function stageConfigVibes(spaceDir, cfg, vibeSrcs) {
+  const ents = join(spaceDir, 'entities');
+  for (const [name, src] of Object.entries(vibeSrcs)) writeFileSync(join(spaceDir, 'plugins', `${name}.mjs`), src);
+  const using = (name) => readdirSync(ents).some((f) => {
+    if (!f.endsWith('.json')) return false;
+    try { return JSON.parse(readFileSync(join(ents, f), 'utf8')).data?.glbUrl === `plugins/${name}.mjs`; } catch { return false; }
+  });
+  const fresh = Object.fromEntries(Object.keys(vibeSrcs).map((name) => [name, !using(name)]));
+  CONFIG_VIBES.forEach((v, i) => {
+    if (!fresh[v.plugin]) return;
+    writeJson(join(ents, `${v.id}.json`), {
+      id: v.id,
+      type: 'UserModelEntity',
+      data: {
+        glbUrl: `plugins/${v.plugin}.mjs`,
+        displayName: v.name,
+        // they draw nothing: in a row beside the parking spot, out of the way
+        position: { x: cfg.placement.position.x + 30 + 2 * i, y: cfg.placement.position.y, z: cfg.placement.position.z },
+        rotation: { x: 0, y: 0, z: 0 },
+        scale: 1,
+        params: v.params,
+      },
+    });
+  });
 }
 
 /**
@@ -211,7 +263,8 @@ function pullFresh(cfg) {
 async function stageWorkspace(cfg) {
   execFileSync(process.execPath, [join(ROOT, 'scripts', 'build.mjs')], { stdio: 'inherit' });
   const spaceDir = join(WORKSPACE, 'space');
-  stage(spaceDir, cfg, readFileSync(DIST, 'utf8'), await pluginDefaults());
+  const vibeSrcs = Object.fromEntries(Object.keys(VIBES).map((name) => [name, readFileSync(join(ROOT, 'dist', `${name}.mjs`), 'utf8')]));
+  stage(spaceDir, cfg, readFileSync(DIST, 'utf8'), await pluginDefaults(), vibeSrcs);
   const room = JSON.parse(readFileSync(join(spaceDir, 'room.json'), 'utf8'));
   // the library's vibe, with the lake shaded as water from our OSM mask (scripts/tilesWater.mjs)
   let tilesSrc = existsSync(TILES_SRC) ? readFileSync(TILES_SRC, 'utf8') : null;
