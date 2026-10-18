@@ -4,7 +4,9 @@
 // instead, a face at a time, and the paint, metal and canopy take it for their reflections
 // (plugin/finishes.js). The airplane and its pilot are hidden from the cube's own cameras.
 
-const ROTATIONS = [[0, 90, 180], [0, -90, 180], [-90, 0, 180], [90, 0, 180], [0, 180, 180], [0, 0, 180]];
+// the face cameras, +x −x +y −y +z −z, as the engine's cubemap renderer turns them (the side faces
+// unrolled: rolled, the world came out upside down on the paint)
+const ROTATIONS = [[0, 90, 0], [0, -90, 0], [-90, 0, 180], [90, 0, 180], [0, 180, 0], [0, 0, 0]];
 
 export class ReflectionProbe {
   /**
