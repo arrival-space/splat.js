@@ -4,7 +4,7 @@
 // Three windows under a row of option-button legends, after the F-15EX's:
 //   left    the attitude director: sky and ground ball rolling with the bank, pitch ladder, heading,
 //           speed and altitude boxes
-//   middle  a situation map, north up: Meigs' runway, the shore, the carrier with its angled deck,
+//   middle  a situation map, north up: the runway, the shore, the carrier with its angled deck,
 //           the jet's own symbol and track
 //   right   the jet's state: gear, flaps, hook, speed brake, two engines' N2 / FTIT, fuel, g
 // and the moving-map scale, the time and the master-arm style legends along the bottom.
@@ -161,19 +161,22 @@ export class CockpitDisplay {
     // a range ring every 2 km
     g.strokeStyle = 'rgba(120,170,140,0.35)'; g.lineWidth = 1;
     for (const rr of [2000, 4000]) { g.beginPath(); g.arc(cx, cy, rr * s, 0, Math.PI * 2); g.stroke(); }
-    // the shore and the island
+    // the shore and the island (Meigs), or the lakes' and rivers' shores (another airport)
     const wld = this.world;
+    const ring = (pts, close) => { g.beginPath(); pts.forEach(([n, e], i) => { const [px, py] = P(n, e); if (i) g.lineTo(px, py); else g.moveTo(px, py); }); if (close) g.closePath(); };
     g.strokeStyle = '#7b6a4a'; g.lineWidth = 2;
-    g.beginPath(); wld.shore.forEach(([n, e], i) => { const [px, py] = P(n, e); if (i) g.lineTo(px, py); else g.moveTo(px, py); }); g.stroke();
+    if (wld.shore) { ring(wld.shore, false); g.stroke(); }
+    for (const r of wld.waterMask?.shores || []) { ring(r, true); g.stroke(); }
     g.fillStyle = '#3d4a33';
-    g.beginPath(); wld.island.forEach(([n, e], i) => { const [px, py] = P(n, e); if (i) g.lineTo(px, py); else g.moveTo(px, py); }); g.closePath(); g.fill();
+    if (wld.island) { ring(wld.island, true); g.fill(); }
     // the runway
     const rw = wld.runway;
-    const [ax, ay] = P(rw.thr36[0], rw.thr36[1]), [bx, by] = P(rw.thr18[0], rw.thr18[1]);
+    const [ta, tb] = rw.thresholds || [rw.thr36, rw.thr18];
+    const [ax, ay] = P(ta[0], ta[1]), [bx, by] = P(tb[0], tb[1]);
     g.strokeStyle = '#e8f0ea'; g.lineWidth = 4;
     g.beginPath(); g.moveTo(ax, ay); g.lineTo(bx, by); g.stroke();
     g.fillStyle = '#e8f0ea'; g.font = '600 13px Arial'; g.textAlign = 'left';
-    g.fillText('KCGX', bx + 6, by);
+    g.fillText(wld.data?.icao || 'KCGX', bx + 6, by);
     // the carrier: its deck outline and the angled deck's line
     const cv = wld.carrier;
     if (cv) {
