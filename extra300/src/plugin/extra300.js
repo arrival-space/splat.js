@@ -28,6 +28,7 @@ import { CameraRig } from '../render/cameraRig.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
 import { AIRCRAFT_OPTIONS, nextProfile, PROFILES, profileByTitle } from './profiles.js';
+import { PlaneShadowFit } from './planeShadowFit.js';
 import { StartMenu } from './startMenu.js';
 import { SceneryVisual } from './sceneryVisual.js';
 import { Hud } from './hud.js';
@@ -199,6 +200,8 @@ export class Extra300 extends ArrivalScript {
     this._fire = false;
     this._buildAircraft(this.profile);
     this.hud.setEasy(this.mapper.easy);
+    // in flight the sun's shadow map is fitted round the airplane, wherever the camera is
+    this._shadowFit = new PlaneShadowFit(this.app, () => this._shadowFocus());
 
     // input
     this._onKeyDown = (e) => this._keyDown(e);
@@ -375,6 +378,20 @@ export class Extra300 extends ArrivalScript {
       if (r.castShadows && !(plane && (r.entity === plane || r.entity.isDescendantOf(plane)))) r.castShadows = false;
     }
     this.app.fire('googletiles:receive-shadows', 0.55);
+  }
+
+  /** What casts the sun's shadow in flight (plugin/planeShadowFit.js): the airplane and its pilot. */
+  _shadowFocus() {
+    const root = this.visual?.root;
+    if (!this._flying || !root) return null;
+    if (this._shadowRoot !== root) {
+      this._shadowRoot = root;
+      this._shadowMeshes = root.findComponents('render').flatMap((r) => r.meshInstances);
+    }
+    const spheres = [];
+    const at = ArrivalSpace.getPlayer?.()?.getPosition();
+    if (at && at.distance(root.getPosition()) < this.ac.spec.wing.span * this._ws) spheres.push({ at, r: 1.2 * this._ws });
+    return { meshes: this._shadowMeshes, spheres, agl: Math.max(0, this.ac.agl) * this._ws };
   }
 
   /** Google's globe under the place: its start on the runway where the vibe stands. */
@@ -1339,6 +1356,7 @@ export class Extra300 extends ArrivalScript {
   destroy() {
     this._destroyed = true;
     if (this._menu) { this._menu.destroy(); this._menu = null; }
+    this._shadowFit?.destroy();
     this.app.googleTilesHold = false;
     // Google's globe back where the space has it (Meigs), the flattening gone
     if (this._dest !== 'meigs') { this.world = this.meigs; this._publishOrigin(); }
