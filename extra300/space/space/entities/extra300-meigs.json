@@ -37,6 +37,7 @@
       "easyMode": true,
       "playIntro": true,
       "debugSpheres": false,
+      "registryWait": 3,
       "startMenu": false,
       "introOnLoad": false,
       "seatAnimation": "driving.glb",

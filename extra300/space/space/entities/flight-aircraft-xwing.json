@@ -1,0 +1,23 @@
+{
+  "id": "flight-aircraft-xwing",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-aircraft.mjs",
+    "displayName": "Airplane — X-wing",
+    "position": {
+      "x": 40,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airplane": "X-wing",
+      "order": 2
+    }
+  }
+}

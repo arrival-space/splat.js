@@ -49,14 +49,14 @@
   },
   "state": {
     "files": 2,
-    "memory": 4856291,
-    "updated": 1792364673854,
+    "memory": 4856362,
+    "updated": 1792365448443,
     "entities": 11,
     "entitySizes": {
-      "extra300-meigs": 4715600,
+      "extra300-meigs": 4715671,
       "google-3d-tiles": 140691
     },
-    "screenshotTime": 1792360565936,
-    "screenshotDataHash": "e0edc61eab9894d9421ccbc1fe9841e202883f49f8a815ddafd8a2c9669eb610"
+    "screenshotTime": 1792364890596,
+    "screenshotDataHash": "404d417964699c74b8f0c3d7a6a5b56fb015fc7c5df41aee44bbf5aa7c2ca805"
   }
 }

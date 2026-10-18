@@ -1,0 +1,23 @@
+{
+  "id": "flight-airport-meigs",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-airport.mjs",
+    "displayName": "Airport — Chicago Meigs",
+    "position": {
+      "x": 30,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airport": "Chicago Meigs (KCGX)",
+      "order": 0
+    }
+  }
+}

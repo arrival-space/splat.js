@@ -1,0 +1,23 @@
+{
+  "id": "flight-aircraft-f15c",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-aircraft.mjs",
+    "displayName": "Airplane — F-15C Eagle",
+    "position": {
+      "x": 38,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airplane": "F-15C Eagle",
+      "order": 1
+    }
+  }
+}

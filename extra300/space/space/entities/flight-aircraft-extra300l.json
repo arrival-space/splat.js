@@ -1,0 +1,24 @@
+{
+  "id": "flight-aircraft-extra300l",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-aircraft.mjs",
+    "displayName": "Airplane — Extra 300L",
+    "position": {
+      "x": 36,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airplane": "Extra 300L",
+      "order": 0,
+      "startHere": true
+    }
+  }
+}

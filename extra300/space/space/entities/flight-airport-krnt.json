@@ -1,0 +1,23 @@
+{
+  "id": "flight-airport-krnt",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-airport.mjs",
+    "displayName": "Airport — Renton",
+    "position": {
+      "x": 34,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airport": "Renton, Boeing 737 field (KRNT)",
+      "order": 2
+    }
+  }
+}

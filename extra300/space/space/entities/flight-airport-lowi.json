@@ -1,0 +1,24 @@
+{
+  "id": "flight-airport-lowi",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-airport.mjs",
+    "displayName": "Airport — Innsbruck",
+    "position": {
+      "x": 32,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airport": "Innsbruck (LOWI)",
+      "order": 1,
+      "startHere": true
+    }
+  }
+}

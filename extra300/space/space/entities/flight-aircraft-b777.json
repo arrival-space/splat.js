@@ -1,0 +1,23 @@
+{
+  "id": "flight-aircraft-b777",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-aircraft.mjs",
+    "displayName": "Airplane — Boeing 777",
+    "position": {
+      "x": 42,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airplane": "Boeing 777-300ER",
+      "order": 3
+    }
+  }
+}
