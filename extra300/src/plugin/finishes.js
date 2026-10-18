@@ -37,6 +37,11 @@ function skyCube(device, S = 32) {
   });
 }
 
+// every surface's reflections 30 % up on what the materials would give (paint's clear coat, metal,
+// glass, the plain parts — plugin/pcMesh.js): in a browser, with no bloom and an 8-bit screen, things
+// came out reflecting less than they do outside
+export const REFLECTANCE = 1.3;
+
 let cube = null;
 let live = null;          // the reflection probe's cube, when it has one
 const cache = new Map();
@@ -69,10 +74,10 @@ export function paintMaterial(device, colour, satin = false, probe = true) {
   m.useMetalness = true;
   m.metalness = 0;
   m.gloss = satin ? 0.55 : 0.82;
-  m.clearCoat = satin ? 0.25 : 1;
+  m.clearCoat = (satin ? 0.25 : 1) * REFLECTANCE;   // (the coat's reflection goes by this, not by reflectivity)
   m.clearCoatGloss = satin ? 0.7 : 0.93;
   reflecting(m, probe);
-  m.reflectivity = 1;
+  m.reflectivity = REFLECTANCE;
   m.update();
   cache.set(key, m);
   return m;
@@ -89,6 +94,7 @@ export function metalMaterial(device, colour, polished = false, probe = false) {
   m.metalness = 1;
   m.gloss = polished ? 0.9 : 0.6;
   reflecting(m, probe);
+  m.reflectivity = REFLECTANCE;
   m.update();
   cache.set(key, m);
   return m;
@@ -107,7 +113,7 @@ export function glassMaterial(device, tint, probe = false) {
   m.metalness = 0;
   m.gloss = 0.96;
   reflecting(m, probe);
-  m.reflectivity = 1;
+  m.reflectivity = REFLECTANCE;
   m.opacityFadesSpecular = false;   // the reflection keeps its strength where the glass is clear
   m.cull = pc.CULLFACE_NONE;
   m.update();
@@ -178,7 +184,7 @@ export function glassReflectionMaterial(device, f0 = 0.06) {
   m.getShaderChunks('glsl').set('fresnelSchlickPS', FRESNEL_GLSL);
   m.getShaderChunks('wgsl').set('fresnelSchlickPS', FRESNEL_WGSL);
   reflecting(m, true);
-  m.reflectivity = 1;
+  m.reflectivity = REFLECTANCE;
   m.blendType = pc.BLEND_ADDITIVE;
   m.depthWrite = false;
   m.update();
@@ -186,7 +192,7 @@ export function glassReflectionMaterial(device, f0 = 0.06) {
   return m;
 }
 
-/** A perfect mirror (the debug spheres': plugin/extra300.js), reflecting the live cube. */
+/** A perfect mirror (the debug spheres': plugin/extra300.js), reflecting the live cube: the reference, unboosted. */
 export function mirrorMaterial(device) {
   const key = 'mirror';
   if (cache.has(key)) return cache.get(key);

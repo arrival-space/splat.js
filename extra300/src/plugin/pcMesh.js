@@ -1,6 +1,8 @@
 // pcMesh.js — hand MeshBuilder output to PlayCanvas. `pc` is the global the
 // Arrival client (and the local harness) provides.
 
+import { REFLECTANCE } from './finishes.js';
+
 const materialCache = new Map();
 
 /** A plain material, shared by colour and options; `scope` keeps a set apart (the airplane's: its ambient
@@ -13,6 +15,7 @@ export function material(color, { transparent = false, opacity = 1, emissive = n
   m.useMetalness = true;
   m.metalness = 0.0;
   m.gloss = transparent ? 0.9 : 0.35;
+  m.reflectivity = REFLECTANCE;   // (plugin/finishes.js)
   if (emissive) { m.emissive = new pc.Color().fromString(emissive); }
   if (twoSided) m.cull = pc.CULLFACE_NONE;
   if (transparent) {
