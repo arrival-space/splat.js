@@ -47,6 +47,8 @@ COLORS = {
     'white': '#f3f1ec', 'red': '#c41e2a', 'dark': '#1b1d22', 'tyre': '#151515', 'metal': '#a4a7ab',
     'panel': '#2b2d31', 'gauge': '#0c0d0f', 'seat': '#1d2b52', 'strap': '#7a1a20', 'yellow': '#e9c21b',
     'navRed': '#ff2a2a', 'navGreen': '#22d25a', 'glass': '#4f6678', 'floor': '#3a3c40', 'chrome': '#d9dadc',
+    'carbon': '#1a1b1f', 'hood': '#7c8086', 'dialMark': '#d6d6d2', 'attSky': '#3f7fc4', 'attGround': '#7a5230',
+    'screenGps': '#5b4fc4', 'screenLcd': '#2c3a33',
 }
 
 
@@ -393,42 +395,173 @@ def throttle(x, name, z=0.02):
     new_object(f'{name}Knobs', bm, ['red'], smooth_angle=30)
 
 
-def panel(x, width, top, bottom, name, gauges, tilt=12):
-    """Instrument panel face with bezels and dark dials, under a padded coaming."""
-    rot = Matrix.Rotation(math.radians(tilt), 3, 'Y')   # top leaning toward the pilot
-    zc = 0.5 * (top + bottom)
+def arched_face(x0, z_bot, wb, wt, hs, arch, tilt, R, nu=28, nv=10):
+    """An instrument panel's face, as the Extra's: a straight bottom, sides rising to the canopy rails,
+    a shallow arched top meeting them at a corner, the face wrapped
+    round the pilot (radius R in plan: its ends come aft) and leaning back by `tilt`.
+    Returns (bm, at(a, h) → body point, normal(a, h) → body normal toward the pilot, outline(u, v) → (a, h))."""
+    tt = math.tan(math.radians(tilt))
+
+    def at(a, h):
+        return (x0 - a * a / (2 * R) - h * tt, a, z_bot - h)
+
+    def outline(u, v):
+        a_bot, a_top = u * wb / 2, u * wt / 2
+        h_top = hs + arch * (1 - u * u)
+        return a_bot + (a_top - a_bot) * v, h_top * v
+
+    def normal(a, h):
+        e = 1e-3
+        p0, pa, ph = Vector(at(a, h)), Vector(at(a + e, h)), Vector(at(a, h + e))
+        n = (pa - p0).cross(ph - p0).normalized()
+        return n if n.x < 0 else -n           # toward the pilot (aft)
     bm = bmesh.new()
-    box(bm, (x, 0, zc), (0.025, width, bottom - top), rot)
-    outward(bm)
-    bevel(new_object(f'{name}Panel', bm, ['panel'], smooth_angle=30), 0.008)
-    # coaming / glare shield
+    grid = [[bm.verts.new(V(*at(*outline(-1 + 2 * i / nu, j / nv)))) for j in range(nv + 1)] for i in range(nu + 1)]
+    for i in range(nu):
+        for j in range(nv):
+            bm.faces.new([grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]])
+    return bm, at, normal, outline
+
+
+def hood(name, at, normal, outline, profile, mat_name='hood', n=28):
+    """The padded glare shield along a face's arched top: a section (aft-of-rim, out-from-arch offsets)
+    swept round the arch, the out direction the arch's own normal (up at the top, sideways at the rails)."""
+    rings = []
+    for k in range(n + 1):
+        u = -1 + 2 * k / n
+        a, h = outline(u, 1.0)
+        a2, h2 = outline(min(1, u + 1e-3), 1.0)
+        a1, h1 = outline(max(-1, u - 1e-3), 1.0)
+        ta, th = a2 - a1, h2 - h1
+        L = math.hypot(ta, th) or 1
+        oa, oh = th / L, -ta / L                       # out of the arch, in the face's (a, h)
+        if oh < 0 or (abs(oh) < 1e-6 and oa * u < 0):
+            oa, oh = -oa, -oh
+        p = Vector(at(a, h))
+        nrm = normal(a, h)                            # aft, toward the pilot
+        up = (Vector(at(a + oa * 1e-3, h + oh * 1e-3)) - p).normalized()
+        rings.append([tuple(p + nrm * (-f) + up * g) for f, g in profile])
     bm = bmesh.new()
-    sec = []
-    for k in range(13):
-        t = math.pi * k / 12
-        sec.append((0, width * 0.52 * math.cos(t), top - 0.05 * math.sin(t)))
-    r0 = [(x + 0.02, y, z) for _, y, z in sec]
-    r1 = [(x - 0.14, y * 0.98, z + 0.01) for _, y, z in sec]
-    loft(bm, [r0, r1], close=False, cap=False)
+    loft(bm, [list(r) for r in zip(*rings)], close=False, cap=False)
     outward(bm)
-    ob = new_object(f'{name}Coaming', bm, ['dark'], smooth_angle=60)
+    ob = new_object(name, bm, [mat_name], smooth_angle=70)
+    ob.modifiers.new('thick', 'SOLIDIFY').thickness = 0.008
+    return ob
+
+
+def _facing(nrm):
+    """The rotation turning a cone's axis (Blender +X after the first turn) onto a body-axes normal."""
+    return Vector((1, 0, 0)).rotation_difference(Vector((nrm.x, -nrm.y, -nrm.z))).to_matrix()
+
+
+def dials(name, at, normal, gauges, bezel='dark'):
+    """Round gauges on a face: (a, h, r[, kind]) — a bezel, a black dial with a white scale ring, the
+    attitude indicator's sky and ground."""
+    bms = {k: bmesh.new() for k in ('bezel', 'dial', 'mark', 'attSky', 'attGround')}
+    for g in gauges:
+        a, h, r = g[:3]
+        kind = g[3] if len(g) > 3 else 'dial'
+        p, nrm = Vector(at(a, h)), normal(a, h)
+        q = _facing(nrm)
+
+        def put(key, r_, depth, off, segs=24, half=None):
+            res = bmesh.ops.create_cone(bms[key], cap_ends=True, cap_tris=False, segments=segs, radius1=r_, radius2=r_, depth=depth)
+            vs = res['verts']
+            if half is not None:     # one half (the attitude ball): the other squashed onto the horizon
+                for v_ in vs:      # (the turns below take the cone's +x up)
+                    if (half == 'up' and v_.co.x < 0) or (half == 'down' and v_.co.x > 0):
+                        v_.co.x = 0.0
+            bmesh.ops.rotate(bms[key], cent=Vector((0, 0, 0)), matrix=Matrix.Rotation(math.pi / 2, 3, 'Y'), verts=vs)
+            bmesh.ops.rotate(bms[key], cent=Vector((0, 0, 0)), matrix=q, verts=vs)
+            bmesh.ops.translate(bms[key], vec=V(*(p + nrm * off)), verts=vs)
+        put('bezel', r + 0.007, 0.012, 0.004)
+        if kind == 'att':
+            put('attSky', r, 0.004, 0.011, 32, half='up')
+            put('attGround', r, 0.004, 0.0112, 32, half='down')
+        else:
+            put('dial', r, 0.004, 0.011)
+            put('mark', r * 0.84, 0.002, 0.0125)
+            put('dial', r * 0.74, 0.002, 0.0135)
+    mats = {'bezel': bezel, 'dial': 'gauge', 'mark': 'dialMark', 'attSky': 'attSky', 'attGround': 'attGround'}
+    for k, b in bms.items():
+        if b.verts:
+            outward(b)
+            new_object(f'{name}{k[0].upper()}{k[1:]}', b, [mats[k]], smooth_angle=40)
+
+
+def toggles(name, at, normal, row):
+    """A row of toggle switches: (a, h) each, a bat sticking out toward the pilot."""
+    bm = bmesh.new()
+    for a, h in row:
+        p, nrm = Vector(at(a, h)), normal(a, h)
+        res = bmesh.ops.create_cone(bm, cap_ends=True, cap_tris=False, segments=8, radius1=0.0045, radius2=0.003, depth=0.03)
+        vs = res['verts']
+        bmesh.ops.rotate(bm, cent=Vector((0, 0, 0)), matrix=Matrix.Rotation(math.pi / 2, 3, 'Y'), verts=vs)
+        bmesh.ops.rotate(bm, cent=Vector((0, 0, 0)), matrix=_facing(nrm), verts=vs)
+        bmesh.ops.translate(bm, vec=V(*(p + nrm * 0.02)), verts=vs)
+    outward(bm)
+    new_object(f'{name}Toggles', bm, ['chrome'], smooth_angle=40)
+
+
+def rear_panel():
+    """The pilot's panel (the rear seat's), from the 300L's: a gloss carbon face under a grey padded hood
+    that runs from rail to rail, two rows of gauges with the attitude indicator top centre and a row of
+    switches under them; below it, set forward, a narrower engine panel and the GPS."""
+    bm, at, normal, outline = arched_face(-0.80, -0.02, 0.70, 0.78, 0.17, 0.10, tilt=15, R=0.9)
+    outward(bm)
+    ob = new_object('rearPanel', bm, ['carbon'], smooth_angle=60)
+    ob.modifiers.new('thick', 'SOLIDIFY').thickness = 0.018
+    hood('rearHood', at, normal, outline, [(-0.02, -0.01), (-0.026, 0.004), (-0.018, 0.017), (0.0, 0.024),
+                                           (0.08, 0.028), (0.16, 0.018), (0.20, 0.0)])
+    dials('rear', at, normal, [
+        (-0.17, 0.195, 0.032), (-0.085, 0.2, 0.035), (0.0, 0.205, 0.035, 'att'), (0.085, 0.2, 0.035), (0.17, 0.195, 0.032),
+        (-0.25, 0.185, 0.022), (0.25, 0.185, 0.022),
+        (-0.285, 0.11, 0.028), (-0.2, 0.115, 0.033), (-0.1, 0.12, 0.035), (0.0, 0.12, 0.035), (0.1, 0.12, 0.035),
+        (0.2, 0.115, 0.033), (0.285, 0.11, 0.028)])
+    toggles('rear', at, normal, [(-0.2 + 0.4 * k / 9, 0.035) for k in range(10)])
+    # the engine panel: narrower, set forward, flat-topped
+    bm, at2, normal2, outline2 = arched_face(-0.765, 0.085, 0.36, 0.40, 0.12, 0.0, tilt=24, R=0.9, nv=4)
+    outward(bm)
+    ob = new_object('rearEnginePanel', bm, ['carbon'], smooth_angle=60)
     ob.modifiers.new('thick', 'SOLIDIFY').thickness = 0.015
-    # gauges: (y, z, r) on the panel face
-    bm_b, bm_f = bmesh.new(), bmesh.new()
-    for gy, gz, r in gauges:
-        # place on the tilted face: offset from the panel centre, then rotate
-        off = Vector((0, -gy, -(gz - zc)))
-        p = rot @ off + V(x, 0, zc)
-        px, py, pz = body(p)
-        c = (px - 0.016, py, pz)
-        vb = cylinder(bm_b, c, r + 0.008, 0.012, 'x', 24)
-        vf = cylinder(bm_f, (c[0] - 0.003, py, pz), r, 0.012, 'x', 24)
-        for vs in (vb, vf):
-            bmesh.ops.rotate(bm_b if vs is vb else bm_f, cent=V(*c), matrix=rot, verts=vs)
-    for b in (bm_b, bm_f):
-        outward(b)
-    new_object(f'{name}Bezels', bm_b, ['chrome'], smooth_angle=40)
-    new_object(f'{name}Dials', bm_f, ['gauge'], smooth_angle=40)
+    dials('rearEngine', at2, normal2, [(-0.15 + 0.06 * k, 0.08, 0.021) for k in range(6)])
+    toggles('rearEngine', at2, normal2, [(-0.12 + 0.24 * k / 7, 0.03) for k in range(8)])
+    # the GPS under it, its screen lit
+    bm = bmesh.new()
+    box(bm, (-0.72, 0, 0.16), (0.10, 0.17, 0.075))
+    outward(bm)
+    new_object('rearGps', bm, ['dark'], smooth_angle=30)
+    bm = bmesh.new()
+    box(bm, (-0.771, -0.012, 0.155), (0.004, 0.085, 0.045))
+    outward(bm)
+    new_object('rearGpsScreen', bm, ['screenGps'], smooth_angle=30)
+
+
+def front_panel():
+    """The front seat's small panel under the windscreen: a grey arched hood over a grey face, a dark
+    inset with two gauges and two little displays."""
+    bm, at, normal, outline = arched_face(0.06, -0.06, 0.70, 0.84, 0.16, 0.10, tilt=10, R=1.4)
+    outward(bm)
+    ob = new_object('frontPanel', bm, ['hood'], smooth_angle=60)
+    ob.modifiers.new('thick', 'SOLIDIFY').thickness = 0.015
+    hood('frontHood', at, normal, outline, [(-0.018, -0.008), (-0.022, 0.004), (-0.014, 0.016), (0.0, 0.022), (0.06, 0.02)])
+    # the inset: a dark band on the face, the gauges and displays on it
+    bm = bmesh.new()
+    for i in range(12):
+        a0, a1 = -0.15 + 0.3 * i / 12, -0.15 + 0.3 * (i + 1) / 12
+        n = normal((a0 + a1) / 2, 0.16)
+        quad = [at(a0, 0.12), at(a1, 0.12), at(a1, 0.20), at(a0, 0.20)]
+        bm.faces.new([bm.verts.new(V(*(Vector(q) + n * 0.003))) for q in quad])
+    outward(bm)
+    new_object('frontInset', bm, ['carbon'], smooth_angle=60)
+    dials('front', at, normal, [(-0.045, 0.16, 0.027), (0.045, 0.16, 0.027)])
+    bm = bmesh.new()
+    for a in (-0.115, 0.115):
+        n = normal(a, 0.16)
+        quad = [at(a - 0.03, 0.145), at(a + 0.03, 0.145), at(a + 0.03, 0.175), at(a - 0.03, 0.175)]
+        bm.faces.new([bm.verts.new(V(*(Vector(q) + n * 0.006))) for q in quad])
+    outward(bm)
+    new_object('frontDisplays', bm, ['screenLcd'], smooth_angle=60)
 
 
 def cockpit():
@@ -444,15 +577,10 @@ def cockpit():
     pedals(-0.70, 'rear')
     throttle(-0.30, 'front')
     throttle(-1.05, 'rear')
-    # front panel under the windscreen: six-pack and engine stack
-    six = [(-0.22, -0.27, 0.04), (-0.11, -0.27, 0.04), (0.0, -0.27, 0.04),
-           (-0.22, -0.17, 0.04), (-0.11, -0.17, 0.04), (0.0, -0.17, 0.04),
-           (0.13, -0.26, 0.03), (0.13, -0.18, 0.03), (0.22, -0.27, 0.022), (0.22, -0.21, 0.022), (0.22, -0.15, 0.022)]
-    panel(0.08, 0.62, -0.34, -0.10, 'front', six)
-    # rear panel on the front seat's back structure, in the pilot's line of sight under the canopy
-    rear = [(-0.17, -0.25, 0.034), (-0.07, -0.25, 0.034), (0.03, -0.25, 0.034),
-            (-0.12, -0.16, 0.03), (-0.02, -0.16, 0.03), (0.13, -0.24, 0.028), (0.13, -0.16, 0.022)]
-    panel(-0.80, 0.50, -0.32, -0.10, 'rear', rear, tilt=18)
+    # the panels: the front seat's small one under the windscreen, the pilot's (rear seat) on the
+    # structure behind the front seat, in the line of sight under the canopy
+    front_panel()
+    rear_panel()
 
 
 # ── lifting surfaces ────────────────────────────────────────────────────────
@@ -673,19 +801,21 @@ def gear():
         loft(bm, rings)
         outward(bm)
         new_object(f'leg{sname}', bm, ['white'], smooth_angle=30)
-        # wheel pant: a teardrop around the wheel, red
+        # wheel pant: a teardrop around the wheel, red, bolted to the axle (it rides up with the wheel as
+        # the spring leg bends); the tyre's bottom shows under it
         bm = bmesh.new()
         xs = [0.44, 0.36, 0.22, 0.05, -0.12, -0.30, -0.44, -0.52]
         hs = [0.02, 0.12, 0.19, 0.22, 0.21, 0.16, 0.08, 0.015]
         ws = [0.02, 0.08, 0.115, 0.125, 0.12, 0.095, 0.05, 0.01]
-        rings = [superellipse(hub[0] + x, hub[2] - 0.02 - h, hub[2] - 0.02 + h * 0.75, w, 2.3, 24) for x, h, w in zip(xs, hs, ws)]
+        rings = [superellipse(hub[0] + x, hub[2] - 0.02 - h, hub[2] - 0.02 + h * 0.62, w, 2.3, 24) for x, h, w in zip(xs, hs, ws)]
         rings = [[(p[0], p[1] + hub[1], p[2]) for p in r] for r in rings]
         loft(bm, rings)
         # open the bottom where the tyre comes through
         kill = [f for f in bm.faces if body(f.calc_center_median())[2] > hub[2] + 0.06 and abs(body(f.calc_center_median())[0] - hub[0]) < 0.2]
         bmesh.ops.delete(bm, geom=kill, context='FACES')
         outward(bm)
-        ob = new_object(f'pant{sname}', bm, ['red'], smooth_angle=50)
+        ob = new_object(f'pant{sname}', bm, ['red'], origin=hub, smooth_angle=50,
+                        meta=dict(kind='pant', gear=0 if side < 0 else 1, hinge=list(hub), axis=[0, 1, 0]))
         ob.modifiers.new('thick', 'SOLIDIFY').thickness = 0.008
         # wheel: tyre torus-ish profile and a hub; origin on the axle
         wheel(f'wheel{sname}', hub, MAIN['r'], 0.11, dict(kind='wheel', gear=0 if side < 0 else 1))
@@ -806,6 +936,9 @@ def render(outdir):
         'front': ((12.0, 0.0, -0.3), (0, 0, -0.3), 'ortho'),
         'cockpit': (V(*EYE), V(2.0, 0, -0.75), 85),
         'cockpitTop': ((-0.3, -1.6, 2.3), (-0.3, 0, 0.0), 50),
+        # from the right wing root, over the rear seat toward the panels (as a walk-round photo)
+        'cockpitSide': (V(-1.75, 1.05, -1.15), V(-0.45, -0.05, -0.30), 50),
+        'cockpitPanel': (V(-1.30, 0.0, -0.62), V(-0.70, 0.0, -0.10), 60),
     }
     only = os.environ.get('VIEWS')
     for name, (eye, at, fov) in views.items():
