@@ -3,7 +3,7 @@
 import { fromBody } from '../render/geometry.js';
 import { nedToRender, simToRenderQuat } from '../render/cameraRig.js';
 import { material, meshEntity } from './pcMesh.js';
-import { flameMaterial, glassMaterial, metalMaterial, paintMaterial } from './finishes.js';
+import { flameMaterial, glassReflectionMaterial, glassTintMaterial, metalMaterial, paintMaterial } from './finishes.js';
 
 // the exterior paint: the Extra's glossy, the Eagle's satin greys; cockpit trim, tyres, gauges stay matte
 const PAINTED = new Set(['white', 'red', 'yellow', 'navRed', 'navGreen', 'blue', 'belly', 'nacelle', 'carbon']);   // (the Extra's carbon panel: clear-coated too)
@@ -37,13 +37,15 @@ export class AircraftVisual {
         : part.kind === 'abFlame' ? flameMaterial(part.color)
         : part.kind === 'engineGlow' ? flameMaterial('#ff6a48')
         : part.kind === 'propDisc' ? material('#202226', { transparent: true, opacity: 0.07 })
-          : GLASS.has(part.material) || part.name === 'canopy' ? glassMaterial(dev, part.color, true)
+          : GLASS.has(part.material) || part.name === 'canopy' ? glassTintMaterial(dev, part.color)
             : PAINTED.has(part.material) ? paintMaterial(dev, part.color)
               : SATIN.has(part.material) ? paintMaterial(dev, part.color, true)
                 : METAL.has(part.material) ? metalMaterial(dev, part.color, part.material === 'chrome', true)
                   : material(part.color, part.transparent ? { transparent: true, opacity: 0.28 } : {});
+      const glass = part.name !== 'hudGlass' && (GLASS.has(part.material) || part.name === 'canopy');
       if (!part.hinge) {
-        meshEntity(app, this.root, part.name, part.mesh, mat);
+        const e = meshEntity(app, this.root, part.name, part.mesh, mat);
+        if (glass) this._reflect(e, dev);
         continue;
       }
       // a moving part turns about its hinge; one riding on another (a wheel on its folding leg) hangs
@@ -58,10 +60,22 @@ export class AircraftVisual {
       const ent = meshEntity(app, pivot, part.name, part.mesh, mat, { castShadows: !glow, receiveShadows: !glow });
       const ax = fromBody(part.axis);
       const l = Math.hypot(ax[0], ax[1], ax[2]);
+      if (glass) this._reflect(ent, dev);
       const m = { ...part, pivot, ent, axis: new pc.Vec3(ax[0] / l, ax[1] / l, ax[2] / l), rel };
       this.moving.push(m);
       byName.set(part.name, m);
     }
+  }
+
+  /** Glass: its reflection, added over the tint (plugin/finishes.js glassTintMaterial), on the same mesh. */
+  _reflect(e, dev) {
+    const was = e.render?.meshInstances[0];
+    if (!was) return;
+    // both made afresh: handing the component a new list destroys the instances it had
+    const { mesh, material } = was;
+    const r = new pc.MeshInstance(mesh, glassReflectionMaterial(dev));
+    e.render.meshInstances = [new pc.MeshInstance(mesh, material), r];
+    r.castShadow = false;   // (set after: the component gives its own to what it is handed)
   }
 
   /**

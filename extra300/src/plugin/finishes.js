@@ -115,6 +115,48 @@ export function glassMaterial(device, tint, probe = false) {
   return m;
 }
 
+/**
+ * The airplane's canopy is two layers over one mesh. Blended the usual way, the engine scales the
+ * whole colour, reflection and all, by the glass's alpha (a fifth), and the sky on the acrylic was
+ * all but gone. Instead the tint is one layer, the light it takes out of the view behind, and the
+ * reflection another, added at full strength: clear acrylic's Fresnel reflection of the live cube
+ * (a few per cent head on, a mirror at a grazing look) and the sun's glint.
+ */
+export function glassTintMaterial(device, tint) {
+  const key = `glassTint${tint}`;
+  if (cache.has(key)) return cache.get(key);
+  const m = new pc.StandardMaterial();
+  m.diffuse = new pc.Color().fromString(tint);
+  m.opacity = 0.22;
+  m.blendType = pc.BLEND_NORMAL;
+  m.depthWrite = false;
+  m.useMetalness = false;
+  m.specular = new pc.Color(0, 0, 0);
+  m.cull = pc.CULLFACE_NONE;
+  m.update();
+  cache.set(key, m);
+  return m;
+}
+
+export function glassReflectionMaterial(device) {
+  const key = 'glassReflection';
+  if (cache.has(key)) return cache.get(key);
+  cube ??= skyCube(device);
+  const m = new pc.StandardMaterial();
+  m.diffuse = new pc.Color(0, 0, 0);
+  m.ambient = new pc.Color(0, 0, 0);
+  m.useMetalness = false;
+  m.specular = new pc.Color(0.06, 0.06, 0.06);   // acrylic's 4 % a surface, a little over for the pair
+  m.gloss = 0.97;
+  reflecting(m, true);
+  m.reflectivity = 1;
+  m.blendType = pc.BLEND_ADDITIVE;
+  m.depthWrite = false;
+  m.update();
+  cache.set(key, m);
+  return m;
+}
+
 /** The afterburner's plume: glowing, additive, unlit, seen from both sides. */
 export function flameMaterial(colour) {
   const key = `flame${colour}`;
