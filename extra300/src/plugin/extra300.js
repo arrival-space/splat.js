@@ -97,7 +97,7 @@ export class Extra300 extends ArrivalScript {
 
   static properties = {
     isEnabled: { title: 'Enabled' },
-    aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15 or ?aircraft=xwing on the address)', options: AIRCRAFT_OPTIONS },
+    aircraft: { title: 'Aircraft (also the top bar, or T in flight; ?aircraft=f15, xwing or 777 on the address)', options: AIRCRAFT_OPTIONS },
     destination: { title: 'Where to fly (also the ✈ button on the top bar, or ?airport=lowi / krnt on the address)', options: Object.values(DESTINATIONS).map((d) => d.title) },
     startRunway: { title: 'Start: runway 36, 18 (at Innsbruck: 26, 08), or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
     showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
@@ -161,10 +161,11 @@ export class Extra300 extends ArrivalScript {
     try {
       this._filmPending = this.introOnLoad || new URLSearchParams(location.search).has('intro') || /(^|[#&])intro\b/.test(location.hash.slice(1));
     } catch { this._filmPending = this.introOnLoad; }
-    // ?aircraft=f15 (or f15c, extra) on the address picks the airplane, as the setting does
+    // ?aircraft=f15 (or f15c, extra, xwing, 777) on the address picks the airplane, as the setting does
     try {
       const want = new URLSearchParams(location.search).get('aircraft');
-      if (want) this.aircraft = /f-?15/i.test(want) ? PROFILES.f15c.title : /x-?wing/i.test(want) ? PROFILES.xwing.title : PROFILES.extra300l.title;
+      if (want) this.aircraft = /f-?15/i.test(want) ? PROFILES.f15c.title : /x-?wing/i.test(want) ? PROFILES.xwing.title
+        : /777|b7|boeing/i.test(want) ? PROFILES.b777.title : PROFILES.extra300l.title;
     } catch { /* no address to read */ }
     this._sky = null;
 

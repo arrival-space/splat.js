@@ -6,8 +6,8 @@ import { material, meshEntity } from './pcMesh.js';
 import { flameMaterial, glassMaterial, metalMaterial, paintMaterial } from './finishes.js';
 
 // the exterior paint: the Extra's glossy, the Eagle's satin greys; cockpit trim, tyres, gauges stay matte
-const PAINTED = new Set(['white', 'red', 'yellow', 'navRed', 'navGreen']);
-const SATIN = new Set(['grey', 'darkGrey', 'radome', 'gearWhite']);
+const PAINTED = new Set(['white', 'red', 'yellow', 'navRed', 'navGreen', 'blue', 'belly', 'nacelle']);
+const SATIN = new Set(['grey', 'darkGrey', 'radome', 'gearWhite', 'wingGrey', 'gearGrey']);
 const METAL = new Set(['metal', 'chrome', 'nozzle']);
 const GLASS = new Set(['glass', 'hud']);
 

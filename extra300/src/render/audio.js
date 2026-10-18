@@ -170,6 +170,16 @@ export class JetSound {
 }
 
 /**
+ * An airliner's big fans: the jets' synthesis pitched down into the GE90's low hum and roar (the fan
+ * turns at a third of a fighter core's speed), and no burner.
+ */
+export class AirlinerSound extends JetSound {
+  update(s) {
+    super.update({ ...s, rpm: s.rpm * 0.55, powerFrac: s.powerFrac * 0.8 });
+  }
+}
+
+/**
  * The X-wing: the jets' synthesis pitched up into the fusial engines' scream, and the lasers' pew —
  * a falling sweep, a thump under it and a crack of noise on top, on its own line past the engines'
  * mix (low and fast the wind's roar would bury it) and pitched above the wind's band.

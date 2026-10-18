@@ -130,6 +130,7 @@ export class Aero {
     const r = [0, 0, 0];
     const u = [0, 0, 0];
     const tmp = [0, 0, 0];
+    const slats = this.ac.aero.slats;
     for (const st of this.strips) {
       const g = gd[st.group];
       r[0] = st.pos[0] - cg[0]; r[1] = st.pos[1] - cg[1]; r[2] = st.pos[2] - cg[2];
@@ -161,7 +162,9 @@ export class Aero {
       const eff = st.control?.allMoving ? 1 : deflectionEfficiency(delta);
       const alphaEff = alpha + st.tau * eff * delta;
       // a trailing-edge flap raises the section's maximum lift, not only its lift at a given angle
-      const flapStall = st.control?.clmaxGain && delta > 0 ? st.control.clmaxGain * st.tau * eff * delta : 0;
+      let flapStall = st.control?.clmaxGain && delta > 0 ? st.control.clmaxGain * st.tau * eff * delta : 0;
+      // leading-edge slats, out with the flaps, along the whole span: the wing stalls later
+      if (slats && st.group === 'wing') flapStall += slats.stall * (controls.flaps || 0);
       const gs = mt || flapStall ? { ...g, a: g.a * liftK, cd0: g.cd0 * dragK, stall: g.stall + flapStall } : g;
       const sc = sectionCoefficients(alphaEff, gs, st.group === 'wing' ? ge : 1);
       const { cl, cd, stalled } = sc;
@@ -177,7 +180,9 @@ export class Aero {
       const fy = L * tmp[1] + D * u[1];
       const fz = L * tmp[2] + D * u[2];
       // past the stall the centre of pressure walks aft toward mid-chord
-      const cpShift = stalled ? -0.18 * st.chord * clamp((Math.abs(alphaEff) - g.stall) / (25 * DEG), 0, 1) : 0;
+      let cpShift = stalled ? -0.18 * st.chord * clamp((Math.abs(alphaEff) - g.stall) / (25 * DEG), 0, 1) : 0;
+      // a lowered flap's lift acts well aft of the quarter-chord: the nose-down moment flaps bring
+      if (st.control?.cpAft && delta > 0) cpShift -= st.control.cpAft * st.chord * (delta / st.control.maxDefl);
       const rx = r[0] + cpShift;
       F[0] += fx; F[1] += fy; F[2] += fz;
       M[0] += r[1] * fz - r[2] * fy;

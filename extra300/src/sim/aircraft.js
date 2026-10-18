@@ -104,7 +104,7 @@ export class Aircraft {
   placeOnGround(n, e, heading) {
     const g = this.spec.gear.units;
     // the pitch that puts the main and the third wheel (tail or nose) on the ground together
-    const main = g[0], third = g[2];
+    const main = g[0], third = g.find((u) => u.steer || /nose|tail/i.test(u.name)) || g[2];
     const [fore, aft] = third.pos[0] > main.pos[0] ? [third, main] : [main, third];
     const theta = Math.atan2(fore.pos[2] - aft.pos[2], fore.pos[0] - aft.pos[0]);
     const q = qFromEuler(0, theta, heading);
@@ -112,12 +112,15 @@ export class Aircraft {
     // CG height so the extended main wheel just touches, then sink by the static deflection
     const rel = [main.pos[0] - this.cg[0], main.pos[1] - this.cg[1], main.pos[2] - this.cg[2]];
     const re = qRotate(q, rel);
-    const staticDefl = (this.mass * G0 * 0.45) / main.k;
+    const mains = g.filter((u) => u.brake).length || 2;
+    const staticDefl = (this.mass * G0 * 0.9) / mains / main.k;
     this.state = { pos: [n, e, -gh - re[2] + staticDefl], vel: [0, 0, 0], q, omega: [0, 0, 0] };
     this.aero.eps = 0;
     this.gearPos = 1; this.controls.gear = 1;
     this.speedbrakePos = 0; this.controls.speedbrake = 0;
     this.hookPos = 0; this.controls.hook = 0;
+    // an airliner's flaps (and slats) are set before it rolls (they follow the gear: autoFlaps)
+    if (this.spec.autoFlaps?.time > 3) this.controls.flaps = 1;
     this.arrestor?.reset();
     this.damage = { propStrike: false, gearCollapsed: false, crashed: false };
   }
@@ -188,7 +191,8 @@ export class Aircraft {
     // the flaps come down with the gear, and blow back up above their limit speed
     if (sp.autoFlaps) {
       const want = this.gearPos > 0.5 && tas < sp.autoFlaps.maxSpeed ? 1 : 0;
-      c.flaps = clamp((c.flaps || 0) + clamp(want - (c.flaps || 0), -h / 3, h / 3), 0, 1);
+      const ft = sp.autoFlaps.time || 3;   // s end to end
+      c.flaps = clamp((c.flaps || 0) + clamp(want - (c.flaps || 0), -h / ft, h / ft), 0, 1);
     }
 
     const rot = this.jet ? 0 : sp.engine.rotation;

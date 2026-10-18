@@ -16,8 +16,9 @@ test('build produces a self-contained vibe module', async () => {
   // arrival validate also rejects import("…") / from "./…" anywhere in the text, comments included
   assert.ok(!/import\s*\(\s*['"]\.{1,2}\//.test(src), 'no import("./…") even in JSDoc types');
   assert.ok(!/from\s+['"]\.{1,2}\//.test(src), 'no relative from "./…"');
-  // the baked OpenStreetMap city rides inside the bundle; keep it well under a few MB
-  assert.ok(src.length < 4_000_000, `bundle size ${src.length}`);
+  // the baked OpenStreetMap city, three airports' ground and four airplanes ride inside the bundle;
+  // keep it under 5 MB
+  assert.ok(src.length < 5_000_000, `bundle size ${src.length}`);
 
   // load it the way the client does, with the globals it provides
   class Script { constructor() {} }

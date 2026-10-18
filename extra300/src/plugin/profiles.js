@@ -6,17 +6,19 @@
 import EXTRA from '../sim/aircraft/extra300l.js';
 import F15 from '../sim/aircraft/f15c.js';
 import XW from '../sim/aircraft/xwing.js';
+import B777 from '../sim/aircraft/b777.js';
+import { buildB777Model } from '../render/b777Model.js';
 import { buildXwingModel } from '../render/xwingModel.js';
 import { buildExtraModel } from '../render/extraModel.js';
 import { buildF15Model } from '../render/f15Model.js';
 import { INTROS } from '../render/intro.js';
-import { CockpitSound, JetSound, XwingSound } from '../render/audio.js';
+import { AirlinerSound, CockpitSound, JetSound, XwingSound } from '../render/audio.js';
 
 const VIEWS_HELP = ['Views', 'V  cockpit · chase · tower · fly-by    drag the mouse to look (chase: orbit)    wheel: zoom    C  centre'];
 const COMMON_TAIL = [
   ['Intro', 'Space / Enter / Esc skips it'],
   ['Mouse yoke', 'Y  fly with the mouse (screen centre = neutral)'],
-  ['Aircraft', 'T  next airplane: Extra 300L → F-15C Eagle → X-wing (back on runway 36)'],
+  ['Aircraft', 'T  next airplane: Extra 300L → F-15C Eagle → X-wing → Boeing 777 (back on the runway)'],
   ['Sim', 'P  pause    Backspace  back to runway 36    Esc  leave the airplane'],
 ];
 
@@ -146,6 +148,49 @@ export const PROFILES = {
       ['HUD', 'I  show / hide    N  set altimeter'],
       ...COMMON_TAIL,
       ['Gamepad', 'left stick flies, right stick rudder / throttle, A fires, triggers brake'],
+    ],
+  },
+
+  b777: {
+    id: 'b777',
+    title: 'Boeing 777-300ER',
+    spec: B777,
+    buildModel: buildB777Model,
+    intro: INTROS.b777,
+    display: 'hud',
+    hudColor: '#7fffd4',
+    Sound: AirlinerSound,
+    chaseSize: 7.5,
+    demo: null,
+    // the avatar in the captain's seat, the left one
+    seat: { forward: B777.eye[0] + 0.25, height: B777.eye[2] + 1.2, lean: 8 },
+    quick: [
+      'Hold <b>R</b> (or <b>End</b>) for take-off thrust, keep it straight with <b>Q</b> / <b>E</b>',
+      'At ~145 kt ease back on <b>S</b> (rotate gently: the tail strikes past 8.5°), then <b>G</b> gear up',
+      '<b>W A S D</b> or the arrows fly it, <b>V</b> changes the view, <b>Esc</b> gets out',
+    ],
+    quickMobile: [
+      'Take-off thrust: it rolls straight, rotates at ~145 kt and raises the gear by itself',
+      '<b>Left stick</b>: down climbs, up dives, sideways banks',
+      'Let go and it holds the attitude · <b>right stick</b>: thrust ↑↓',
+    ],
+    easyOn: 'Easy mode: α and g limited, rotation, rudder and gear handled for you',
+    easyTitle: 'Easy mode (L): angle of attack and g limited, rotation, rudder, bank and gear handled',
+    help: [
+      ['Pitch', 'S / ↓ nose up    W / ↑ nose down    + Shift: pull harder'],
+      ['Roll', 'A / ←  left    D / →  right'],
+      ['Easy mode', 'L  on / off: α and g limited, the rotation, rudder and bank held, the gear by itself'],
+      ['Rudder', 'Q  left    E  right    (Z / X too)    U  auto-rudder on / off'],
+      ['Thrust', 'R  more    F  less    Home idle    End take-off thrust'],
+      ['Gear, flaps', 'G  gear up / down: the flaps and slats follow it (they run up in ~20 s, never above 210 kt)'],
+      ['Spoilers', 'J  speed brakes up / down    B in the air: spoilers while held'],
+      ['Brakes', 'B or .  (hold, on the ground)    ,  parking brake'],
+      ['Trim', ';  nose down    \'  nose up'],
+      ['Engines', 'M  fuel off / on    K  starter (hold)'],
+      VIEWS_HELP,
+      ['HUD', 'I  show / hide    N  set altimeter'],
+      ...COMMON_TAIL,
+      ['Gamepad', 'left stick flies, right stick rudder / thrust, triggers brake'],
     ],
   },
 };

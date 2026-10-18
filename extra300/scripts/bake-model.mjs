@@ -1,5 +1,5 @@
 // bake-model.mjs — a Blender model (scripts/blender/<id>.py → data/model/<id>.json) packed into
-// the module the vibe ships with: src/render/data/<id>Model.js (the Extra 300L, the F-15C, the X-wing).
+// the module the vibe ships with: src/render/data/<id>Model.js (the Extra 300L, the F-15C, the X-wing, the 777).
 //
 //   node scripts/bake-model.mjs [extra300l | f15c | xwing | data/model/<id>.json]
 //
@@ -50,6 +50,7 @@ const MODELS = {
   extra300l: { script: 'extra300l.py', out: 'extra300lModel.js', name: 'EXTRA300L_MODEL' },
   f15c: { script: 'f15c.py', out: 'f15cModel.js', name: 'F15C_MODEL', posScale: 2048 },
   xwing: { script: 'xwing.py', out: 'xwingModel.js', name: 'XWING_MODEL', posScale: 2048 },
+  b777: { script: 'b777.py', out: 'b777Model.js', name: 'B777_MODEL', posScale: 512 },
 };
 
 function main() {

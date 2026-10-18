@@ -11,6 +11,7 @@
 import EXTRA from '../sim/aircraft/extra300l.js';
 import F15 from '../sim/aircraft/f15c.js';
 import XW from '../sim/aircraft/xwing.js';
+import B777 from '../sim/aircraft/b777.js';
 
 const ease = (t) => t * t * t * (t * (t * 6 - 15) + 10);   // smootherstep
 const lerp = (a, b, t) => a + (b - a) * t;
@@ -84,12 +85,32 @@ const XW_CARDS = [
   { kicker: 'Your X-wing', title: 'Runway 36', lines: ['Engines idling · R or End: throttle and boost · Space: lasers'] },
 ];
 
+// ── the 777: the nose and its windscreen, along the fuselage to an engine, over the wing, the tail,
+// into the left seat (its ground ~5.1 m below R; nose 35 m ahead, the tail 39 m behind) ──
+const B7_EYE = B777.eye;
+const B7_SHOTS = [
+  { t0: 0, t1: 5.5, eye: [[48, 9, 2.0], [43, 6, 0.8]], at: [[33, 0, -0.8], [32, 0, -1.0]], fov: [36, 32], card: 0 },
+  { t0: 5.5, t1: 10.5, eye: [[20, -22, 2.5], [6, -24, 0.5]], at: [[9, -9.6, 2.4], [2, -9.6, 2.2]], fov: [40, 46], card: 1 },
+  { t0: 10.5, t1: 15.5, eye: [[0, 34, -14], [-14, 26, -22]], at: [[-6, 16, 1.0], [-10, 2, 0]], fov: [50, 52], card: 2 },
+  { t0: 15.5, t1: 20.5, eye: [[-62, -18, 1.5], [-58, 16, -4]], at: [[-38, 0, -6], [-20, 0, -4]], fov: [40, 48], card: 3 },
+  { t0: 20.5, t1: 24.5, eye: [[22, -8, -6], B7_EYE], at: [[33, 0, -1.5], [B7_EYE[0] + 8, B7_EYE[1], B7_EYE[2] + 0.4]], fov: [50, 72], card: 4 },
+];
+const B7_CARDS = [
+  { kicker: 'Boeing Commercial Airplanes · Everett', title: 'Boeing 777-300ER', lines: ['The big twin: 350 seats, 13,650 km', 'Six-pane windscreen, a flight deck for two'] },
+  { kicker: 'Engines', title: '2 × General Electric GE90-115B', lines: ['513 kN each: the most powerful jet engines in service', 'A 3.25 m fan in a nacelle as wide as a 737\'s fuselage'] },
+  { kicker: 'Airframe', title: '64.8 m span, raked tips', lines: ['436.8 m² of wing, slats and flaps for 120 kt approaches', 'Six-wheel main bogies, 351 t maximum take-off'] },
+  { kicker: 'Envelope', title: 'Mach 0.84 at 35,000 ft', lines: ['73.86 m long · MMO 0.89 · ceiling 43,100 ft', 'Tail strike past ~8.5° on the runway: rotate gently'] },
+  { kicker: 'Your airplane', title: 'Cleared for take-off', lines: ['Engines idling, flaps set · R / End: thrust · rotate at ~145 kt'] },
+];
+
 /** Each airplane's film: shots, captions, the starter's window, its length. */
 export const INTROS = {
   extra300l: { shots: INTRO_SHOTS, cards: INTRO_CARDS, starter: INTRO_STARTER, length: INTRO_LENGTH },
   // the jet fuel starter needs longer to bring the cores to light-off
   f15c: { shots: F15_SHOTS, cards: F15_CARDS, starter: [1.4, 7.5], length: F15_SHOTS[F15_SHOTS.length - 1].t1 },
   xwing: { shots: XW_SHOTS, cards: XW_CARDS, starter: [1.4, 3.5], length: XW_SHOTS[XW_SHOTS.length - 1].t1 },
+  // the big fans need a while on the starter
+  b777: { shots: B7_SHOTS, cards: B7_CARDS, starter: [1.4, 12], length: B7_SHOTS[B7_SHOTS.length - 1].t1 },
 };
 
 /**
