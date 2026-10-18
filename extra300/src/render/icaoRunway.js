@@ -5,10 +5,11 @@
 // runway-local coordinates (along from the runway's centre, across to the right of the low end's
 // landing direction), as scenery.js uses them.
 
+import { RUNWAY_PAVE_H } from '../world/airport.js';
 import { MeshBuilder } from './geometry.js';
 import { numerals, runwayUvs, rwQuad, strokeOn } from './scenery.js';
 
-const Y_PAVE = 0.09, Y_PAINT = 0.11;    // over our own terrain's pavement (render/terrainModel.js, up to 0.04)
+const Y_PAVE = RUNWAY_PAVE_H, Y_PAINT = RUNWAY_PAVE_H + 0.02;   // over our own terrain's pavement (render/terrainModel.js, up to 0.04)
 
 /** A quadratic Bézier from a to c through control b, as a polyline. */
 function bezier(a, b, c, n = 16) {

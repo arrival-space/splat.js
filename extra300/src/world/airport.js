@@ -11,6 +11,10 @@
 
 import { LocalFrame } from './geo.js';
 
+// the drawn runway's pavement (render/icaoRunway.js), over our terrain's own (up to 0.04) and Google's
+// flattened ground (0): the wheels roll on it, not 9 cm under it
+export const RUNWAY_PAVE_H = 0.09;
+
 const UP = [0, 0, -1];
 const CELL = 2.5;          // the airport raster's cell (m)
 const FEATHER = 14;        // m: Google's ground eases onto the flattened pavement over this
@@ -195,7 +199,18 @@ export function buildAirport(data, osm, dem = null) {
     return shores.some((r) => inPoly(r, n, e)) && !islands.some((r) => inPoly(r, n, e));
   };
 
+  // the drawn runway's slab (its layout: the runway, its shoulders, the pavement past its ends)
+  const lay = data.layout;
+  const slab = lay ? { half: wid / 2 + lay.shoulder, v0: -len / 2 - lay.before[0], v1: len / 2 + lay.before[1] } : null;
+  const onSlab = (n, e) => {
+    if (!slab) return false;
+    const dn = n - c[0], de = e - c[1];
+    const a = dn * dir[0] + de * dir[1], x = -dn * dir[1] + de * dir[0];
+    return a >= slab.v0 && a <= slab.v1 && Math.abs(x) <= slab.half;
+  };
+
   const ground = (n, e) => {
+    if (onSlab(n, e)) return { h: RUNWAY_PAVE_H, normal: UP, surface: 'asphalt' };
     const k = rasterAt(n, e);
     if (k >= 0 && paved[k]) return { h: 0, normal: UP, surface: 'asphalt' };
     if (k >= 0 && inside[k]) return { h: 0, normal: UP, surface: 'grass' };

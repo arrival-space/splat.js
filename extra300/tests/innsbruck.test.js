@@ -19,14 +19,15 @@ test('elevation: the valley floor at the field, the Patscherkofel 1,650 m above 
   assert.ok(h > 2100 && h < 2300, `Patscherkofel ${h.toFixed(0)} m`);
 });
 
-test('runway 08/26: about 2 km, bearing 081°, level asphalt; the grass beside it level too', () => {
+test('runway 08/26: about 2 km, bearing 081°, level asphalt at the drawn slab\'s height; the grass beside it level', async () => {
+  const { RUNWAY_PAVE_H } = await import('../src/world/airport.js');
   const rw = w.runway;
   assert.ok(Math.abs(rw.length - 1950) < 80, `length ${rw.length.toFixed(0)}`);
   assert.ok(Math.abs((rw.bearing * 180) / Math.PI - 81) < 2, `bearing ${((rw.bearing * 180) / Math.PI).toFixed(1)}`);
   for (const al of [-900, -400, 0, 400, 900]) {
     const g = w.ground(rw.dir[0] * al, rw.dir[1] * al);
     assert.equal(g.surface, 'asphalt');
-    assert.equal(g.h, 0);
+    assert.equal(g.h, RUNWAY_PAVE_H);   // on render/icaoRunway.js's pavement, not 9 cm under it
   }
   const g = w.ground(-rw.dir[1] * 60, rw.dir[0] * 60);
   assert.equal(g.h, 0, 'the infield');
