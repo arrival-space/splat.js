@@ -49,11 +49,11 @@
   },
   "state": {
     "files": 2,
-    "memory": 3608837,
-    "updated": 1792353382711,
+    "memory": 4645895,
+    "updated": 1792355423389,
     "entities": 11,
     "entitySizes": {
-      "extra300-meigs": 3469763,
+      "extra300-meigs": 4506821,
       "google-3d-tiles": 139074
     }
   }
