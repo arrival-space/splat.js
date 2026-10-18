@@ -374,11 +374,23 @@ uniform vec4 uComp;            // metres per world unit, tonemap in-shader (1) o
 uniform vec4 uShadowArea;      // the clouds' shadow map: centre x, z (m), size (m), strength (0: none)
 uniform vec3 uRootWorld;       // the metre frame's origin, world
 uniform mat4 uPlaneVP;         // world -> the airplane seen from the sun (clip)
-uniform vec4 uPlaneInfo;       // the airplane's centre (world), strength (0: none)
-uniform vec4 uSunDirW;         // toward the sun (world), the airplane's half-thickness (world units)
+uniform vec4 uPlaneInfo;       // the airplane's depth map's origin (world), strength (0: none)
+uniform vec4 uSunDirW;         // toward the sun (world), 1 / the depth map's range (world units)
 varying vec2 vNdc;
 
 vec3 aces(vec3 x) { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0); }
+// 1 where the airplane is nearer the sun than depth dr (0 … 1, planeShadow.js), by more than a bias
+float planeTexel(vec2 pu, float dr) {
+    vec4 s = texture2D(uPlaneShadow, pu);
+    return s.a > 0.5 && dr > (s.r * 65280.0 + s.g * 255.0) / 65535.0 + 0.02 ? 1.0 : 0.0;
+}
+// … the four texels around pu compared, then blended (packed depth can't be filtered itself)
+float planeOcc(vec2 pu, float dr) {
+    vec2 t = pu * 512.0 - 0.5, f = fract(t), b = (floor(t) + 0.5) / 512.0;
+    float e = 1.0 / 512.0;
+    return mix(mix(planeTexel(b, dr), planeTexel(b + vec2(e, 0.0), dr), f.x),
+               mix(planeTexel(b + vec2(0.0, e), dr), planeTexel(b + vec2(e, e), dr), f.x), f.y);
+}
 
 void main(void) {
     vec2 uv = gl_FragCoord.xy * uScreenSize.zw;
@@ -396,16 +408,15 @@ void main(void) {
             float edge = smoothstep(0.0, 0.08, min(min(m.x, m.y), min(1.0 - m.x, 1.0 - m.y)));
             shade *= mix(1.0, texture2D(uCloudShadow, m).r, uShadowArea.w * edge);
         }
-        if (uPlaneInfo.w > 0.0 && dot(P - uPlaneInfo.xyz, uSunDirW.xyz) < -uSunDirW.w) {
+        if (uPlaneInfo.w > 0.0) {
             vec4 c = uPlaneVP * vec4(P, 1.0);
             vec2 pu = c.xy / c.w * 0.5 + 0.5;
             if (pu.x > 0.0 && pu.x < 1.0 && pu.y > 0.0 && pu.y < 1.0) {
-                float k = 0.006, occ = 0.0;
-                occ += texture2D(uPlaneShadow, pu).a * 0.4;
-                occ += texture2D(uPlaneShadow, pu + vec2(k, 0.0)).a * 0.15;
-                occ += texture2D(uPlaneShadow, pu - vec2(k, 0.0)).a * 0.15;
-                occ += texture2D(uPlaneShadow, pu + vec2(0.0, k)).a * 0.15;
-                occ += texture2D(uPlaneShadow, pu - vec2(0.0, k)).a * 0.15;
+                // how far down the sunbeam this point is, against the airplane's nearest there
+                float dr = dot(P - uPlaneInfo.xyz, -uSunDirW.xyz) * uSunDirW.w;
+                float k = 2.0 / 512.0;
+                float occ = planeOcc(pu, dr) * 0.4 + (planeOcc(pu + vec2(k, 0.0), dr) + planeOcc(pu - vec2(k, 0.0), dr)
+                    + planeOcc(pu + vec2(0.0, k), dr) + planeOcc(pu - vec2(0.0, k), dr)) * 0.15;
                 shade *= 1.0 - uPlaneInfo.w * occ;
             }
         }
@@ -449,7 +460,18 @@ uniform uSunDirW: vec4f;
 varying vNdc: vec2f;
 
 fn aces(x: vec3f) -> vec3f { return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), vec3f(0.0), vec3f(1.0)); }
-fn planeOcc(pu: vec2f) -> f32 { return textureSampleLevel(uPlaneShadow, uPlaneShadowSampler, pu, 0.0).a; }
+fn planeTexel(pu: vec2f, dr: f32) -> f32 {
+    let s = textureSampleLevel(uPlaneShadow, uPlaneShadowSampler, pu, 0.0);
+    return select(0.0, 1.0, s.a > 0.5 && dr > (s.r * 65280.0 + s.g * 255.0) / 65535.0 + 0.02);
+}
+fn planeOcc(pu: vec2f, dr: f32) -> f32 {
+    let t = pu * 512.0 - 0.5;
+    let f = fract(t);
+    let b = (floor(t) + 0.5) / 512.0;
+    let e = 1.0 / 512.0;
+    return mix(mix(planeTexel(b, dr), planeTexel(b + vec2f(e, 0.0), dr), f.x),
+               mix(planeTexel(b + vec2f(0.0, e), dr), planeTexel(b + vec2f(e, e), dr), f.x), f.y);
+}
 
 @fragment fn fragmentMain(input: FragmentInput) -> FragmentOutput {
     var output: FragmentOutput;
@@ -467,12 +489,14 @@ fn planeOcc(pu: vec2f) -> f32 { return textureSampleLevel(uPlaneShadow, uPlaneSh
             let edge = smoothstep(0.0, 0.08, min(min(m.x, m.y), min(1.0 - m.x, 1.0 - m.y)));
             shade *= mix(1.0, textureSampleLevel(uCloudShadow, uCloudShadowSampler, m, 0.0).r, uniform.uShadowArea.w * edge);
         }
-        if (uniform.uPlaneInfo.w > 0.0 && dot(P - uniform.uPlaneInfo.xyz, uniform.uSunDirW.xyz) < -uniform.uSunDirW.w) {
+        if (uniform.uPlaneInfo.w > 0.0) {
             let c = uniform.uPlaneVP * vec4f(P, 1.0);
             let pu = c.xy / c.w * 0.5 + 0.5;
             if (pu.x > 0.0 && pu.x < 1.0 && pu.y > 0.0 && pu.y < 1.0) {
-                let k = 0.006;
-                let occ = planeOcc(pu) * 0.4 + (planeOcc(pu + vec2f(k, 0.0)) + planeOcc(pu - vec2f(k, 0.0)) + planeOcc(pu + vec2f(0.0, k)) + planeOcc(pu - vec2f(0.0, k))) * 0.15;
+                let dr = dot(P - uniform.uPlaneInfo.xyz, -uniform.uSunDirW.xyz) * uniform.uSunDirW.w;
+                let k = 2.0 / 512.0;
+                let occ = planeOcc(pu, dr) * 0.4 + (planeOcc(pu + vec2f(k, 0.0), dr) + planeOcc(pu - vec2f(k, 0.0), dr)
+                    + planeOcc(pu + vec2f(0.0, k), dr) + planeOcc(pu - vec2f(0.0, k), dr)) * 0.15;
                 shade *= 1.0 - uniform.uPlaneInfo.w * occ;
             }
         }
@@ -514,9 +538,9 @@ function skyLight(sunUp) {
 /** A clouds preset: coverage and how deep the layer is (m). */
 export const CLOUD_PRESETS = {
   Clear: null,
-  Few: { coverage: 0.3, depth: 1400 },
-  Scattered: { coverage: 0.45, depth: 1700 },
-  Broken: { coverage: 0.62, depth: 2000 },
+  Few: { coverage: 0.26, depth: 1400 },
+  Scattered: { coverage: 0.4, depth: 1700 },
+  Broken: { coverage: 0.58, depth: 2000 },
   Overcast: { coverage: 0.9, depth: 900 },
 };
 
@@ -762,13 +786,14 @@ export class CloudLayer {
     c.setParameter('uComp', [1 / o.ws, o.hdr ? 0 : 1, 1.0, this._clouds ? 1 : 0]);
     c.setParameter('uRootWorld', [rootPos.x, rootPos.y, rootPos.z]);
     // the clouds' shadow: weaker the lower the sun (the sky lights more of what the sun doesn't)
-    const sunShadow = smooth(0.02, 0.25, o.sunDir[1]) * 0.45;
+    const sunUp = smooth(0.02, 0.25, o.sunDir[1]);
+    const sunShadow = sunUp * 0.32, planeShadow = sunUp * 0.45 * 0.95;
     c.setParameter('uCloudShadow', this._clouds ? this.shadowTex : this._white);
     c.setParameter('uShadowArea', [sx, sz, SHADOW_SIZE, this._clouds ? sunShadow : 0]);
     c.setParameter('uPlaneShadow', plane ? plane.texture : this._clear);
     c.setParameter('uPlaneVP', plane ? plane.viewProj : IDENTITY);
-    c.setParameter('uPlaneInfo', plane ? [...plane.centre, sunShadow * 0.95] : [0, 0, 0, 0]);
-    c.setParameter('uSunDirW', [o.sunDir[0], o.sunDir[1], o.sunDir[2], plane ? plane.halfThickness : 0]);
+    c.setParameter('uPlaneInfo', plane ? [...plane.origin, planeShadow] : [0, 0, 0, 0]);
+    c.setParameter('uSunDirW', [o.sunDir[0], o.sunDir[1], o.sunDir[2], plane ? plane.invRange : 0]);
   }
 
   destroy() {

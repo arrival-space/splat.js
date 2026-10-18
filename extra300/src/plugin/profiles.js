@@ -76,7 +76,7 @@ export const PROFILES = {
     chaseSize: 2.1,
     demo: 'carrier',           // the demo flight (O): a carrier landing
     // the avatar on the ACES II seat, upright under the bubble: body x of its root, body z, lean back (°)
-    seat: { forward: F15.eye[0] + 0.22, height: F15.eye[2] + 1.12, lean: 10 },
+    seat: { forward: F15.eye[0] + 0.22, height: F15.eye[2] + 1.32, lean: 10 },   // 20 cm under the eye line: the helmet clears the bubble
     quick: [
       'Hold <b>End</b> (or <b>R</b>) for the burners, keep it straight with <b>Q</b> / <b>E</b>',
       'At 130 kt ease back on <b>S</b> (or <b>↓</b>), then <b>G</b> brings the gear up',
