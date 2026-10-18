@@ -26,6 +26,8 @@
       "showPanel": true,
       "showScenery": true,
       "fuelLiters": 60,
+      "clouds": "Scattered",
+      "cloudBaseFt": 4500,
       "windKt": 0,
       "windFromDeg": 0,
       "qnhInHg": 29.92,
