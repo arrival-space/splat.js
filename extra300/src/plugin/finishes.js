@@ -127,7 +127,7 @@ export function glassTintMaterial(device, tint) {
   if (cache.has(key)) return cache.get(key);
   const m = new pc.StandardMaterial();
   m.diffuse = new pc.Color().fromString(tint);
-  m.opacity = 0.22;
+  m.opacity = 0.1;            // clear acrylic: a faint cast, the view through it barely dimmed
   m.blendType = pc.BLEND_NORMAL;
   m.depthWrite = false;
   m.useMetalness = false;
@@ -138,6 +138,32 @@ export function glassTintMaterial(device, tint) {
   return m;
 }
 
+// Schlick's Fresnel as it is: from the specular colour head on to a mirror at a grazing look. The
+// engine's caps the grazing reflectance at gloss² × the specular colour, so a dielectric's never rose
+// above its 4 %: glass had no rim, no sheen of sky across its curve.
+const FRESNEL_GLSL = `
+float pow5(float x) { float x2 = x * x; return x2 * x2 * x; }
+vec3 getFresnel(float cosTheta, float gloss, vec3 specularity
+#if defined(LIT_IRIDESCENCE)
+    , vec3 iridescenceFresnel, float iridescenceIntensity
+#endif
+) {
+    return specularity + (1.0 - specularity) * pow5(1.0 - saturate(cosTheta));
+}
+float getFresnelCC(float cosTheta) { return 0.04 + 0.96 * pow5(1.0 - saturate(cosTheta)); }
+`;
+const FRESNEL_WGSL = `
+fn pow5(x: f32) -> f32 { let x2: f32 = x * x; return x2 * x2 * x; }
+fn getFresnel(cosTheta: f32, gloss: f32, specularity: vec3f
+#if defined(LIT_IRIDESCENCE)
+    , iridescenceFresnel: vec3f, iridescenceIntensity: f32
+#endif
+) -> vec3f {
+    return specularity + (vec3f(1.0) - specularity) * pow5(1.0 - saturate(cosTheta));
+}
+fn getFresnelCC(cosTheta: f32) -> f32 { return 0.04 + 0.96 * pow5(1.0 - saturate(cosTheta)); }
+`;
+
 export function glassReflectionMaterial(device, f0 = 0.06) {
   const key = `glassReflection${f0}`;
   if (cache.has(key)) return cache.get(key);
@@ -147,7 +173,10 @@ export function glassReflectionMaterial(device, f0 = 0.06) {
   m.ambient = new pc.Color(0, 0, 0);
   m.useMetalness = false;
   m.specular = new pc.Color(f0, f0, f0);   // acrylic's 4 % a surface; the canopy a little over, for the pair
-  m.gloss = 0.97;
+  // the sun's glint a few degrees across (the cube's reflection takes no blur from gloss: it stays sharp)
+  m.gloss = 0.88;
+  m.getShaderChunks('glsl').set('fresnelSchlickPS', FRESNEL_GLSL);
+  m.getShaderChunks('wgsl').set('fresnelSchlickPS', FRESNEL_WGSL);
   reflecting(m, true);
   m.reflectivity = 1;
   m.blendType = pc.BLEND_ADDITIVE;

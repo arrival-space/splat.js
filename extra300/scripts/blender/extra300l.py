@@ -46,7 +46,7 @@ RAIL_Z = -0.18                                  # canopy rail (cockpit sill), bo
 COLORS = {
     'white': '#f3f1ec', 'red': '#c41e2a', 'dark': '#1b1d22', 'tyre': '#151515', 'metal': '#a4a7ab',
     'panel': '#2b2d31', 'gauge': '#0c0d0f', 'seat': '#1d2b52', 'strap': '#7a1a20', 'yellow': '#e9c21b',
-    'navRed': '#ff2a2a', 'navGreen': '#22d25a', 'glass': '#4f6678', 'floor': '#3a3c40', 'chrome': '#d9dadc',
+    'navRed': '#ff2a2a', 'navGreen': '#22d25a', 'glass': '#6f7f7c', 'floor': '#3a3c40', 'chrome': '#d9dadc',
     'carbon': '#1a1b1f', 'hood': '#7c8086', 'dialMark': '#d6d6d2', 'attSky': '#3f7fc4', 'attGround': '#7a5230',
     'screenGps': '#5b4fc4', 'screenLcd': '#2c3a33',
 }
