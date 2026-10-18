@@ -1013,7 +1013,7 @@ export class Extra300 extends ArrivalScript {
     this.visual.update(this.ac, this._paused ? 0 : dt);
     if (this.showCarrier) this.carrierVisual.update(this.ac);
     if (this.profile.lasers) {
-      if (this.lasers.update(this.ac, !!this.ac.controls.fire && !this._intro && !this._demo && !this._paused, this._paused ? 0 : dt)) this.sound.pew?.();
+      if (this.lasers.update(this.ac, !!this.ac.controls.fire && !this._intro && !this._demo && !this._paused, this._paused ? 0 : dt, this._laserSolid)) this.sound.pew?.();
       // a first-time hint once it is flying with its wings still closed
       if (!this._sfoilHint && !this.isMobile && this.ac.agl > 40 && !this.mapper.sfoils) {
         this._sfoilHint = true;
@@ -1111,6 +1111,13 @@ export class Extra300 extends ArrivalScript {
     if (h > 450) return;
     if (this.world.buildingAt(p[0], p[1], h)) this._crash('You hit a building. Backspace to reset');
   }
+
+  /** What a laser bolt bursts on: the ground or the water, the ship, a building (n, e, h above the datum). */
+  _laserSolid = (n, e, h) => {
+    if (h <= this.world.ground(n, e).h) return true;
+    if (this.showCarrier && this._dest === 'meigs' && (this.carrier.hullContains(n, e, h) || this.carrier.islandContains(n, e, h))) return true;
+    return !!(this.world.osm && h < 450 && this.world.buildingAt(n, e, h));
+  };
 
   _crash(message) {
     this.ac.damage.crashed = true;

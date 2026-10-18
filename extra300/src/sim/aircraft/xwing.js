@@ -97,8 +97,10 @@ export const XWING = {
     ftitIdle: 300, ftitMil: 700, windmillDrag: 0,
   },
   repulsor: { share: 0.99, fadeSpeed: 140, cushionHeight: 25, damping: 1.4 },
-  thrusters: { roll: 220 * DEG, pitch: 95 * DEG, yaw: 45 * DEG, gain: 30, gLimit: 9 },
-  stabilizers: { rate: 1.6, maxG: 9 },
+  // no g limit: the stick's full rate at any speed, and the stabilizers swing the flight path onto
+  // the nose however hard that is (an arcade starfighter; nobody aboard blacks out)
+  thrusters: { roll: 220 * DEG, pitch: 95 * DEG, yaw: 45 * DEG, gain: 30 },
+  stabilizers: { rate: 3.5 },
   sfoils: WING,
 
   gear: {
@@ -120,14 +122,14 @@ export const XWING = {
     ],
   },
 
-  limits: { vso: 0, vs1: 0, vne: 1400, mmo: 3.3, gPos: 9, gNeg: -4 },
+  limits: { vso: 0, vs1: 0, vne: 1400, mmo: 3.3, gPos: 40, gNeg: -40 },
 
   handling: {
     // the stick is a rate command: a held key asks for most of the rate, Shift for all of it
     keyAuthority: { elevator: { c: 0, k0: 1 }, aileron: { c: 0, k0: 1 }, rudder: { c: 0, k0: 1 } },
     keyCap: { elevator: 0.8, aileron: 0.7, rudder: 0.8 },
     buffetAlpha: 40 * DEG,
-    easy: { alphaMax: 30 * DEG, rotateQ: 0.5 * 1.225 * (70 * KT) ** 2, climbPitch: 15 * DEG, gMax: 8, gMin: -4, holdSpeedKt: [40, 120], minQ: 30 },
+    easy: { alphaMax: 30 * DEG, rotateQ: 0.5 * 1.225 * (70 * KT) ** 2, climbPitch: 15 * DEG, gMax: 1e3, gMin: -1e3, holdSpeedKt: [40, 120], minQ: 30 },
     throttleRate: 0.6,
   },
 

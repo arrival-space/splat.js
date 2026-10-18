@@ -80,7 +80,7 @@ const XW_CARDS = [
   { kicker: 'Incom Corporation · T-65B', title: 'X-wing', lines: ['Starfighter: a long nose, four S-foils, an astromech behind the pilot', 'Meigs Field, Chicago · runway 36'] },
   { kicker: 'Engines', title: '4 × Incom 4L4 fusial thrust', lines: ['This sim: 60 kN each, 110 kN on boost past 80 % throttle', 'Repulsorlifts carry it when slow: it hovers'] },
   { kicker: 'S-foils', title: '4 × KX9 laser cannons', lines: ['J swings the S-foils into attack position', 'Space fires the lasers (S-foils open)'] },
-  { kicker: 'This sim', title: 'Mach 2 on the deck', lines: ['Past Mach 3 up high, S-foils closed for cruise', 'Reaction thrusters: 220°/s roll, 9 g'] },
+  { kicker: 'This sim', title: 'Mach 2 on the deck', lines: ['Past Mach 3 up high, S-foils closed for cruise', 'Reaction thrusters: 220°/s roll, no g limit'] },
   { kicker: 'Your X-wing', title: 'Runway 36', lines: ['Engines idling · R or End: throttle and boost · Space: lasers'] },
 ];
 

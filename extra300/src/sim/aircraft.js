@@ -284,8 +284,8 @@ export class Aircraft {
       // body there (on the wheels they have little to push against)
       const t = sp.thrusters, I = this.inertia;
       const k = t.gain * (this.gear.onGround ? 0.3 : 1);
-      // the pitch rate a turn at this speed can take within the g limit
-      const qMax = Math.min(t.pitch, (t.gLimit * G0) / Math.max(tas, 1));
+      // the pitch rate a turn at this speed can take within the g limit (none: the full rate at any speed)
+      const qMax = t.gLimit ? Math.min(t.pitch, (t.gLimit * G0) / Math.max(tas, 1)) : t.pitch;
       M[0] += I.xx * k * (clamp(c.aileron || 0, -1, 1) * t.roll - st.omega[0]);
       M[1] += I.yy * k * (clamp(c.elevator || 0, -1, 1) * qMax - st.omega[1]);
       M[2] += I.zz * k * (clamp(c.rudder || 0, -1, 1) * t.yaw - st.omega[2]);
@@ -295,7 +295,7 @@ export class Aircraft {
       // the ship goes where it points (a fighter's wing does it with lift; these do it at any speed)
       const s = sp.stabilizers, m = this.mass;
       let fy = -m * s.rate * vAirB[1], fz = -m * s.rate * vAirB[2];
-      const f = Math.hypot(fy, fz), lim = m * G0 * s.maxG;
+      const f = Math.hypot(fy, fz), lim = s.maxG ? m * G0 * s.maxG : Infinity;
       if (f > lim) { fy *= lim / f; fz *= lim / f; }
       F[1] += fy; F[2] += fz;
     }

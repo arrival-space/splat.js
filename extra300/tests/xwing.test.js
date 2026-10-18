@@ -59,7 +59,7 @@ test('parked at idle it sits on its gear; with throttle it lifts off within ~150
   assert.equal(ac.events.length, 0, ac.events.map((e) => e.e).join(' '));
 });
 
-test('thrusters: full stick rolls ~190 °/s; a full pull is held to about the 9 g limit', () => {
+test('thrusters: full stick rolls ~190 °/s; a full pull turns at the full rate, no g limit, even at Mach 3 high up', () => {
   const a = new Aircraft(XW, { ground: AIR });
   a.placeInFlight(0, 0, 1000, 0, 200);
   let p = 0;
@@ -69,7 +69,17 @@ test('thrusters: full stick rolls ~190 °/s; a full pull is held to about the 9 
   b.placeInFlight(0, 0, 1000, 0, 250);
   let g = 0;
   for (let t = 0; t < 4; t += 1 / 60) { b.controls.elevator = 1; b.update(1 / 60); g = Math.max(g, b.out.loadFactor); }
-  assert.ok(g > 5 && g < 10.5, `${g.toFixed(1)} g`);
+  assert.ok(g > 12, `${g.toFixed(1)} g`);
+  // up high and fast: the nose still comes round at most of the rate, and the flight path follows it
+  const c = new Aircraft(XW, { ground: AIR });
+  c.placeInFlight(0, 0, 25000, 0, 1000);
+  let q = 0;
+  for (let t = 0; t < 0.6; t += 1 / 60) { c.controls.elevator = 1; c.update(1 / 60); q = Math.max(q, c.state.omega[1]); }
+  c.controls.elevator = 0;
+  for (let t = 0; t < 1; t += 1 / 60) c.update(1 / 60);
+  assert.ok(q / DEG > 60, `${(q / DEG).toFixed(0)} °/s`);
+  const v = c.state.vel, climb = Math.asin(-v[2] / Math.hypot(...v)) / DEG;
+  assert.ok(climb > 30, `flight path ${climb.toFixed(0)}° up a second after a 0.6 s pull`);
 });
 
 test('S-foils: closed on the ground, they swing into attack position in a second once airborne', () => {

@@ -171,7 +171,8 @@ export class JetSound {
 
 /**
  * The X-wing: the jets' synthesis pitched up into the fusial engines' scream, and the lasers' pew —
- * a falling sweep with a crack of noise on top.
+ * a falling sweep, a thump under it and a crack of noise on top, on its own line past the engines'
+ * mix (low and fast the wind's roar would bury it) and pitched above the wind's band.
  */
 export class XwingSound extends JetSound {
   update(s) {
@@ -179,21 +180,59 @@ export class XwingSound extends JetSound {
   }
 
   pew() {
-    const ctx = this.ctx, n = this.nodes;
-    if (!ctx || !n || this.muted) return;
+    const ctx = this.ctx;
+    if (!ctx || !this.nodes || this.muted) return;
     const t = ctx.currentTime;
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(1900, t);
-    o.frequency.exponentialRampToValueAtTime(240, t + 0.18);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.22, t + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-    const f = ctx.createBiquadFilter();
-    f.type = 'bandpass'; f.frequency.value = 900; f.Q.value = 0.8;
-    o.connect(f).connect(g).connect(n.master);
-    o.start(t);
-    o.stop(t + 0.25);
+    if (!this._pewOut) {
+      this._pewOut = ctx.createGain();
+      this._pewOut.gain.value = 0.8;
+      this._pewOut.connect(ctx.destination);
+      const buf = ctx.createBuffer(1, Math.round(ctx.sampleRate * 0.1), ctx.sampleRate);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      this._pewNoise = buf;
+    }
+    const out = this._pewOut;
+    const env = (g, peak, attack, decay) => {
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak, t + attack);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
+    };
+    // the sweep: two detuned saws falling from a high whistle
+    const sweepG = ctx.createGain();
+    env(sweepG, 0.32, 0.004, 0.2);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 0.7;
+    bp.frequency.setValueAtTime(3200, t);
+    bp.frequency.exponentialRampToValueAtTime(900, t + 0.18);
+    bp.connect(sweepG).connect(out);
+    for (const m of [1, 1.02]) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(2800 * m, t);
+      o.frequency.exponentialRampToValueAtTime(320 * m, t + 0.17);
+      o.connect(bp);
+      o.start(t);
+      o.stop(t + 0.24);
+    }
+    // the thump
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(190, t);
+    sub.frequency.exponentialRampToValueAtTime(55, t + 0.09);
+    const subG = ctx.createGain();
+    env(subG, 0.35, 0.003, 0.1);
+    sub.connect(subG).connect(out);
+    sub.start(t);
+    sub.stop(t + 0.12);
+    // the crack
+    const n = ctx.createBufferSource();
+    n.buffer = this._pewNoise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 2500;
+    const nG = ctx.createGain();
+    env(nG, 0.25, 0.002, 0.04);
+    n.connect(hp).connect(nG).connect(out);
+    n.start(t);
   }
 }
