@@ -94,7 +94,7 @@ export class Extra300 extends ArrivalScript {
   clouds = 'Scattered';
   cloudBaseFt = 4500;
   waterReflections = true;
-  engineRunningAtStart = true;
+  engineRunningAtStart = false;   // off: the first throttle starts it (update)
   showPanel = true;
   showScenery = true;
   fuelLiters = 60;
@@ -108,7 +108,6 @@ export class Extra300 extends ArrivalScript {
   playIntro = true;
   introOnLoad = false;
   startMenu = false;
-  autoStart = true;
   debugSpheres = false;
   seatAnimation = 'driving.glb';
   avatarLean = 20;            // degrees the avatar leans back into the reclined seat
@@ -122,7 +121,7 @@ export class Extra300 extends ArrivalScript {
     startRunway: { title: 'Start: runway 36, 18 (at Innsbruck: 26, 08), or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
     showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
     waterReflections: { title: 'Reflections in the lake (screen-space: the airplane, the carrier, the skyline)' },
-    engineRunningAtStart: { title: 'Engine running at start' },
+    engineRunningAtStart: { title: 'Engine running at start (off: the first throttle cranks it with the starter)' },
     showPanel: { title: 'Instrument panel' },
     showScenery: { title: 'Meigs & Chicago scenery' },
     fuelLiters: { title: 'Fuel, centre tank (L) — the Extra (the F-15 carries ~64 % internal)', min: 5, max: 60, step: 1 },
@@ -137,7 +136,6 @@ export class Extra300 extends ArrivalScript {
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
     debugSpheres: { title: 'Debug: three spheres over the airplane (its white paint, a mirror, clear glass), lit and reflecting as it is (or ?spheres on the address)' },
-    autoStart: { title: 'Board at start: straight into the airplane (the chase view) at the destination' },
     startMenu: { title: 'Start menu: pick the airport and airplane before anything loads (skipped when the address names both)' },
     introOnLoad: { title: 'Film mode: board and play the intro by itself after loading (or open the space with ?intro)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
@@ -206,8 +204,8 @@ export class Extra300 extends ArrivalScript {
     this.hud.setEasy(this.mapper.easy);
     // in flight the sun's shadow map is fitted round the airplane, wherever the camera is
     this._shadowFit = new PlaneShadowFit(this.app, () => this._shadowFocus());
-    // and its paint reflects the world round it (a small cube rendered from it, a face at a time)
-    this._probe = new ReflectionProbe(this.app, this.isMobile ? { size: 64, every: 4 } : {});
+    // and its paint reflects the world round it (a small cube rendered from it, two faces a frame)
+    this._probe = new ReflectionProbe(this.app, this.isMobile ? { size: 64, every: 2, faces: 1 } : {});   // the whole cube every 3 frames (a phone: every 12)
 
     // input
     this._onKeyDown = (e) => this._keyDown(e);
@@ -219,7 +217,7 @@ export class Extra300 extends ArrivalScript {
     window.addEventListener('blur', this._onBlur);
     window.addEventListener('resize', this._onResize);
     const canvas = this.app.graphicsDevice.canvas;
-    this._onPointerDown = (e) => { this._mouse.dragging = true; this._mouse.lastX = e.clientX; this._mouse.lastY = e.clientY; };
+    this._onPointerDown = (e) => { if (this._flying) this.sound?.start(); this._mouse.dragging = true; this._mouse.lastX = e.clientX; this._mouse.lastY = e.clientY; };
     this._onPointerUp = () => { this._mouse.dragging = false; };
     this._onPointerMove = (e) => this._pointerMove(e);
     canvas.addEventListener('pointerdown', this._onPointerDown);
@@ -273,20 +271,15 @@ export class Extra300 extends ArrivalScript {
         { place: askedPlace, aircraft: askedAircraft, isMobile: this.isMobile, onStart: (place, ac) => this._start(place, ac) });
       return;
     }
+    // the destination and the airplane, parked with its engine off, Google's tiles held till the globe
+    // is there; the visitor arrives on foot to walk to it (E boards)
     const want = askedPlace || destinationByTitle(this.destination).id;
-    if (this.autoStart && !this._filmPending) {
-      // straight in: the place and the airplane loaded (Google's tiles held till the globe is there),
-      // then aboard in the chase view
-      this._worldRoot.enabled = false;
-      this.app.googleTilesHold = true;
-      this._start(want, Object.keys(PROFILES).find((id) => PROFILES[id] === this.profile));
-      return;
-    }
-    if (want === 'meigs') this._ensureCity();
-    else this._goTo(want);
+    this._worldRoot.enabled = false;
+    this.app.googleTilesHold = true;
+    this._start(want, Object.keys(PROFILES).find((id) => PROFILES[id] === this.profile));
   }
 
-  /** The start (the menu's choice, or the settings'): the airplane, the place loaded, Google's tiles let go, and aboard. */
+  /** The start (the menu's choice, or the settings'): the airplane, the place loaded, Google's tiles let go, the visitor on foot. */
   async _start(place, aircraft) {
     this._menu?.setStatus(`Loading ${DESTINATIONS[place].short}…`);
     this._switchAircraft(PROFILES[aircraft]);
@@ -298,7 +291,8 @@ export class Extra300 extends ArrivalScript {
     this._worldRoot.enabled = true;
     this.hud.placeButton.style.display = 'block';
     this.app.googleTilesHold = false;
-    this._boardPending = true;   // aboard (update) once the player is there to seat
+    // the visitor's avatar, to walk round the airplane (not a free camera); film mode boards by itself
+    if (!this._flying && !this._filmPending) ArrivalSpace.setCameraMode?.('third');
   }
 
   /** The OpenStreetMap city, loaded the first time Meigs is where we are. */
@@ -720,6 +714,8 @@ export class Extra300 extends ArrivalScript {
     this.ac.controls.parkingBrake = true;
     this._autoBrake = true;
     this.ac.setEngineRunning(this.engineRunningAtStart);
+    this._autoStarter = !this.engineRunningAtStart;
+    this._crankT = 0;
     if (!this.ac.jet) {
       this.ac.engine.oilTemp = this.engineRunningAtStart ? 70 : this.oatC;
       this.ac.engine.cht = this.engineRunningAtStart ? 150 : this.oatC;
@@ -880,6 +876,8 @@ export class Extra300 extends ArrivalScript {
     c.starter = false;
     c.parkingBrake = false;
     if (this.engineRunningAtStart && !this.ac.engine.running) this.ac.setEngineRunning(true);
+    this._autoStarter = !this.ac.engine.running;
+    this._crankT = 0;
     this.hud.showIntro(false);
     this.hud.setFlying(true, this._panelVisible);
     this.cameraRig.view = 'cockpit';
@@ -1040,6 +1038,9 @@ export class Extra300 extends ArrivalScript {
   _keyDown(e) {
     const t = e.target;
     if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    // the browser keeps the sound muted until a key or a click: boarded by itself at load, the
+    // airplane's sound waits for the first one
+    if (this._flying) this.sound?.start();
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (!this._flying) {
       if (key === 'e' && this._nearAircraft()) { this._enter(); e.preventDefault(); }
@@ -1165,12 +1166,6 @@ export class Extra300 extends ArrivalScript {
       if (!this.city.queue.length) this.scenery.standInCity = false;
     }
     if (!this._flying) {
-      if (this._boardPending && ArrivalSpace.getPlayer?.()) {
-        this._boardPending = false;
-        this.cameraRig.view = 'chase';
-        this.cameraRig.chasePos = null;
-        this._enter();
-      }
       if (this._filmPending) this._filmTick(dt);
       if (!this._flying) this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? this.profile.title : `Press E to fly the ${this.profile.title}`) : '');
       return;
@@ -1192,6 +1187,14 @@ export class Extra300 extends ArrivalScript {
       this.hud.showDemoStatus(this._demoText());
     } else {
       this.mapper.update(raw, dt, this.ac.controls, this.ac.flightState());
+    }
+    // the engine: off at the start, cranked by its starter on the first throttle until it runs (30 s at
+    // most: the 777's cores take ~10 s to light)
+    if (this._autoStarter && !this._intro && this.mapper.throttle > 0.02) {
+      const c = this.ac.controls;
+      this._crankT += dt;
+      if (this.ac.engine.running || this._crankT > 30) { c.starter = false; this._autoStarter = false; }
+      else c.starter = true;
     }
     // the auto brake: on from the start, off once the throttle opens (or the pilot works the brake)
     if (this._autoBrake && !this._intro) {

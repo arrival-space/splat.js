@@ -1,7 +1,7 @@
 // reflectionProbe.js — what the airplane's paint reflects: the world round it, live. Screen-space
 // reflections don't suit a convex hull (most of what it reflects, the ground under the belly, the sky,
 // the scenery behind the camera, isn't on the screen), so a small cube is rendered from the airplane
-// instead, a face at a time, and the paint, metal and canopy take it for their reflections
+// instead, a couple of faces a frame, and the paint, metal and canopy take it for their reflections
 // (plugin/finishes.js). The airplane and its pilot are hidden from the cube's own cameras.
 //
 // Its sky is our own blue gradient (render/sky.js), drawn for the cube alone: Google's atmosphere
@@ -20,11 +20,13 @@ const ROTATIONS = [[0, 90, 0], [0, -90, 0], [-90, 0, 180], [90, 0, 180], [0, 180
 export class ReflectionProbe {
   /**
    * @param {pc.AppBase} app
-   * @param {{ size?: number, every?: number }} [o]  face size (px); frames between face renders
+   * @param {{ size?: number, every?: number, faces?: number }} [o]  face size (px); frames between renders;
+   *        faces rendered each time
    */
-  constructor(app, { size = 128, every = 2 } = {}) {
+  constructor(app, { size = 128, every = 1, faces = 2 } = {}) {
     this.app = app;
     this.every = every;
+    this.perFrame = faces;
     this.size = size;
     const device = app.graphicsDevice;
     this.texture = new pc.Texture(device, {
@@ -84,7 +86,7 @@ export class ReflectionProbe {
   }
 
   /**
-   * Once a frame: the cube at `at` (world), a face rendered every `every` frames; nothing while off.
+   * Once a frame: the cube at `at` (world), `faces` of it rendered every `every` frames; nothing while off.
    * @returns {boolean} whether the cube is whole (all six faces rendered since it started)
    */
   update(at, on, scale = 1, sun = null) {
@@ -101,12 +103,14 @@ export class ReflectionProbe {
       old.destroy();
     }
     if (this.frame++ % this.every === 0) {
-      const f = this.faces[this.face];
-      f.camera.nearClip = 0.1 * scale;
-      f.camera.farClip = 60000 * scale;
-      f.enabled = true;
-      this.face = (this.face + 1) % 6;
-      this.filled++;
+      for (let k = 0; k < this.perFrame; k++) {
+        const f = this.faces[this.face];
+        f.camera.nearClip = 0.1 * scale;
+        f.camera.farClip = 60000 * scale;
+        f.enabled = true;
+        this.face = (this.face + 1) % 6;
+        this.filled++;
+      }
     }
     return this.filled > 6;
   }
