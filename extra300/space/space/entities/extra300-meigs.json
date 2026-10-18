@@ -34,7 +34,7 @@
       "oatC": 15,
       "skylineYear": 2026,
       "cityDetail": "full",
-      "easyMode": false,
+      "easyMode": true,
       "playIntro": true,
       "debugSpheres": false,
       "startMenu": true,
