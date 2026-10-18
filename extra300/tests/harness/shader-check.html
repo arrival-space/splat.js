@@ -1,0 +1,44 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>shader check</title>
+<script type="importmap">{ "imports": { "playcanvas": "/node_modules/playcanvas/build/playcanvas.mjs" } }</script>
+<style>html,body{margin:0;background:#000}canvas{width:640px;height:360px}</style></head>
+<body><canvas id="c" width="640" height="360"></canvas>
+<script type="module">
+// shader-check.html — compile and draw one full-screen ShaderMaterial on WebGL2 or WebGPU
+// (?gpu=webgpu), without the scene: a quick check that a shader's GLSL and WGSL both build.
+// window.checkShader(desc, setup) → resolves with the errors the device reported (empty: it drew).
+import * as pc from 'playcanvas';
+window.pc = pc;
+const params = new URLSearchParams(location.search);
+const canvas = document.getElementById('c');
+const errors = [];
+const origError = console.error;
+console.error = (...a) => { errors.push(a.join(' ')); origError(...a); };
+const graphicsDevice = await pc.createGraphicsDevice(canvas, { deviceTypes: [params.get('gpu') === 'webgpu' ? 'webgpu' : 'webgl2'] });
+const app = new pc.Application(canvas, { graphicsDevice });
+app.start();
+const cam = new pc.Entity('cam');
+cam.addComponent('camera', { clearColor: new pc.Color(0.2, 0.3, 0.4) });
+app.root.addChild(cam);
+window.app = app;
+window.checkShader = async (desc, setup) => {
+  errors.length = 0;
+  const m = new pc.ShaderMaterial(desc);
+  m.cull = pc.CULLFACE_NONE;
+  m.depthTest = false;
+  setup?.(m, app);
+  m.update();
+  const mesh = new pc.Mesh(app.graphicsDevice);
+  mesh.setPositions(new Float32Array([-1, -1, 0, 3, -1, 0, -1, 3, 0]));
+  mesh.setIndices(new Uint16Array([0, 1, 2]));
+  mesh.update(pc.PRIMITIVE_TRIANGLES);
+  const mi = new pc.MeshInstance(mesh, m);
+  mi.cull = false;
+  const e = new pc.Entity('quad');
+  e.addComponent('render', { meshInstances: [mi] });
+  app.root.addChild(e);
+  for (let i = 0; i < 3; i++) await new Promise((r) => requestAnimationFrame(r));
+  return { device: app.graphicsDevice.isWebGPU ? 'webgpu' : 'webgl2', errors: [...errors] };
+};
+window.ready = true;
+</script></body></html>

@@ -9,6 +9,8 @@
 // sky add nothing: the water's own shading (Google's tiles, patched, or our lake) already
 // reflects the sky. Works on Google's lake and on ours alike, no matter what draws it.
 
+import { releaseSceneMaps, requestSceneMaps } from './sceneMaps.js';
+
 const FAR = 40000;
 
 const VS = /* glsl */ `
@@ -193,40 +195,12 @@ export class WaterReflections {
     parent.addChild(this.entity);
     this._mesh = mesh;
     this._time = 0;
-    this._camera = null;
-    this._frame = null;
   }
 
-  /** The camera must copy the scene's colour and depth for us: through its CameraFrame if it has one. */
-  _request(cam) {
-    if (this._camera === cam) return;
-    this._release();
-    this._camera = cam;
-    const frame = this.app.customTravelCenter?.cameraFrame;
-    if (frame?.rendering) {
-      this._frame = { frame, color: frame.rendering.sceneColorMap, depth: frame.rendering.sceneDepthMap };
-      frame.rendering.sceneColorMap = true;
-      frame.rendering.sceneDepthMap = true;
-      frame.update?.();
-    } else if (cam?.camera) {
-      cam.camera.requestSceneColorMap(true);
-      cam.camera.requestSceneDepthMap(true);
-    }
-  }
+  /** The camera must copy the scene's colour and depth for us (sceneMaps.js). */
+  _request(cam) { requestSceneMaps(this.app, this, cam, { color: true, depth: true }); }
 
-  _release() {
-    if (this._frame) {
-      const { frame, color, depth } = this._frame;
-      frame.rendering.sceneColorMap = color;
-      frame.rendering.sceneDepthMap = depth;
-      frame.update?.();
-      this._frame = null;
-    } else if (this._camera?.camera) {
-      this._camera.camera.requestSceneColorMap(false);
-      this._camera.camera.requestSceneDepthMap(false);
-    }
-    this._camera = null;
-  }
+  _release() { releaseSceneMaps(this.app, this); }
 
   set visible(v) {
     this.entity.enabled = v;

@@ -15,6 +15,7 @@ import { CarrierPilot, CARRIER_APPROACH } from '../autopilot/carrierApproach.js'
 import { buildMeigs } from '../world/meigs.js';
 import { buildInnsbruck, inflateLowiDem } from '../world/innsbruck.js';
 import { TerrainVisual } from './terrainVisual.js';
+import { CLOUD_PRESETS, CloudLayer } from './clouds.js';
 import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
@@ -63,6 +64,8 @@ export class Extra300 extends ArrivalScript {
   startRunway = '36';
   showCarrier = true;
   destination = 'Chicago Meigs (KCGX)';
+  clouds = 'Scattered';
+  cloudBaseFt = 4500;
   waterReflections = true;
   engineRunningAtStart = true;
   showPanel = true;
@@ -93,6 +96,8 @@ export class Extra300 extends ArrivalScript {
     showPanel: { title: 'Instrument panel' },
     showScenery: { title: 'Meigs & Chicago scenery' },
     fuelLiters: { title: 'Fuel, centre tank (L) — the Extra (the F-15 carries ~64 % internal)', min: 5, max: 60, step: 1 },
+    clouds: { title: 'Clouds (volumetric, drifting with the wind)', options: Object.keys(CLOUD_PRESETS) },
+    cloudBaseFt: { title: 'Cloud base (ft above the field)', min: 500, max: 15000, step: 100 },
     windKt: { title: 'Wind (kt)', min: 0, max: 40, step: 1 },
     windFromDeg: { title: 'Wind from (°true)', min: 0, max: 359, step: 1 },
     qnhInHg: { title: 'QNH (inHg)', min: 28.5, max: 31, step: 0.01 },
@@ -200,7 +205,10 @@ export class Extra300 extends ArrivalScript {
     }
 
     // the camera is ours for the frame, after the platform's own camera scripts
-    this._onPrerender = () => this._applyCamera();
+    // the clouds: their noise made over the first frames, marched each frame after our camera is placed
+    this.cloudLayer = new CloudLayer(this.app, this.isMobile ? { scale: 0.28, steps: 40, lightSteps: 3 } : {});
+    this._applyClouds();
+    this._onPrerender = () => { this._applyCamera(); this._cloudsTick(); };
     this.app.on('prerender', this._onPrerender);
 
     // ?airport=lowi (or innsbruck) on the address, or the setting: start somewhere else
@@ -283,6 +291,7 @@ export class Extra300 extends ArrivalScript {
     this.cameraRig.towerPos = fromNE(t.ne[0], t.ne[1], t.h + 1.5);
     if (meigs) this._placeDeckCamera(); else this.cameraRig.deckPos = null;
     if (this.cameraRig.view === 'deck' && !this.cameraRig.deckPos) this.cameraRig.cycle();
+    this._applyClouds();
     if (moved) this._publishOrigin();
     this._publishCarve();
     this._publishWater();
@@ -949,6 +958,7 @@ export class Extra300 extends ArrivalScript {
 
   // ── frame ──────────────────────────────────────────────────────────────
   update(dt) {
+    this._dt = dt;
     if (!this.isEnabled) return;
     this.hud.tick();
     this._lightsTick(dt);
@@ -1130,6 +1140,24 @@ export class Extra300 extends ArrivalScript {
    * (re-coloured when the light turns) and a disc with its glow. The light is the room's main
    * directional one (found again now and then: the room may set it up after us).
    */
+  /** The clouds' settings: the preset, the base above this field. */
+  _applyClouds() {
+    this.cloudLayer?.set(CLOUD_PRESETS[this.clouds] || null, this.world.elevation + this.cloudBaseFt * 0.3048);
+  }
+
+  _cloudsTick() {
+    if (!this.cloudLayer?.enabled || !this.isEnabled) return;
+    const cam = ArrivalSpace.getCamera?.();
+    if (!cam) return;
+    const L = this._sunLight || this.app.root.findComponents('light').find((l) => l.type === 'directional' && l.enabled);
+    const up = L ? L.entity.up : { x: 0.3, y: 0.8, z: 0.3 };
+    const w = this._weather().wind;          // NED, toward
+    this.cloudLayer.update(this._dt || 1 / 60, {
+      cam, root: this._worldRoot, ws: this._ws, datumMsl: this.world.elevation,
+      sunDir: [up.x, up.y, up.z], wind: [w[1], w[0]], hdr: !!this.app.customTravelCenter?.cameraFrame,
+    });
+  }
+
   _skySun(camPos) {
     this._sunLookup = (this._sunLookup ?? 0) - 1;
     if (this._sunLookup <= 0 || !this._sunLight?.entity?.enabled) {
@@ -1183,6 +1211,7 @@ export class Extra300 extends ArrivalScript {
   onPropertyChanged(name) {
     if (name === 'showScenery' || name === 'waterReflections' || name === 'showCarrier') this._applyDestination();
     if (name === 'destination') this._goTo(destinationByTitle(this.destination).id);
+    if (name === 'clouds' || name === 'cloudBaseFt') this._applyClouds();
     if ((name === 'skylineYear' || name === 'cityDetail') && this.city) {
       this.meigs.setSkylineYear(this.skylineYear);
       this.city.build(this._cityOptions());
@@ -1205,6 +1234,7 @@ export class Extra300 extends ArrivalScript {
     this.app.fire('googletiles:flatten-region-clear', `extra300-flatten-${this.entity.getGuid()}`);
     this._flatMask?.texture.destroy();
     this._terrain?.destroy();
+    this.cloudLayer?.destroy();
     this.app.fire('googletiles:patch-region-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this.app.fire('googletiles:water-mask-clear', `extra300-meigs-${this.entity.getGuid()}`);
     this._ssr?.destroy();

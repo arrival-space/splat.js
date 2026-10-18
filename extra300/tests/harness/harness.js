@@ -4,13 +4,15 @@
 // plugin be loaded, flown and screenshotted headlessly (tests/e2e).
 //
 // URL parameters: ?fly=1 board immediately (?intro=1 with the intro film), ?mobile=1 as a phone, ?view=chase|tower|flyby|cockpit, ?aircraft=f15 the F-15C (read by the plugin itself),
-// ?bundle=0 load the sources instead of dist/ (faster edit-reload).
+// ?bundle=0 load the sources instead of dist/ (faster edit-reload), ?gpu=webgpu on a WebGPU device.
 import * as pc from 'playcanvas';
 
 window.pc = pc;
 const params = new URLSearchParams(location.search);
 const canvas = document.getElementById('app');
-const app = new pc.Application(canvas, { mouse: new pc.Mouse(canvas), keyboard: new pc.Keyboard(window) });
+// ?gpu=webgpu: the WebGPU device the Arrival client runs on where it can (WGSL shaders), else WebGL2
+const graphicsDevice = params.get('gpu') === 'webgpu' ? await pc.createGraphicsDevice(canvas, { deviceTypes: ['webgpu'] }) : undefined;
+const app = new pc.Application(canvas, { mouse: new pc.Mouse(canvas), keyboard: new pc.Keyboard(window), graphicsDevice });
 app.setCanvasFillMode(pc.FILLMODE_FILL_WINDOW);
 app.setCanvasResolution(pc.RESOLUTION_AUTO);
 window.addEventListener('resize', () => app.resizeCanvas());

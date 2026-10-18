@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>wgsl check</title>
+<script type="module">
+// check.html — compile WGSL with the browser's WebGPU (no engine): window.compile(code) → messages
+const adapter = await navigator.gpu.requestAdapter();
+const device = await adapter.requestDevice();
+window.compile = async (code) => {
+  const m = device.createShaderModule({ code });
+  const info = await m.getCompilationInfo();
+  return info.messages.map((x) => `${x.type} ${x.lineNum}:${x.linePos} ${x.message}\n    ${code.split('\n')[x.lineNum - 1] ?? ''}`);
+};
+window.ready = true;
+</script>

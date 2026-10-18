@@ -15,7 +15,8 @@
     "test:arrival": "node scripts/build.mjs && node tests/e2e/arrival-client.cjs",
     "model": "${BPY:-python3} scripts/blender/extra300l.py data/model/extra300l.json --glb dist/extra300l.glb --blend dist/extra300l.blend && node scripts/bake-model.mjs extra300l",
     "model:f15": "${BPY:-python3} scripts/blender/f15c.py data/model/f15c.json --glb dist/f15c.glb --blend dist/f15c.blend && node scripts/bake-model.mjs f15c",
-    "model:xwing": "${BPY:-python3} scripts/blender/xwing.py data/model/xwing.json --glb dist/xwing.glb --blend dist/xwing.blend && node scripts/bake-model.mjs xwing"
+    "model:xwing": "${BPY:-python3} scripts/blender/xwing.py data/model/xwing.json --glb dist/xwing.glb --blend dist/xwing.blend && node scripts/bake-model.mjs xwing",
+    "check:wgsl": "node tests/wgsl/check-wgsl.mjs"
   },
   "devDependencies": {
     "esbuild": "0.28.0",
