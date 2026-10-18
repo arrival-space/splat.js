@@ -82,8 +82,11 @@ const host = new pc.Entity('vibe');
 app.root.addChild(host);
 host.addComponent('script');
 app.start();
-// the start menu only when asked for (?menu=1): the rest of the harness drives the vibe itself
-const vibe = host.script.create(mod.Extra300, { properties: { startMenu: params.get('menu') === '1' } });
+// the start menu only when asked for (?menu=1), the vibe's own start (Innsbruck, aboard) with
+// ?autostart=1: the rest of the harness starts at Meigs and drives the vibe itself
+const vibe = host.script.create(mod.Extra300, { properties: {
+  startMenu: params.get('menu') === '1', autoStart: params.get('autostart') === '1', destination: 'Chicago Meigs (KCGX)',
+} });
 window.vibe = vibe;
 window.app = app;
 

@@ -90,7 +90,7 @@ export class Extra300 extends ArrivalScript {
   aircraft = 'Extra 300L';
   startRunway = '36';
   showCarrier = true;
-  destination = 'Chicago Meigs (KCGX)';
+  destination = 'Innsbruck (LOWI)';
   clouds = 'Scattered';
   cloudBaseFt = 4500;
   waterReflections = true;
@@ -107,7 +107,8 @@ export class Extra300 extends ArrivalScript {
   easyMode = true;            // the default: stall-proof, the attitude held hands off (the top bar's switch, or L)
   playIntro = true;
   introOnLoad = false;
-  startMenu = true;
+  startMenu = false;
+  autoStart = true;
   debugSpheres = false;
   seatAnimation = 'driving.glb';
   avatarLean = 20;            // degrees the avatar leans back into the reclined seat
@@ -136,6 +137,7 @@ export class Extra300 extends ArrivalScript {
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
     debugSpheres: { title: 'Debug: three spheres over the airplane (its white paint, a mirror, clear glass), lit and reflecting as it is (or ?spheres on the address)' },
+    autoStart: { title: 'Board at start: straight into the airplane (the chase view) at the destination' },
     startMenu: { title: 'Start menu: pick the airport and airplane before anything loads (skipped when the address names both)' },
     introOnLoad: { title: 'Film mode: board and play the intro by itself after loading (or open the space with ?intro)' },
     seatAnimation: { title: 'Pilot pose (avatar animation while flying)' },
@@ -272,23 +274,31 @@ export class Extra300 extends ArrivalScript {
       return;
     }
     const want = askedPlace || destinationByTitle(this.destination).id;
+    if (this.autoStart && !this._filmPending) {
+      // straight in: the place and the airplane loaded (Google's tiles held till the globe is there),
+      // then aboard in the chase view
+      this._worldRoot.enabled = false;
+      this.app.googleTilesHold = true;
+      this._start(want, Object.keys(PROFILES).find((id) => PROFILES[id] === this.profile));
+      return;
+    }
     if (want === 'meigs') this._ensureCity();
     else this._goTo(want);
   }
 
-  /** The start menu's choice: the airplane, the place loaded, Google's tiles let go, and aboard. */
+  /** The start (the menu's choice, or the settings'): the airplane, the place loaded, Google's tiles let go, and aboard. */
   async _start(place, aircraft) {
-    this._menu.setStatus(`Loading ${DESTINATIONS[place].short}…`);
+    this._menu?.setStatus(`Loading ${DESTINATIONS[place].short}…`);
     this._switchAircraft(PROFILES[aircraft]);
     if (place !== 'meigs') await this._goTo(place);
     if (this._dest === 'meigs') this._ensureCity();   // also when the airport couldn't be loaded
     if (this._destroyed) return;
-    this._menu.destroy();
+    this._menu?.destroy();
     this._menu = null;
     this._worldRoot.enabled = true;
     this.hud.placeButton.style.display = 'block';
     this.app.googleTilesHold = false;
-    this._enter();
+    this._boardPending = true;   // aboard (update) once the player is there to seat
   }
 
   /** The OpenStreetMap city, loaded the first time Meigs is where we are. */
@@ -706,7 +716,9 @@ export class Extra300 extends ArrivalScript {
     if (this.ac.spec.engine) this.ac.load.fuelCenterL = this.fuelLiters;
     this.ac.updateMass();
     this.ac.placeOnGround(n, e, heading);
-    this.ac.controls.parkingBrake = false;
+    // the brake holds it on the runway until the pilot opens the throttle (update)
+    this.ac.controls.parkingBrake = true;
+    this._autoBrake = true;
     this.ac.setEngineRunning(this.engineRunningAtStart);
     if (!this.ac.jet) {
       this.ac.engine.oilTemp = this.engineRunningAtStart ? 70 : this.oatC;
@@ -1074,7 +1086,7 @@ export class Extra300 extends ArrivalScript {
         c.mixture = c.mixture > 0.5 ? 0 : 1;
         this.hud.flash(this.ac.jet ? (c.mixture ? 'Fuel on' : 'Fuel off: engines shut down') : (c.mixture ? 'Mixture rich' : 'Mixture cut-off'), 1.5);
         break;
-      case 'parkingBrake': c.parkingBrake = !c.parkingBrake; break;
+      case 'parkingBrake': this._autoBrake = false; c.parkingBrake = !c.parkingBrake; break;
       case 'gReset': if (!this.ac.retractable) this.instruments.resetG(); break;
       case 'gear':
         if (!this.ac.retractable) break;
@@ -1153,6 +1165,12 @@ export class Extra300 extends ArrivalScript {
       if (!this.city.queue.length) this.scenery.standInCity = false;
     }
     if (!this._flying) {
+      if (this._boardPending && ArrivalSpace.getPlayer?.()) {
+        this._boardPending = false;
+        this.cameraRig.view = 'chase';
+        this.cameraRig.chasePos = null;
+        this._enter();
+      }
       if (this._filmPending) this._filmTick(dt);
       if (!this._flying) this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? this.profile.title : `Press E to fly the ${this.profile.title}`) : '');
       return;
@@ -1174,6 +1192,11 @@ export class Extra300 extends ArrivalScript {
       this.hud.showDemoStatus(this._demoText());
     } else {
       this.mapper.update(raw, dt, this.ac.controls, this.ac.flightState());
+    }
+    // the auto brake: on from the start, off once the throttle opens (or the pilot works the brake)
+    if (this._autoBrake && !this._intro) {
+      if (this.mapper.throttle > 0.1 || !this.ac.gear.onGround) { this._autoBrake = false; this.ac.controls.parkingBrake = false; }
+      else this.ac.controls.parkingBrake = true;
     }
     if (!this._paused) this.ac.update(dt);
     this._checkBuildings();
