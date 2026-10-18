@@ -76,7 +76,8 @@ export const EASY = {
 
 /** How much of its travel a held key may use without Shift. */
 export const KEY_CAP = { elevator: 0.75, aileron: 0.5, rudder: 0.65 };
-const BANK_HOLD_Q = 700;   // Pa (about 65 kt at sea level): easy mode's bank hold at full gain up to here
+const BANK_HOLD_Q = 700;
+const YAW_Q = 700;         // Pa: the yaw damper at full gain up to here (plugin of the same scaling as the bank hold)   // Pa (about 65 kt at sea level): easy mode's bank hold at full gain up to here
 
 export function keyAuthority(axis, qbar, boost = 1, table = KEY_AUTHORITY) {
   const a = table[axis];
@@ -109,6 +110,10 @@ export class ControlMapper {
     this.hook = 0;             // the hook handle (/), up
     this.sfoils = 0;           // the X-wing's S-foils (J): closed
     this.autoRudder = opts.autoRudder ?? true;   // the pilot's feet: keeps the ball centred in the air
+    this.yawKb = 1;     // rudder per rad of sideslip   } the yaw damper (_yawDamper), at full gain
+    this.yawKr = 3;     // rudder per rad/s of yaw rate }
+    this.yawKi = 1.5;   // the slow sideslip trim on top, per rad s
+    this._rSteady = 0;  // the yaw rate's slow part (a turn's), which the damper leaves alone
     this._autoRud = 0;
     this.easy = opts.easy ?? false;
     this._lim = { hi: null, lo: null };   // active α-limiter integrators (null: not limiting)
@@ -188,11 +193,10 @@ export class ControlMapper {
     // auto-rudder: right pedal for a sideslip from the right, damped by the yaw rate; any rudder
     // input from keys, pad or sticks takes over
     const target = this.easy ? this._easyRudder(flight, dt)
-      : this.autoRudder && !flight.onGround && q > 300
-        ? clamp(4 * (flight.beta ?? 0) - 0.4 * (flight.yawRate ?? 0), -1, 1) : 0;
+      : this.autoRudder && !flight.onGround && q > 300 ? this._yawDamper(flight, dt) : 0;
     this._autoRud += (target - this._autoRud) * Math.min(1, dt * 8);
     if (this.kb.rudder === 0) rud = this._autoRud;
-    else if (this.easy) { this._psiRef = null; this._rudI = 0; }   // the pilot steers: hold the new heading after
+    else { this._psiRef = null; this._rudI = 0; }   // the pilot steers: hold the new heading (and trim) after
     let brake = P('brakes') ? 1 : 0;
     let brakeL = brake, brakeR = brake;
 
@@ -361,8 +365,21 @@ export class ControlMapper {
     }
     this._psiRef = null;
     if (q < 40) return 0;
-    const beta = flight.beta ?? 0;
-    this._rudI = clamp(this._rudI + 3 * beta * dt, -0.6, 0.6);
-    return clamp(4 * beta + this._rudI - 0.4 * r, -1, 1);
+    return this._yawDamper(flight, dt);
+  }
+
+  /**
+   * The pilot's feet in the air: rudder against the swing of the nose, and gently toward no sideslip.
+   * It used to push hard toward no sideslip alone: let go after a bootful of rudder, it slammed the
+   * opposite pedal while the nose was already swinging back, and swung it on through, side to side.
+   * Only the yaw rate's changes are damped (a turn's steady rate washes out in ~1.5 s), and scaled by
+   * dynamic pressure it asks for the same yaw at any speed (and holds steady at a low frame rate).
+   */
+  _yawDamper(flight, dt) {
+    const q = flight.qbar ?? 0, g = Math.min(1, YAW_Q / Math.max(q, 1)), r = flight.yawRate ?? 0, beta = flight.beta ?? 0;
+    this._rSteady += (r - this._rSteady) * Math.min(1, dt / 1.5);
+    // the steady sideslip (the prop's swirl, the climb's p-factor) trimmed out slowly, on top
+    this._rudI = clamp(this._rudI + this.yawKi * g * beta * dt, -0.6, 0.6);
+    return clamp(g * (this.yawKb * beta - this.yawKr * (r - this._rSteady)) + this._rudI, -1, 1);
   }
 }

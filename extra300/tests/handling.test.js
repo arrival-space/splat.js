@@ -100,8 +100,11 @@ test('keyboard authority falls with dynamic pressure; full on the ground', () =>
 test('auto-rudder: works in the air, off on the ground, any rudder key overrides it', () => {
   const m = new ControlMapper();
   const c = {};
+  // right pedal for a sideslip from the right, gently at cruise and building as it trims it out
   for (let i = 0; i < 60; i++) m.update({ keys: new Set() }, 1 / 60, c, { qbar: 3000, beta: 3 * DEG });
-  assert.ok(c.rudder > 0.1, `air: ${c.rudder}`);
+  const after1 = c.rudder;
+  for (let i = 0; i < 120; i++) m.update({ keys: new Set() }, 1 / 60, c, { qbar: 3000, beta: 3 * DEG });
+  assert.ok(after1 > 0 && c.rudder > after1 && c.rudder > 0.03, `air: ${after1} then ${c.rudder}`);
   const g = new ControlMapper();
   for (let i = 0; i < 60; i++) g.update({ keys: new Set() }, 1 / 60, c, { qbar: 3000, beta: 3 * DEG, onGround: true });
   assert.equal(c.rudder, 0);
@@ -249,5 +252,28 @@ test('easy mode: hands off at speed the bank hold stays calm (no aileron flappin
     assert.ok(peak < 0.15, `${kt} kt, ${fps} fps: aileron up to ${peak.toFixed(2)}`);
     // and it still holds the bank it was let go in
     assert.ok(Math.abs(ac.euler.phi - phi0) < 5 * DEG, `${kt} kt, ${fps} fps: the bank drifted ${((ac.euler.phi - phi0) / DEG).toFixed(1)}°`);
+  }
+});
+
+test('let go of the rudder in the air and the nose settles, it does not swing side to side (easy and normal, any frame rate)', () => {
+  for (const easy of [true, false]) {
+    for (const [kt, fps] of [[100, 60], [160, 60], [160, 30], [190, 20]]) {
+      const ac = level(kt);
+      const m = new ControlMapper({ easy }); m.throttle = ac.controls.throttle;
+      let flips = 0, lastR = 0, peak = 0;
+      for (let i = 0; i < fps * 8; i++) {
+        const t = i / fps;
+        m.update({ keys: t > 1 && t < 2 ? new Set(['e']) : new Set() }, 1 / fps, ac.controls, easyFlight(ac));   // a second of right rudder
+        ac.update(1 / fps);
+        if (t < 2.5) continue;
+        const r = ac.state.omega[2];
+        if (Math.abs(r) > 0.035 && lastR && Math.sign(r) !== Math.sign(lastR)) flips++;
+        if (Math.abs(r) > 0.035) lastR = r;
+        peak = Math.max(peak, Math.abs(r));
+      }
+      const tag = `${easy ? 'easy' : 'normal'} ${kt} kt ${fps} fps`;
+      assert.ok(flips <= 1, `${tag}: the nose swung back and forth ${flips} times`);
+      assert.ok(peak < 25 * DEG, `${tag}: still yawing ${(peak / DEG).toFixed(0)}°/s half a second after letting go`);
+    }
   }
 });
