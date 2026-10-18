@@ -78,7 +78,7 @@ export function groundMaterial(device, kind, rw, paved, bias = 0, paint = null, 
     macro = ownMacro(own, L, W);
     if (paint) {
       const k = `${own.key}-paint`;
-      if (!macros.has(k)) macros.set(k, paintWear(macro));
+      if (!macros.has(k)) macros.set(k, paintWear(macro, 13, RUNWAY_STYLES[own.style]?.paint));
       macro = macros.get(k);
     }
     period = SURFACE;

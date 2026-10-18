@@ -91,21 +91,26 @@ export function grassDetail(S = 256, seed = 11) {
 export const RUNWAY_STYLES = {
   // Meigs: dark compact asphalt, a general-aviation field's light rubber in broken streaks
   meigs: {
-    grey: 80, warm: 1.5, tint: [1, 1, 1], lane: 7.62, laneTone: 4,
+    grey: 80, warm: 1.5, tint: [1, 1, 1], lane: 7.62, laneTone: 4, streaks: 0, patches: 24, cracks: true,
     rubber: 24, rubberZone: [260, 170], rubberBand: 1, rubberHalf: 5.5, track: 2.4, trackWidth: 1.1, carpet: 0,
     centreWear: 3, shoulder: 0,
     skids: 46, skidFrom: 150, skidSpread: 380, skidTrack: [1.6, 6], twinWheels: 0,
+    skidLen: [18, 73], skidDark: [12, 32], skidBroken: 1, skidWander: 0,
   },
   // Innsbruck (LOWI), as Google's imagery shows it (2026, around our runway): fresh dark asphalt with
   // the satellite's blue cast (~78 79 96 between the wheels and the edges), its paving lanes ~3.7 m
   // wide in stripes of their own shade; a dark band ±6 m round the centre the whole length (~30 %
   // under the sides: rubber, wear, the main gear's tracks ±3.5 m off the centre), a little more in the
-  // touchdown zones; shoulders darker than the runway (~59 58 72)
+  // touchdown zones; shoulders darker than the runway (~59 58 72). At 10 cm a pixel (Google, z20) the
+  // new surface has no sealed cracks, patches or stains: soft streaks along it across the whole
+  // width, and the tyres' skids as long, thin, unbroken streaks down the middle
   lowi: {
-    grey: 108, warm: 0, tint: [0.94, 0.95, 1.18], lane: 3.7, laneTone: 12,
+    grey: 108, warm: 0, tint: [0.94, 0.95, 1.18], lane: 3.7, laneTone: 0, streaks: 9, patches: 0, cracks: false,
     rubber: 8, rubberZone: [300, 170], rubberBand: 0.75, rubberHalf: 6, track: 3.5, trackWidth: 1.4, carpet: 0.55,
     centreWear: 30, wearTracks: true, shoulder: -26,
-    skids: 120, skidFrom: 120, skidSpread: 520, skidTrack: [3.5, 8], twinWheels: 0.7,
+    skids: 150, skidFrom: 120, skidSpread: 520, skidTrack: [3.5, 8], twinWheels: 0.7,
+    skidLen: [40, 170], skidDark: [8, 22], skidBroken: 0.2, skidWander: 0.25,
+    paint: { clean: 112, flakes: false },     // fresh paint: no flakes; the rubber still shows on it
   },
 };
 
@@ -124,7 +129,7 @@ export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 
   const du = (u[1] - u[0]) / w, dv = (v[1] - v[0]) / h;
   // repair patches: rectangles of newer (darker) or older (paler) asphalt
   const patches = [];
-  for (let k = 0; k < 24; k++) {
+  for (let k = 0; k < S.patches; k++) {
     const a = areas[Math.floor(hash(k, 1, seed) * areas.length)];
     const cu = a.u[0] + hash(k, 2, seed) * (a.u[1] - a.u[0]), cv = a.v[0] + hash(k, 3, seed) * (a.v[1] - a.v[0]);
     const su = 1.5 + hash(k, 4, seed) * 9, sv = 2 + hash(k, 5, seed) * 18;
@@ -155,11 +160,18 @@ export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 
     if (area?.kind === 'taxiway') { g += 10; warm += 2; }
     if (area?.kind === 'apron') { g += 6; warm += 1; }
     if (area?.kind === 'runway' || !area) {
-      // paving lanes: 25 ft strips laid side by side, each its own shade, joints between
-      const lane = Math.floor((uu + W2) / S.lane);
-      g += (hash(lane, 0, seed) - 0.5) * S.laneTone;
-      const inLane = (((uu + W2) % S.lane) + S.lane) % S.lane;
-      if (inLane < 0.12 || inLane > S.lane - 0.12) g -= 5;
+      if (S.streaks) {
+        // a new surface: no lanes or joints to see, but soft streaks along it of every width, a
+        // shade lighter or darker, from the paver and the rollers and everything that rolled since
+        g += S.streaks * (0.55 * vnoise(uu / 1.2, vv / 70, seed + 30) + 0.3 * vnoise(uu / 0.45, vv / 30, seed + 31)
+          + 0.15 * vnoise(uu / 3.5, vv / 160, seed + 32) - 0.5) * 2;
+      } else {
+        // paving lanes: 25 ft strips laid side by side, each its own shade, joints between
+        const lane = Math.floor((uu + W2) / S.lane);
+        g += (hash(lane, 0, seed) - 0.5) * S.laneTone;
+        const inLane = (((uu + W2) % S.lane) + S.lane) % S.lane;
+        if (inLane < 0.12 || inLane > S.lane - 0.12) g -= 5;
+      }
       // rubber: the touchdown zones of both ends, densest a few hundred metres in, along the wheel tracks
       for (const end of [-1, 1]) {
         const s = end * vv;                          // distance toward this end
@@ -187,7 +199,7 @@ export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 
     }
     // sealed cracks: tar snakes, meandering, mostly across the paving
     const crackField = vnoise(uu / 7 + fbm(uu / 3, vv / 3, seed + 4, 2) * 1.8, vv / 2.2, seed + 5);
-    if (Math.abs(crackField - 0.5) < 0.008 && fbm(uu / 25, vv / 25, seed + 6, 2) > 0.6) g = 46;
+    if (S.cracks && Math.abs(crackField - 0.5) < 0.008 && fbm(uu / 25, vv / 25, seed + 6, 2) > 0.6) g = 46;
     // edges of the runway: paler, less traffic
     if (Math.abs(uu) > W2 - 4 && Math.abs(uu) < W2 + 1 && Math.abs(vv) < L2 + 30) g += 3;
     return [(g + warm) * S.tint[0], (g + warm * 0.4) * S.tint[1], (g - warm * 0.6) * S.tint[2]];
@@ -217,10 +229,10 @@ export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 
         const v0 = end * (L2 - fromThr);                      // touch-down point
         const track = S.skidTrack[0] + r(1) * (S.skidTrack[1] - S.skidTrack[0]);   // main-gear track
         const off = (r(2) - 0.5) * 6;                         // landed off the centreline
-        const len = 18 + r(3) * 55;                           // long, fading streaks
+        const len = S.skidLen[0] + r(3) * (S.skidLen[1] - S.skidLen[0]);   // long, fading streaks
         const ang = (r(4) - 0.5) * 0.02;                      // drifting a touch on contact
         const wid = 0.14 + r(5) * 0.16;
-        const dark = 12 + r(6) * 20;
+        const dark = S.skidDark[0] + r(6) * (S.skidDark[1] - S.skidDark[0]);
         // an airliner's main gear has two wheels a side, a metre apart: a pair of streaks each
         const wheels = r(7) < S.twinWheels ? [-0.46, 0.46] : [0];
         for (const side of [-1, 1]) for (const wo of wheels) {
@@ -228,13 +240,16 @@ export function runwayMacro({ u, v, length, width, areas, style }, w = 512, h = 
           // along the landing direction: toward the far end (v decreasing for the north end)
           const dirV = -end;
           const vEnd = v0 + dirV * len, uEnd = u0 + ang * len;
-          stamp(Math.min(u0, uEnd) - wid, Math.max(u0, uEnd) + wid, Math.min(v0, vEnd), Math.max(v0, vEnd), (uu, vv) => {
+          // the tyre wanders a little as the airplane is straightened out
+          const wander = (vv) => S.skidWander * Math.sin(vv / (19 + 13 * r(8)) + 6.3 * r(9));
+          const pad = wid + S.skidWander;
+          stamp(Math.min(u0, uEnd) - pad, Math.max(u0, uEnd) + pad, Math.min(v0, vEnd), Math.max(v0, vEnd), (uu, vv) => {
             const t = (vv - v0) * dirV / len;                 // 0 at touch-down … 1 at the end
             if (t < 0 || t > 1) return null;
-            const dU = Math.abs(uu - (u0 + ang * len * t));
+            const dU = Math.abs(uu - (u0 + ang * len * t + wander(vv)));
             if (dU > wid) return null;
             // broken: the tyre skipped as it spun up
-            const gaps = smooth(Math.min(1, Math.max(0, (vnoise(vv * 0.8, uu * 3, seed + 23) - 0.3) / 0.4)));
+            const gaps = 1 - S.skidBroken * (1 - smooth(Math.min(1, Math.max(0, (vnoise(vv * 0.8, uu * 3, seed + 23) - 0.3) / 0.4))));
             const d = -dark * (1 - t) ** 1.5 * (1 - (dU / wid) ** 2) * (0.7 + 0.3 * vnoise(vv * 2, uu * 9, seed + 22)) * gaps;
             return [d, d, d * 0.95];
           });
@@ -384,17 +399,17 @@ export function meanLuma(img, x0 = 0, y0 = 0, x1 = img.width, y1 = img.height) {
  * rubber and skid marks of the macro it lies on, and flakes off here and there.
  * @param {{ width: number, height: number, data: Uint8ClampedArray }} under  the asphalt macro
  */
-export function paintWear(under, seed = 13) {
+export function paintWear(under, seed = 13, { clean = 80, flakes = true } = {}) {
   const { width: w, height: h } = under;
   return image(w, h, (i, j) => {
     const k = (j * w + i) * 4;
     const luma = 0.299 * under.data[k] + 0.587 * under.data[k + 1] + 0.114 * under.data[k + 2];
-    // clean asphalt here is ~80: anything darker is rubber, stains or sealant and shows on the paint too
-    let f = Math.min(1, Math.pow(luma / 80, 1.6));
+    // clean asphalt (~80 at Meigs): anything darker is rubber, stains or sealant and shows on the paint too
+    let f = Math.min(1, Math.pow(luma / clean, 1.6));
     f = 0.78 + 0.22 * f;                       // paint holds its white better than the asphalt round it
     const scuff = fbm(i / 9, j / 9, seed, 3);
     f *= 0.9 + 0.1 * scuff;
-    if (vnoise(i / 1.2, j / 1.2, seed + 1) > 0.93) f *= 0.55;  // flaked here and there: asphalt shows through
+    if (flakes && vnoise(i / 1.2, j / 1.2, seed + 1) > 0.93) f *= 0.55;  // flaked here and there: asphalt shows through
     const v = 255 * f;
     return [v, v, v];
   });

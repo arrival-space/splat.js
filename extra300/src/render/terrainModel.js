@@ -89,8 +89,14 @@ export function buildTerrainModel(world, dem) {
       if (up > 0) asphalt.tri(p, q, r); else asphalt.tri(p, r, q);
     }
   }
-  // the runway's edge lines and dashed centre line
+  // the runway's edge lines and dashed centre line (unless the runway is drawn over it, render/icaoRunway.js)
   const rw = world.runway, d = rw.dir;
+  if (rw.layout) {
+    return [
+      { name: 'terrain', mesh: terrain, vertexColor: true },
+      { name: 'pavement', mesh: asphalt, color: '#3c3d40', bias: -1 },
+    ];
+  }
   const P = (al, ac) => [rw.centre[0] + d[0] * al - d[1] * ac, rw.centre[1] + d[1] * al + d[0] * ac];
   for (const side of [-1, 1]) strip(paint, P(-rw.length / 2, side * (rw.width / 2 - 1)), P(rw.length / 2, side * (rw.width / 2 - 1)), 0.45, 0.07);
   for (let al = -rw.length / 2 + 60; al < rw.length / 2 - 60; al += 50) strip(paint, P(al, 0), P(al + 30, 0), 0.45, 0.07);
