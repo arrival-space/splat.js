@@ -228,3 +228,26 @@ test('phone: let go steeply nose-up and slow, it noses over by itself and flies 
   assert.ok(Math.abs(ac.euler.theta) < 30 * DEG, `pitch ${(ac.euler.theta / DEG).toFixed(0)}°`);
   assert.ok(ac.aero.wingStallFraction() === 0);
 });
+
+test('easy mode: hands off at speed the bank hold stays calm (no aileron flapping), after a roll too, at any frame rate', () => {
+  for (const [kt, fps] of [[150, 60], [190, 60], [150, 30], [190, 30], [190, 20]]) {
+    const ac = level(kt);
+    const m = new ControlMapper({ easy: true }); m.throttle = 1;
+    let flips = 0, last = 0, peak = 0, phi0 = null;
+    for (let i = 0; i < fps * 12; i++) {
+      const keys = i < fps / 2 ? new Set(['ArrowRight']) : new Set();   // a short roll, then let go
+      m.update({ keys }, 1 / fps, ac.controls, easyFlight(ac));
+      ac.update(1 / fps);
+      if (i < fps * 3) continue;                                         // judged once it has settled
+      phi0 ??= ac.euler.phi;
+      const a = ac.controls.aileron;
+      if (Math.abs(a) > 0.03 && Math.sign(a) !== Math.sign(last) && last !== 0) flips++;
+      if (Math.abs(a) > 0.03) last = a;
+      peak = Math.max(peak, Math.abs(a));
+    }
+    assert.ok(flips < 4, `${kt} kt, ${fps} fps: the aileron changed sides ${flips} times`);
+    assert.ok(peak < 0.15, `${kt} kt, ${fps} fps: aileron up to ${peak.toFixed(2)}`);
+    // and it still holds the bank it was let go in
+    assert.ok(Math.abs(ac.euler.phi - phi0) < 5 * DEG, `${kt} kt, ${fps} fps: the bank drifted ${((ac.euler.phi - phi0) / DEG).toFixed(1)}°`);
+  }
+});

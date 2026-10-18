@@ -76,6 +76,7 @@ export const EASY = {
 
 /** How much of its travel a held key may use without Shift. */
 export const KEY_CAP = { elevator: 0.75, aileron: 0.5, rudder: 0.65 };
+const BANK_HOLD_Q = 700;   // Pa (about 65 kt at sea level): easy mode's bank hold at full gain up to here
 
 export function keyAuthority(axis, qbar, boost = 1, table = KEY_AUTHORITY) {
   const a = table[axis];
@@ -253,7 +254,11 @@ export class ControlMapper {
       if (steep) this._phiRef = null;
       else if (this._phiRef == null) this._phiRef = phi;
       const err = steep ? 0 : Math.atan2(Math.sin(this._phiRef - phi), Math.cos(this._phiRef - phi));
-      ail = clamp(2 * err - 0.25 * p, -0.6, 0.6);
+      // the gains are for lift-off speeds: the aileron's bite grows with dynamic pressure, and at
+      // speed, held for a frame of several sim steps, the same gains overcorrected every frame (the
+      // aileron flapping side to side at 30 fps); scaled by q they ask for the same roll at any speed
+      const g = Math.min(1, BANK_HOLD_Q / q);
+      ail = clamp(g * (2 * err - 0.25 * p), -0.6, 0.6);
     } else this._phiRef = flight.onGround ? 0 : null;
     if (!this.easy) this._lim.hi = this._lim.lo = null;
 
