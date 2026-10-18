@@ -77,7 +77,7 @@ export class CameraRig {
     this.view = 'cockpit';
     this.lookYaw = 0;
     this.lookPitch = 0;
-    this.chasePos = null;
+    this.chasePos = null;          // the chase camera's lagged offset from the airplane
     this.flybyPos = null;
     this.fov = 70;
     this.chaseScale = 1;            // mouse wheel: chase distance ×
@@ -143,16 +143,18 @@ export class CameraRig {
       const nose = rotateVec(rot, [0, 0, -1]);
       const dir = sp > 8 ? [v[0] / sp, v[1] / sp, v[2] / sp] : nose;
       const D = 14 * this.size * this.chaseScale, H = 3.2 * this.size * this.chaseScale;
-      const want = [pos[0] - dir[0] * D, pos[1] - dir[1] * D + H, pos[2] - dir[2] * D];
+      // the offset from the airplane lags, not the camera's place: it swings round after a turn but
+      // never falls behind at speed, so the distance is D whatever the airspeed
+      const want = [-dir[0] * D, -dir[1] * D + H, -dir[2] * D];
       if (!this.chasePos) this.chasePos = want;
       const k = 1 - Math.exp(-dt * 4.5);
       for (let i = 0; i < 3; i++) this.chasePos[i] += (want[i] - this.chasePos[i]) * k;
       // dragging orbits the camera round the airplane (not round itself): turn the lagged offset
       // about the airplane, in azimuth by the look yaw and in elevation by the look pitch
-      const off = [this.chasePos[0] - pos[0], this.chasePos[1] - pos[1], this.chasePos[2] - pos[2]];
-      const r = Math.hypot(off[0], off[1], off[2]);
+      const off = this.chasePos;
+      const r = Math.hypot(D, H);   // its length as set (the lagged offset's shortens while it swings)
       const az = Math.atan2(off[0], off[2]) + this.lookYaw;
-      const el = Math.max(-0.05, Math.min(1.45, Math.asin(off[1] / r) - this.lookPitch));
+      const el = Math.max(-0.05, Math.min(1.45, Math.asin(off[1] / (Math.hypot(off[0], off[1], off[2]) || 1)) - this.lookPitch));
       const cam = [pos[0] + r * Math.cos(el) * Math.sin(az), pos[1] + r * Math.sin(el), pos[2] + r * Math.cos(el) * Math.cos(az)];
       // keep the lens from sinking under the runway
       cam[1] = Math.max(cam[1], 1.0);
