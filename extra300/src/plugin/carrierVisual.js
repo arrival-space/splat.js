@@ -150,9 +150,9 @@ export class CarrierVisual {
         return own(m);
       }
       case 'paint':
-        if (!part.vertexColor) return paintMaterial(dev, part.color, true);
-        return own(withVertexColour(paintMaterial(dev, '#ffffff', true).clone()));
-      case 'glass': return paintMaterial(dev, part.color, false);
+        if (!part.vertexColor) return paintMaterial(dev, part.color, true, false);
+        return own(withVertexColour(paintMaterial(dev, '#ffffff', true, false).clone()));
+      case 'glass': return paintMaterial(dev, part.color, false, false);
       case 'emissive': return material(part.color, { emissive: '#ffd890' });
       case 'mark': {
         // the markings lie on the deck: pulled forward in depth so they never flicker into it

@@ -1,7 +1,7 @@
 // finishes.js — the airplane's surfaces: glossy paint, metal, and the canopy's
-// tinted acrylic. Reflections come from a small sky cube of our own (sky above,
-// haze at the horizon, ground below), so the airplane reflects the same sky
-// whatever the space's skybox is.
+// tinted acrylic. Reflections come from the live cube rendered round the airplane
+// (plugin/reflectionProbe.js), or until it is whole from a small sky cube of our
+// own (sky above, haze at the horizon, ground below).
 
 /** Sky colour (linear 0–1) seen along a direction; y is up. */
 export function skyColour(dx, dy, dz) {
@@ -38,15 +38,30 @@ function skyCube(device, S = 32) {
 }
 
 let cube = null;
+let live = null;          // the reflection probe's cube, when it has one
 const cache = new Map();
+const reflective = new Set();
+
+/** A material's reflections: the live cube (the airplane's own surfaces), or the sky cube (the scenery's). */
+function reflecting(m, probe) {
+  m.cubeMap = (probe && live) || cube;
+  if (probe) reflective.add(m);
+}
+
+/** Reflections from this cube (the probe's), or null: back to the sky cube. */
+export function setReflectionCube(tex) {
+  if (tex === live) return;
+  live = tex;
+  for (const m of reflective) { m.cubeMap = live || cube; m.update(); }
+}
 
 /**
  * Aircraft paint: a polyurethane topcoat over the colour, glossy and clear-coated, the sky sliding
  * across it as the airplane moves (white, red, the yellow prop tips, the spinner). `satin`: a
  * fighter's low-sheen greys, the sky only a soft sheen on them.
  */
-export function paintMaterial(device, colour, satin = false) {
-  const key = `paint${colour}${satin}`;
+export function paintMaterial(device, colour, satin = false, probe = true) {
+  const key = `paint${colour}${satin}${probe}`;
   if (cache.has(key)) return cache.get(key);
   cube ??= skyCube(device);
   const m = new pc.StandardMaterial();
@@ -56,7 +71,7 @@ export function paintMaterial(device, colour, satin = false) {
   m.gloss = satin ? 0.55 : 0.82;
   m.clearCoat = satin ? 0.25 : 1;
   m.clearCoatGloss = satin ? 0.7 : 0.93;
-  m.cubeMap = cube;
+  reflecting(m, probe);
   m.reflectivity = 1;
   m.update();
   cache.set(key, m);
@@ -64,8 +79,8 @@ export function paintMaterial(device, colour, satin = false) {
 }
 
 /** Bare and polished metal: exhaust, wheel hubs, pedals (and chrome: buckles, bezels). */
-export function metalMaterial(device, colour, polished = false) {
-  const key = `metal${colour}${polished}`;
+export function metalMaterial(device, colour, polished = false, probe = false) {
+  const key = `metal${colour}${polished}${probe}`;
   if (cache.has(key)) return cache.get(key);
   cube ??= skyCube(device);
   const m = new pc.StandardMaterial();
@@ -73,13 +88,15 @@ export function metalMaterial(device, colour, polished = false) {
   m.useMetalness = true;
   m.metalness = 1;
   m.gloss = polished ? 0.9 : 0.6;
-  m.cubeMap = cube;
+  reflecting(m, probe);
   m.update();
   cache.set(key, m);
   return m;
 }
 
-export function glassMaterial(device, tint) {
+export function glassMaterial(device, tint, probe = false) {
+  const key = `glass${tint}${probe}`;
+  if (cache.has(key)) return cache.get(key);
   cube ??= skyCube(device);
   const m = new pc.StandardMaterial();
   m.diffuse = new pc.Color().fromString(tint);
@@ -89,11 +106,12 @@ export function glassMaterial(device, tint) {
   m.useMetalness = true;
   m.metalness = 0;
   m.gloss = 0.96;
-  m.cubeMap = cube;
+  reflecting(m, probe);
   m.reflectivity = 1;
   m.opacityFadesSpecular = false;   // the reflection keeps its strength where the glass is clear
   m.cull = pc.CULLFACE_NONE;
   m.update();
+  cache.set(key, m);
   return m;
 }
 
@@ -119,6 +137,8 @@ export function flameMaterial(colour) {
 export function disposeFinishes() {
   for (const m of cache.values()) m.destroy?.();
   cache.clear();
+  reflective.clear();
+  live = null;
   cube?.destroy?.();
   cube = null;
 }

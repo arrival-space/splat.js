@@ -37,10 +37,10 @@ export class AircraftVisual {
         : part.kind === 'abFlame' ? flameMaterial(part.color)
         : part.kind === 'engineGlow' ? flameMaterial('#ff6a48')
         : part.kind === 'propDisc' ? material('#202226', { transparent: true, opacity: 0.07 })
-          : GLASS.has(part.material) || part.name === 'canopy' ? glassMaterial(dev, part.color)
+          : GLASS.has(part.material) || part.name === 'canopy' ? glassMaterial(dev, part.color, true)
             : PAINTED.has(part.material) ? paintMaterial(dev, part.color)
               : SATIN.has(part.material) ? paintMaterial(dev, part.color, true)
-                : METAL.has(part.material) ? metalMaterial(dev, part.color, part.material === 'chrome')
+                : METAL.has(part.material) ? metalMaterial(dev, part.color, part.material === 'chrome', true)
                   : material(part.color, part.transparent ? { transparent: true, opacity: 0.28 } : {});
       if (!part.hinge) {
         meshEntity(app, this.root, part.name, part.mesh, mat);

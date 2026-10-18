@@ -29,12 +29,13 @@ import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftVisual } from './aircraftVisual.js';
 import { AIRCRAFT_OPTIONS, nextProfile, PROFILES, profileByTitle } from './profiles.js';
 import { PlaneShadowFit } from './planeShadowFit.js';
+import { ReflectionProbe } from './reflectionProbe.js';
 import { StartMenu } from './startMenu.js';
 import { SceneryVisual } from './sceneryVisual.js';
 import { Hud } from './hud.js';
 import { disposeMaterials, toMesh } from './pcMesh.js';
 import { disposeGroundTextures } from './groundMaterial.js';
-import { disposeFinishes } from './finishes.js';
+import { disposeFinishes, setReflectionCube } from './finishes.js';
 import { OsmVisual } from './osmVisual.js';
 import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
@@ -202,6 +203,8 @@ export class Extra300 extends ArrivalScript {
     this.hud.setEasy(this.mapper.easy);
     // in flight the sun's shadow map is fitted round the airplane, wherever the camera is
     this._shadowFit = new PlaneShadowFit(this.app, () => this._shadowFocus());
+    // and its paint reflects the world round it (a small cube rendered from it, a face at a time)
+    this._probe = new ReflectionProbe(this.app, this.isMobile ? { size: 64, every: 4 } : {});
 
     // input
     this._onKeyDown = (e) => this._keyDown(e);
@@ -392,6 +395,18 @@ export class Extra300 extends ArrivalScript {
     const at = ArrivalSpace.getPlayer?.()?.getPosition();
     if (at && at.distance(root.getPosition()) < this.ac.spec.wing.span * this._ws) spheres.push({ at, r: 1.2 * this._ws });
     return { meshes: this._shadowMeshes, spheres, agl: Math.max(0, this.ac.agl) * this._ws };
+  }
+
+  /** The reflection cube follows the airplane while the camera is near it; the airplane and pilot stay out of it. */
+  _probeTick() {
+    const root = this.visual?.root, cam = ArrivalSpace.getCamera?.();
+    const on = !!root && !!cam && cam.getPosition().distance(root.getPosition()) < 400 * this._ws;
+    if (on && (this._probeRoot !== root || (this._probeHideAt = (this._probeHideAt || 0) + 1) % 60 === 0)) {
+      this._probeRoot = root;
+      const player = ArrivalSpace.getPlayer?.();
+      this._probe.hide([root, player].filter(Boolean).flatMap((e) => e.findComponents('render').flatMap((r) => r.meshInstances)));
+    }
+    setReflectionCube(this._probe.update(on ? root.getPosition() : null, on, this._ws) ? this._probe.texture : null);
   }
 
   /** Google's globe under the place: its start on the runway where the vibe stands. */
@@ -1078,6 +1093,7 @@ export class Extra300 extends ArrivalScript {
     if (!this.isEnabled) return;
     this.hud.tick();
     if (this._menu) return;   // nothing is there yet
+    this._probeTick();
     this._lightsTick(dt);
     this._googleTick(dt);
     if (this.city && this.city.queue.length) {
@@ -1397,6 +1413,8 @@ export class Extra300 extends ArrivalScript {
     this._worldRoot.destroy();
     disposeMaterials();
     disposeGroundTextures();
+    setReflectionCube(null);
+    this._probe?.destroy();
     disposeFinishes();
   }
 }
