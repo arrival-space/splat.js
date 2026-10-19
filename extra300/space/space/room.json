@@ -49,12 +49,12 @@
   },
   "state": {
     "files": 9,
-    "memory": 4478639,
-    "updated": 1792419025812,
+    "memory": 4479895,
+    "updated": 1792419406005,
     "entities": 18,
     "entitySizes": {
       "extra300-meigs": 4306198,
-      "google-3d-tiles": 146396,
+      "google-3d-tiles": 147652,
       "flight-airport-krnt": 2987,
       "flight-airport-lowi": 2987,
       "flight-aircraft-b777": 4271,
@@ -63,7 +63,7 @@
       "flight-aircraft-xwing": 4271,
       "flight-aircraft-extra300l": 4271
     },
-    "screenshotTime": 1792412356418,
-    "screenshotDataHash": "c9cd8f97792b594fa2e398e23c105c56de091382865493cadfde87343e3ee16c"
+    "screenshotTime": 1792419492514,
+    "screenshotDataHash": "c3854a7fdbc207e5750ed9eac5af7bf58eaef69c98fcc13b703019977c29fc74"
   }
 }
