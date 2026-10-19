@@ -606,6 +606,8 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this._introOn = on; this._syncStick();
     if (on) { this.panelCanvas.style.display = 'none'; this._syncGrip(); this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
     for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton]) b.style.display = on ? 'none' : b.style.display;
+    // nor the flying ones (a phone's Exit, View …), the credit line, the restart button: back with setFlying
+    if (on) for (const b of [...Object.values(this.buttons), this.credit, this.restartButton]) b.style.display = 'none';
   }
 
   /** Black over the scene (0 none … 1 all), under the letterbox and the captions. */
@@ -666,6 +668,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
     if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); this.showRestart(false); }
+    else if (this._introOn) this.showIntro(true);   // the film plays on: none of it shows yet
   }
 
   toggleHelp(show) {

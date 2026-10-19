@@ -1097,7 +1097,7 @@ export class Extra300 extends ArrivalScript {
     // pose under the current rig so leaving the airplane doesn't strand the camera
     const cam0 = ArrivalSpace.getCamera?.();
     this._camLocal = cam0 ? { parent: cam0.parent, p: cam0.getLocalPosition().clone(), r: cam0.getLocalRotation().clone() } : null;
-    this._attachPilot();
+    if (!this._loadIntro) this._attachPilot();   // (the film at load: the visitor stays on foot, not aboard)
     ArrivalSpace.setCameraMode?.('free');
     const cam = ArrivalSpace.getCamera?.();
     if (cam?.camera) {
@@ -1206,7 +1206,7 @@ export class Extra300 extends ArrivalScript {
     // at load it opens out of black
     this.hud.setIntroFade(this._loadIntro ? 1 - Math.max(0, Math.min(1, (it.t - 0.3) / 1.6)) : 0);
     // the last second flies into the pilot's seat: the pilot's own head goes, and the canopy
-    const inside = it.t > film.length - 1.2;
+    const inside = !this._loadIntro && it.t > film.length - 1.2;
     this._setAvatarVisible(!inside);
     this.visual.setCockpitView(inside);
     this.hud.setIntroCard(shot.card >= 0 ? this._introCard(film.cards[shot.card]) : null, shot.cardAlpha, Math.min(1, it.t / end));
