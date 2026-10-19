@@ -221,6 +221,33 @@ fn getFresnel(cosTheta: f32, gloss: f32, specularity: vec3f
 fn getFresnelCC(cosTheta: f32) -> f32 { return 0.04 + 0.96 * pow5(1.0 - saturate(cosTheta)); }
 `;
 
+// The sun off glass. The scene's sun is a light sized to light surfaces (their irradiance); a mirror
+// sees its radiance instead, that irradiance from a disc of 0.00007 sr, some 50-100x the highlight
+// the engine's lobe gives at this gloss. At the engine's, 6 % of it was a faint grey smudge where the
+// sun should glare off the canopy. Only the sun's own highlight is raised: the glass's reflection of
+// the world stays at its 6 %.
+const SUN_RADIANCE = 40;
+const SUN_SPEC_GLSL = `
+float calcLightSpecular(float gloss, vec3 worldNormal, vec3 h) {
+    float nh = max(dot(h, worldNormal), 0.0);
+    float specPow = max(exp2(gloss * 11.0), 0.0001);
+    return pow(nh, specPow) * (specPow + 2.0) / 8.0 * ${SUN_RADIANCE.toFixed(1)};
+}
+float getLightSpecular(vec3 h, vec3 reflDir, vec3 worldNormal, vec3 viewDir, vec3 lightDirNorm, float gloss, mat3 tbn) {
+    return calcLightSpecular(gloss, worldNormal, h);
+}
+`;
+const SUN_SPEC_WGSL = `
+fn calcLightSpecular(gloss: f32, worldNormal: vec3f, h: vec3f) -> f32 {
+    let nh: f32 = max(dot(h, worldNormal), 0.0);
+    let specPow: f32 = max(exp2(gloss * 11.0), 0.0001);
+    return pow(nh, specPow) * (specPow + 2.0) / 8.0 * ${SUN_RADIANCE.toFixed(1)};
+}
+fn getLightSpecular(h: vec3f, reflDir: vec3f, worldNormal: vec3f, viewDir: vec3f, lightDirNorm: vec3f, gloss: f32, tbn: mat3x3f) -> f32 {
+    return calcLightSpecular(gloss, worldNormal, h);
+}
+`;
+
 export function glassReflectionMaterial(device, f0 = 0.06) {
   const key = `glassReflection${f0}`;
   if (cache.has(key)) return cache.get(key);
@@ -234,6 +261,8 @@ export function glassReflectionMaterial(device, f0 = 0.06) {
   m.gloss = 0.88;
   m.getShaderChunks('glsl').set('fresnelSchlickPS', FRESNEL_GLSL);
   m.getShaderChunks('wgsl').set('fresnelSchlickPS', FRESNEL_WGSL);
+  m.getShaderChunks('glsl').set('lightSpecularBlinnPS', SUN_SPEC_GLSL);
+  m.getShaderChunks('wgsl').set('lightSpecularBlinnPS', SUN_SPEC_WGSL);
   reflecting(m, true);
   m.reflectivity = REFLECTANCE;
   m.blendType = pc.BLEND_ADDITIVE;
