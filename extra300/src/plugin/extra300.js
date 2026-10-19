@@ -1004,6 +1004,7 @@ export class Extra300 extends ArrivalScript {
   }
 
   _resetToRunway() {
+    this._broken = false;
     this.mapper.resetHolds();
     // on final to the carrier only once aboard: parked, the airplane waits on runway 36
     if (this._onFinalStart) { this._startOnFinal(); return; }
@@ -1561,6 +1562,8 @@ export class Extra300 extends ArrivalScript {
     }
 
     for (const ev of this.ac.events.splice(0)) {
+      // the ones that end the flight: the restart button too, until the reset
+      if (ev.e === 'propStrike' || /^belly/.test(ev.e) || ev.e === 'splash') this._broken = true;
       if (ev.e === 'propStrike') this.hud.flash('Prop strike! Backspace to reset', 4);
       if (ev.e === 'nozzleLStrike' || ev.e === 'nozzleRStrike') this.hud.flash('Tail strike: easy on the rotation', 3);
       if (/^belly/.test(ev.e)) this.hud.flash('Gear-up landing! Backspace to reset', 4);
@@ -1584,7 +1587,7 @@ export class Extra300 extends ArrivalScript {
 
     // broken (crashed, the prop struck, the gear folded): the restart button under the top bar
     const dmg = this.ac.damage;
-    this.hud.showRestart(this._flying && !this._intro && (dmg.crashed || dmg.propStrike || dmg.gearCollapsed));
+    this.hud.showRestart(this._flying && !this._intro && (this._broken || dmg.crashed || dmg.propStrike || dmg.gearCollapsed));
     this._panelAcc += dt;
     if (this._panelVisible && !this._intro && this._panelAcc > 1 / 30) {
       this._panelAcc = 0;
@@ -1660,6 +1663,7 @@ export class Extra300 extends ArrivalScript {
 
   _crash(message) {
     this.ac.damage.crashed = true;
+    this._broken = true;
     this.ac.setEngineRunning(false);
     this.ac.state.vel = [0, 0, 0];
     this.ac.state.omega = [0, 0, 0];
