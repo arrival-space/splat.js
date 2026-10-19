@@ -48,13 +48,20 @@
     "spaceDomain": "arrival.space"
   },
   "state": {
-    "files": 2,
-    "memory": 4856362,
-    "updated": 1792365448443,
-    "entities": 11,
+    "files": 9,
+    "memory": 4890696,
+    "updated": 1792366308370,
+    "entities": 18,
     "entitySizes": {
-      "extra300-meigs": 4715671,
-      "google-3d-tiles": 140691
+      "extra300-meigs": 4723960,
+      "google-3d-tiles": 140691,
+      "flight-airport-krnt": 2987,
+      "flight-airport-lowi": 2987,
+      "flight-aircraft-b777": 4271,
+      "flight-aircraft-f15c": 4271,
+      "flight-airport-meigs": 2987,
+      "flight-aircraft-xwing": 4271,
+      "flight-aircraft-extra300l": 4271
     },
     "screenshotTime": 1792364890596,
     "screenshotDataHash": "404d417964699c74b8f0c3d7a6a5b56fb015fc7c5df41aee44bbf5aa7c2ca805"
