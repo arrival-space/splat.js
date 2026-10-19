@@ -13,6 +13,7 @@
 //   - tiles that only left the view kept (out of range they still go), up to a memory budget; loads
 //     still under way called off when their tile leaves the view, and gone from the queue at once
 //   - what the camera sees downloaded first, sixteen at a time; every tile downloaded once (its bytes kept)
+//   - a fast camera: the streamer looks 1.5 s ahead along its path
 //   - the sun set: the room's sun light faded out at the horizon, Google's daylit photo dimmed through dusk
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
@@ -897,6 +898,45 @@ const PATCHES = [
     ].join('\n'),
     with: [
       '    static MAX_CONCURRENT_LOADS = 16;   // HTTP/2: the tiles stream in parallel',
+    ].join('\n'),
+  },
+  // a fast airplane: the streamer looks ahead along its path
+  {
+    replace: [
+      '        this._camTile = [local.x, local.y, local.z];',
+    ].join('\n'),
+    with: [
+      '        this._camTile = [local.x, local.y, local.z];',
+      '        // where the camera will be in 1.5 s (a fast airplane): tiles in range or in view from there count',
+      '        // too, so the ground ahead is loading before it is passed (no more than 3 km ahead)',
+      '        const nowS = performance.now() / 1000, prev = this._camPrev;',
+      '        if (prev && nowS - prev.t > 0.02) {',
+      '            const k = 1 / (nowS - prev.t), v = [(local.x - prev.p[0]) * k, (local.y - prev.p[1]) * k, (local.z - prev.p[2]) * k];',
+      '            // (a jump, the globe moved under the camera: no speed of its own, ignored)',
+      '            const sv = len3(v[0], v[1], v[2]) > 1500 ? (this._camVel = null) || [0, 0, 0]',
+      '                : (this._camVel = this._camVel ? this._camVel.map((c, i) => c + (v[i] - c) * 0.5) : v);',
+      '            const lead = Math.min(1.5, 3000 / Math.max(len3(sv[0], sv[1], sv[2]), 1e-3));',
+      '            if (len3(sv[0], sv[1], sv[2]) > 30) this._camTile.ahead = [local.x + sv[0] * lead, local.y + sv[1] * lead, local.z + sv[2] * lead];',
+      '        }',
+      '        this._camPrev = { t: nowS, p: [local.x, local.y, local.z] };',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        const dist = len3(bx - cam[0], bz - cam[1], -by - cam[2]);',
+    ].join('\n'),
+    with: [
+      '        const a = cam.ahead;',
+      '        const dist = Math.min(len3(bx - cam[0], bz - cam[1], -by - cam[2]), a ? len3(bx - a[0], bz - a[1], -by - a[2]) : Infinity);',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        return ang - alpha <= this.halfFov + extra;',
+    ].join('\n'),
+    with: [
+      '        if (ang - alpha <= this.halfFov + extra) return true;',
+      '        return !!cam.ahead && this.inView(node, cam.ahead, extra);   // or in view from where the camera is going',
     ].join('\n'),
   },
   // the sun set: the room's sun out at the horizon, the tiles (a daylit photo, unlit) dimmed through dusk
