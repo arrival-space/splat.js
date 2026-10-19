@@ -1,7 +1,7 @@
 // jetHud.js — the F-15's head-up display, drawn over the whole view: pitch
 // ladder rolling with the bank, the flight-path marker, the heading tape,
-// airspeed and altitude boxes, Mach, g and angle of attack, and below it a
-// compact engine and gear strip. The ladder is to scale with the camera's
+// airspeed and altitude boxes, Mach, g and angle of attack (the engine, the fuel and the gear: the
+// cluster along the bottom, jetPanel.js). The ladder is to scale with the camera's
 // field of view, so in the cockpit it lies on the real horizon; from outside
 // (chase, tower, fly-by) only the numbers show.
 
@@ -168,44 +168,6 @@ export class JetHud {
       ctx.fillStyle = this.green;
     }
 
-    // ── engine and configuration strip along the bottom ──
-    ctx.shadowBlur = 0;
-    const sy = H - u * 4.2;
-    const items = [];
-    items.push(`N2 ${Math.round(v.n2 || 0)}%`);
-    items.push(`FTIT ${Math.round(v.ftit || 0)}°`);
-    items.push(`FF ${Math.round((v.fuelFlow || 0) / 100) * 100}`);
-    items.push(`FUEL ${Math.round((v.fuelLb || 0) / 10) * 10}`);
-    const thr = s.throttle ?? 0, det = s.abDetent ?? 0.8;
-    items.push(thr > det ? `${s.boostLabel || 'AB'} ${Math.round(((thr - det) / (1 - det)) * 5) || 1}` : `THR ${Math.round((thr / det) * 100)}%`);
-    ctx.font = `700 ${Math.round(u * 1.8)}px "Helvetica Neue", Arial, sans-serif`;
-    const gapX = u * 2.2;
-    const widths = items.map((t) => ctx.measureText(t).width);
-    const total = widths.reduce((a, b) => a + b, 0) + gapX * (items.length - 1) + u * 26;
-    let x = cx - total / 2;
-    ctx.fillStyle = 'rgba(8,12,10,0.55)';
-    ctx.fillRect(x - u, sy - u * 1.9, total + 2 * u, u * 3.8);
-    ctx.textAlign = 'left';
-    items.forEach((t, i) => {
-      ctx.fillStyle = i === 4 && thr > det ? '#ffb86b' : this.green;
-      ctx.fillText(t, x, sy);
-      x += widths[i] + gapX;
-    });
-    // gear: three lights, green down and locked, amber in transit; speed brake, flaps, brake, pause
-    const g = s.gearPos ?? 1;
-    const lamp = (label, on, col) => {
-      ctx.fillStyle = on ? col : this.faint;
-      ctx.fillText(label, x, sy);
-      x += ctx.measureText(label).width + u * 1.2;
-    };
-    lamp(g > 0.99 ? '●●●' : g < 0.01 ? '○○○' : '◐◐◐', g > 0.01, g > 0.99 ? this.green : '#ffb86b');
-    if (s.speedbrake != null) lamp('SB', s.speedbrake > 0.05, '#ffb86b');
-    if (s.flaps != null) lamp('FLAP', s.flaps > 0.05, this.green);
-    if (s.hook != null) lamp('HOOK', s.hook > 0.05, '#ffb86b');
-    if (s.sfoils != null) lamp('S-FOILS', s.sfoils > 0.05, s.sfoils > 0.95 ? '#ff4a3a' : '#ffb86b');
-    lamp('PARK', !!s.parkingBrake, '#ffd166');
-    if (!s.engineRunning) lamp('ENG OFF', true, '#ffd166');
-    if (s.paused) lamp('PAUSED', true, '#7fb0ff');
     ctx.restore();
   }
 }

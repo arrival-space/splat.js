@@ -1561,6 +1561,13 @@ export class Extra300 extends ArrivalScript {
           parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running,
           paused: this._paused, stall: v.stallWarning, gMax: this.ac.spec.limits.gPos, conformal: this.cameraRig.view === 'cockpit' && !this._intro,
         });
+        this.hud.jetPanel.draw(v, {
+          throttle: c.throttle, abDetent: this.ac.spec.jet.abDetent, boostLabel: this.profile.boostLabel, gearPos: this.ac.gearPos,
+          speedbrake: this.ac.spec.aero.body.speedbrakeDragArea ? this.ac.speedbrakePos : null,
+          flaps: this.ac.spec.autoFlaps ? c.flaps : null, hook: this.ac.spec.hook ? this.ac.hookPos : null,
+          sfoils: this.ac.spec.sfoils ? this.ac.sfoilPos : null,
+          parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running, paused: this._paused,
+        });
       } else {
         this.hud.panel.draw(v, {
           throttle: c.throttle, parkingBrake: c.parkingBrake,

@@ -180,6 +180,26 @@ export function gmeter(ctx, x, y, r, v, lim) {
   glass(ctx, x, y, r);
 }
 
+/**
+ * A plain engine dial over 270°: its range, coloured bands [from, to, colour], numbers every `step`,
+ * its name and its unit (a jet's N2 and FTIT).
+ */
+export function dial(ctx, x, y, r, value, { min, max, step, bands = [], name, unit, scale = 1 }) {
+  bezel(ctx, x, y, r);
+  const f = (q) => dialAngle(q, min, max, -Math.PI * 0.75, Math.PI * 0.75);
+  const col = { green: GREEN, yellow: YELLOW, red: RED };
+  for (const [a, b, c] of bands) arc(ctx, x, y, r * 0.88, f(a), f(b), col[c] || c, r * 0.07);
+  const major = [], minor = [];
+  for (let q = min; q <= max + 1e-6; q += step / 2) ((Math.round((q - min) / (step / 2)) % 2) ? minor : major).push(f(q));
+  ticks(ctx, x, y, r * 0.95, major, r * 0.14, r * 0.025);
+  ticks(ctx, x, y, r * 0.95, minor, r * 0.07, r * 0.015);
+  for (let q = min; q <= max + 1e-6; q += step) { const [lx, ly] = polar(x, y, r * 0.66, f(q)); label(ctx, String(Math.round(q / scale)), lx, ly, r * 0.15); }
+  label(ctx, name, x, y + r * 0.3, r * 0.13, '#bdbab2');
+  label(ctx, `${Math.round(value)}${unit}`, x, y + r * 0.52, r * 0.15);
+  needle(ctx, x, y, r * 0.88, f(value));
+  glass(ctx, x, y, r);
+}
+
 /** Whiskey compass: a card strip seen through a window, lubber line in the middle. */
 export function compass(ctx, x, y, w, h, headingDeg) {
   ctx.save();

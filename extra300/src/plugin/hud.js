@@ -4,6 +4,7 @@
 // phones. The words on the cards are the airplane's (plugin/profiles.js).
 
 import { Panel } from '../instruments/panel.js';
+import { JetPanel } from '../instruments/jetPanel.js';
 import { JetHud } from '../instruments/jetHud.js';
 
 export const CREDIT = 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago';
@@ -25,6 +26,9 @@ export class Hud {
     css(this.panelCanvas, { position: 'fixed', left: '50%', bottom: '4px', transform: 'translateX(-50%)', pointerEvents: 'none', zIndex: 20, display: 'none' });
     container.appendChild(this.panelCanvas);
     this.panel = new Panel(this.panelCanvas, profile.spec.limits);
+    // the jets' cluster on the same canvas (their speed and height are the head-up display's)
+    this.jetPanel = new JetPanel(this.panelCanvas);
+    this._P = profile.display === 'hud' ? JetPanel : Panel;   // whose layout the canvas has
     // the throttle lever, dragged with the mouse (or a finger): over its slot on the panel, which
     // stays click-through everywhere else; onThrottle(0..1) hands the setting to the plugin
     this.onThrottle = null;
@@ -385,6 +389,8 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.aircraftButton.innerHTML = `${p.title}<span style="opacity:0.6;margin-left:5px">▾</span>`;
     this.aircraftButton.title = 'Which airplane (T: the next)';
     this.panel.limits = p.spec.limits;
+    const P = p.display === 'hud' ? JetPanel : Panel;
+    if (P !== this._P) { this._P = P; this.layout(); }
     this.setEasy(this._easy ?? false);
     // (from the constructor, the rest of the DOM isn't built yet)
     if (this.buttons) {
@@ -397,17 +403,18 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.jetHud.resize(window.innerWidth, window.innerHeight, Math.min(2, window.devicePixelRatio || 1));
     // the cluster is only as wide as its instruments, centred on the bottom edge
     let h = Math.round(Math.min(window.innerHeight * 0.21, 175));
-    let w = Panel.widthFor(Panel.radiusFor(h));
+    const P = this._P;
+    let w = P.widthFor(P.radiusFor(h));
     const maxW = window.innerWidth - 16;
-    if (w > maxW) { h = Math.floor(h * (maxW / w)); w = Panel.widthFor(Panel.radiusFor(h)); }
-    this.panel.resize(Math.ceil(w), h, Math.min(2, window.devicePixelRatio || 1));
+    if (w > maxW) { h = Math.floor(h * (maxW / w)); w = P.widthFor(P.radiusFor(h)); }
+    (P === JetPanel ? this.jetPanel : this.panel).resize(Math.ceil(w), h, Math.min(2, window.devicePixelRatio || 1));
     this.panelHeight = h;
     // the throttle grip over the lever's plate (the panel: centred, 4 px off the bottom)
-    const sl = this._slot = Panel.throttleSlot(h), px = (window.innerWidth - Math.ceil(w)) / 2, py = window.innerHeight - 4 - h;
+    const sl = this._slot = P.throttleSlot(h), px = (window.innerWidth - Math.ceil(w)) / 2, py = window.innerHeight - 4 - h;
     Object.assign(this.throttleGrip.style, {
       left: `${px + sl.plate.x}px`, top: `${py + sl.plate.y}px`, width: `${sl.plate.w}px`, height: `${sl.plate.h}px`,
     });
-    const eb = Panel.engineLamp(h);
+    const eb = P.engineLamp(h);
     Object.assign(this.engineButton.style, { left: `${px + eb.x}px`, top: `${py + eb.y}px`, width: `${eb.w}px`, height: `${eb.h}px` });
   }
 
@@ -524,7 +531,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this._flying = flying;
     this._panelVisible = panelVisible;
     const hud = this.profile.display === 'hud';
-    this.panelCanvas.style.display = flying && panelVisible && !hud ? 'block' : 'none';
+    this.panelCanvas.style.display = flying && panelVisible ? 'block' : 'none';   // the jets' cluster under their HUD
     this._syncGrip();
     this.hudCanvas.style.display = flying && panelVisible && hud ? 'block' : 'none';
     this.credit.style.display = flying ? 'block' : 'none';
