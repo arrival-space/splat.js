@@ -37,6 +37,24 @@ export const INTRO_SHOTS = [
 ];
 export const INTRO_LENGTH = INTRO_SHOTS[INTRO_SHOTS.length - 1].t1;
 
+/**
+ * The film at load (plugin/extra300.js), while Google's tiles are still streaming in: the same four
+ * captions, shot so their pop-in stays out of the frame. Low hero angles looking up put the airplane
+ * against the sky (the horizon under the bottom letterbox), and the shot over the wing looks straight
+ * down onto our own runway, there from the first frame. It ends outside, the visitor on foot after.
+ * (Body axes as above; the ground at z ≈ 1.33 + 0.2·x, every eye 0.4 m or more over it.)
+ */
+const INTRO_LOAD_SHOTS = [
+  // the spinner from low ahead, against the sky
+  { t0: 0, t1: 5.5, eye: [[4.0, -1.6, 0.95], [3.3, -1.0, 0.85]], at: [[2.1, 0, -0.25], [2.0, 0, -0.4]], fov: [38, 34], card: 0 },
+  // ahead of the left wing, low, the cowl and the canopy rising over the camera
+  { t0: 5.5, t1: 10.5, eye: [[3.0, -3.2, 0.9], [1.6, -3.6, 0.8]], at: [[1.2, 0, -1.0], [-0.8, 0, -1.2]], fov: [44, 46], card: 1 },
+  // straight down over the right wing's sunburst, the runway under it
+  { t0: 10.5, t1: 15.5, eye: [[0.8, 3.2, -4.6], [-1.0, 1.4, -5.6]], at: [[-0.2, 2.4, 0.1], [-0.5, 0.2, 0.0]], fov: [50, 52], card: 2 },
+  // low behind the tail, swinging round, looking up the fuselage
+  { t0: 15.5, t1: 20.5, eye: [[-8.8, -1.6, -0.85], [-7.8, 1.4, -0.85]], at: [[-4.8, 0, -1.9], [-2.0, 0, -2.0]], fov: [30, 28], card: 3 },
+];
+
 /** The engine during the intro: still for the first shot's opening, then the starter, then running. */
 export const INTRO_STARTER = [1.4, 4.2];
 
@@ -103,9 +121,12 @@ const B7_CARDS = [
   { kicker: 'Your airplane', title: 'Cleared for take-off', lines: ['Engines idling, flaps set · R / End: thrust · rotate at ~145 kt'] },
 ];
 
-/** Each airplane's film: shots, captions, the starter's window, its length. */
+/** Each airplane's film: shots, captions, the starter's window, its length; `load`: its shots at load, if its own. */
 export const INTROS = {
-  extra300l: { shots: INTRO_SHOTS, cards: INTRO_CARDS, starter: INTRO_STARTER, length: INTRO_LENGTH },
+  extra300l: {
+    shots: INTRO_SHOTS, cards: INTRO_CARDS, starter: INTRO_STARTER, length: INTRO_LENGTH,
+    load: { shots: INTRO_LOAD_SHOTS, length: INTRO_LOAD_SHOTS[INTRO_LOAD_SHOTS.length - 1].t1 },
+  },
   // the jet fuel starter needs longer to bring the cores to light-off
   f15c: { shots: F15_SHOTS, cards: F15_CARDS, starter: [1.4, 7.5], length: F15_SHOTS[F15_SHOTS.length - 1].t1 },
   xwing: { shots: XW_SHOTS, cards: XW_CARDS, starter: [1.4, 3.5], length: XW_SHOTS[XW_SHOTS.length - 1].t1 },

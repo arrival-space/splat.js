@@ -6,7 +6,7 @@
 //   - the globe re-anchored on request ("googletiles:set-origin": another destination, its sun)
 //   - the room sun's shadow map on Google's unlit tiles ("googletiles:receive-shadows")
 //   - the streaming held while another vibe asks (app.googleTilesHold: its start menu)
-//   - the first-load card and the tile count at the top middle, small and faint (not over the
+//   - the first-load card and the tile count in the bottom left corner, small and faint (not over the
 //     flight vibe's instrument panel, nor in the middle of its intro film)
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
@@ -571,7 +571,7 @@ const PATCHES = [
       "        this._setShadowOn(mat);        // unlit again: back under the sun's shadow map, if asked",
     ].join('\n'),
   },
-  // the first-load card: a slim one at the top middle, under the flight vibe's top bar and the tile count
+  // the first-load card: a slim one in the bottom left corner, over the tile count
   {
     replace: [
       '                    position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)",',
@@ -580,7 +580,7 @@ const PATCHES = [
       '                    boxShadow: "0 12px 40px rgba(0,0,0,.45)", zIndex: "998", pointerEvents: "none", textAlign: "center",',
     ].join('\n'),
     with: [
-      '                    position: "fixed", left: "50%", top: "78px", transform: "translateX(-50%)",',
+      '                    position: "fixed", left: "8px", bottom: "30px", transform: "none",',
       '                    width: "200px", padding: "7px 12px 6px", borderRadius: "10px",',
       '                    background: "rgba(10,16,26,0.55)", color: "#eaf2ff", fontFamily: "sans-serif",',
       '                    zIndex: "998", pointerEvents: "none", textAlign: "center", opacity: "0.85",',
@@ -598,7 +598,7 @@ const PATCHES = [
     replace: '`<div class="gt-load-text" style="font-size:12px;opacity:.7;">Connecting…</div>`,',
     with: '`<div class="gt-load-text" style="font-size:10px;opacity:.7;">Connecting…</div>`,',
   },
-  // the tile count: a faint line at the top middle, not a box over the instrument panel
+  // the tile count: a faint line in the bottom left corner, not a box over the instrument panel
   {
     replace: [
       '                        bottom: "32px",',
@@ -611,9 +611,9 @@ const PATCHES = [
       '                        fontSize: "13px",',
     ].join('\n'),
     with: [
-      '                        top: "56px",',
-      '                        left: "50%",',
-      '                        transform: "translateX(-50%)",',
+      '                        bottom: "6px",',
+      '                        left: "8px",',
+      '                        transform: "none",',
       '                        background: "rgba(10,15,25,0.35)",',
       '                        color: "rgba(200,235,200,0.75)",',
       '                        padding: "2px 8px",',

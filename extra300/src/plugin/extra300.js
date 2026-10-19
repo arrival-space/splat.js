@@ -1012,13 +1012,17 @@ export class Extra300 extends ArrivalScript {
     const it = this._intro;
     it.t += dt;
     const c = this.ac.controls;
-    const film = this.profile.intro;
+    // at load: its own shots where the airplane has them (the tiles' pop-in kept out of the frame), else
+    // the boarding film's, ending before the last shot (into the pilot's seat): the visitor stays outside
+    const own = this.profile.intro;
+    const film = this._loadIntro && own.load ? { ...own, ...own.load } : own;
+    const end = this._loadIntro && !own.load ? film.shots[film.shots.length - 1].t0 : film.length;
     c.throttle = 0; c.parkingBrake = true;
     c.starter = !this._loadIntro && it.t > film.starter[0] && it.t < film.starter[1] && !this.ac.engine.running;
-    const shot = introAt(it.t, film);
-    // at load it ends before the last shot (into the pilot's seat): the visitor stays outside
-    const end = this._loadIntro ? film.shots[film.shots.length - 1].t0 : film.length;
     if (it.t >= end) { this._endIntro(); return null; }
+    const shot = introAt(it.t, film);
+    // at load it opens out of black
+    this.hud.setIntroFade(this._loadIntro ? 1 - Math.max(0, Math.min(1, (it.t - 0.3) / 1.6)) : 0);
     // the last second flies into the pilot's seat: the pilot's own head goes, and the canopy
     const inside = it.t > film.length - 1.2;
     this._setAvatarVisible(!inside);

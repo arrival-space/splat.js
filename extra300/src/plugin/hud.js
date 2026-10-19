@@ -346,6 +346,10 @@ export class Hud {
     this.introProgress = document.createElement('div');
     css(this.introProgress, { position: 'fixed', left: 0, bottom: 0, height: '3px', width: '0', background: '#c41e2a', zIndex: 32, pointerEvents: 'none', display: 'none' });
     container.appendChild(this.introProgress);
+    // the film at load opens out of black
+    this.introFade = document.createElement('div');
+    css(this.introFade, { position: 'fixed', inset: 0, background: '#000', zIndex: 29, pointerEvents: 'none', display: 'none', opacity: 0 });
+    container.appendChild(this.introFade);
     this.skipButton = button({
       right: '24px', bottom: 'calc(11vh + 22px)', padding: '8px 16px', borderRadius: '18px', display: 'none', zIndex: 1001,
       border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(12,13,16,0.55)', color: '#fff',
@@ -362,9 +366,16 @@ export class Hud {
     this.introCard.style.display = on ? 'block' : 'none';
     this.introProgress.style.display = on ? 'block' : 'none';
     this.skipButton.style.display = on ? 'block' : 'none';
+    if (!on) this.setIntroFade(0);
     this._introCardShown = -1;
     if (on) { this.panelCanvas.style.display = 'none'; this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
     for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton]) b.style.display = on ? 'none' : b.style.display;
+  }
+
+  /** Black over the scene (0 none … 1 all), under the letterbox and the captions. */
+  setIntroFade(a) {
+    this.introFade.style.display = a > 0 ? 'block' : 'none';
+    this.introFade.style.opacity = a.toFixed(3);
   }
 
   /** One caption card: { kicker, title, lines }, faded by alpha; progress 0..1 along the bottom edge. */
@@ -430,6 +441,6 @@ export class Hud {
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
     for (const el of [this.panelCanvas, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton,
-      this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.skipButton, ...Object.values(this.buttons)]) el.remove();
+      this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

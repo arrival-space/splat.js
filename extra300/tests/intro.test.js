@@ -2,7 +2,7 @@
 // and an engine that really starts in the first shot (the sim's own starter, not a fake).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { INTRO_CARDS, INTRO_LENGTH, INTRO_SHOTS, INTRO_STARTER, introAt } from '../src/render/intro.js';
+import { INTRO_CARDS, INTRO_LENGTH, INTRO_SHOTS, INTRO_STARTER, INTROS, introAt } from '../src/render/intro.js';
 import { Aircraft } from '../src/sim/aircraft.js';
 import EXTRA from '../src/sim/aircraft/extra300l.js';
 import { buildMeigs } from '../src/world/meigs.js';
@@ -33,6 +33,31 @@ test('the camera stays above the ground, out of the airplane, until it flies int
   }
   // and it ends exactly where the cockpit view begins
   assert.deepEqual(introAt(INTRO_LENGTH - 1e-6).eye.map((v) => +v.toFixed(3)), EXTRA.eye.map((v) => +v.toFixed(3)));
+});
+
+test('the film at load keeps Google\'s tiles out of the frame: the sky behind the airplane, or our runway under it', () => {
+  const load = { ...INTROS.extra300l, ...INTROS.extra300l.load };
+  let t = 0;
+  for (const s of load.shots) {
+    assert.equal(s.t0, t);
+    assert.ok(INTRO_CARDS[s.card], `card ${s.card}`);
+    t = s.t1;
+  }
+  assert.equal(t, load.length);
+  const deg = 180 / Math.PI;
+  for (let t = 0; t < load.length; t += 0.05) {
+    const { eye, at, fov } = introAt(t, load);
+    const [x, y, z] = eye;
+    assert.ok(z < 1.33 + 0.2 * x - 0.4, `t ${t.toFixed(2)}: eye ${eye.map((v) => v.toFixed(2))} near the ground`);
+    assert.ok(!(x > -4.8 && x < 2.4 && Math.abs(y) < 0.55 && z > -0.8 && z < 0.65), `t ${t.toFixed(2)}: eye inside the fuselage`);
+    assert.ok(!(x > -1.3 && x < 1.3 && Math.abs(y) < 4.1 && z > -0.3 && z < 0.7), `t ${t.toFixed(2)}: eye in a wing`);
+    // looking up past half the field of view, less the bottom letterbox's share (11 % of the height):
+    // the horizon under the bar; or (over the wing) steeply down, onto the runway round the airplane
+    const d = at.map((v, k) => v - eye[k]);
+    const up = Math.atan2(-d[2], Math.hypot(d[0], d[1])) * deg;
+    if (up > 0) assert.ok(up >= fov / 2 * 0.78 - 0.5, `t ${t.toFixed(2)}: looking up ${up.toFixed(1)}° in ${fov.toFixed(0)}°: the horizon in frame`);
+    else assert.ok(-up > 55, `t ${t.toFixed(2)}: looking down ${(-up).toFixed(1)}°: past the runway's edge`);
+  }
 });
 
 test('the first shot starts the engine with the starter: still, cranking, then running at idle', () => {
