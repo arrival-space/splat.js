@@ -33,6 +33,7 @@
       "qnhInHg": 29.92,
       "oatC": 15,
       "easyMode": true,
+      "autoTrim": true,
       "playIntro": true,
       "introAtStart": true,
       "debugSpheres": false,
