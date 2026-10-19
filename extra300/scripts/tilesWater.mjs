@@ -10,7 +10,10 @@
 //     flight vibe's instrument panel, nor in the middle of its intro film)
 //   - a loaded tile shown when a per-frame budget lets it (its first draw uploads its texture and mesh:
 //     a burst of them in one frame was a 100 ms stall), its coarser parent kept up until it is
-//   - tiles that only left the view kept (out of range they still go), up to a memory budget
+//   - tiles that only left the view kept (out of range they still go), up to a memory budget; loads
+//     still under way called off when their tile leaves the view, and gone from the queue at once
+//   - what the camera sees downloaded first, sixteen at a time; every tile downloaded once (its bytes kept)
+//   - the sun set: the room's sun light faded out at the horizon, Google's daylit photo dimmed through dusk
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
 // the vibe is staged as it is, with a warning, rather than half-patched.
@@ -624,35 +627,115 @@ const PATCHES = [
       '                        fontSize: "10px",',
     ].join('\n'),
   },
-  // a loaded tile waits its turn to be shown (the reveal queue below), so its parent stays up meanwhile
+  // tile loading, fast and without waste: each request knows its record, so one called off leaves the queue at once
   {
     replace: [
-      '                    this._chunkEntity(entity);',
-      '                }',
-      '                if (this.directLight) this._tuneEntity(entity);',
-      '            } finally {',
-      '                this._releaseSlot();',
+      '            await this._acquireSlot(node);',
     ].join('\n'),
     with: [
-      '                    this._chunkEntity(entity);',
-      '                }',
-      '                if (this.directLight) this._tuneEntity(entity);',
-      '                // shown when the per-frame budget lets it: its first draw uploads its texture and mesh, and',
-      '                // a burst of tiles landing together stalled one frame for 100 ms (the parent stays up meanwhile)',
-      '                entity.enabled = false;',
-      '                await this._revealTurn();',
-      '                if (!rec.dead && session === this._sessionId) entity.enabled = true;',
-      '            } finally {',
-      '                this._releaseSlot();',
+      '            await this._acquireSlot(node, rec);',
     ].join('\n'),
   },
   {
     replace: [
-      '        this._updateInitialLoad();',
+      '    _acquireSlot(node) {',
     ].join('\n'),
     with: [
-      '        this._revealTick(dt);',
-      '        this._updateInitialLoad();',
+      '    _acquireSlot(node, rec) {',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        return new Promise(resolve => this._loadQueue.push({ node, resolve }))',
+    ].join('\n'),
+    with: [
+      '        return new Promise(resolve => this._loadQueue.push({ node, rec, resolve }))',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        const q = this._loadQueue;',
+      '        if (!q.length) return;',
+    ].join('\n'),
+    with: [
+      '        // requests called off while they waited (their tile collapsed: the camera turned away) go now; left',
+      '        // in, every lap round the airplane parked another copy of the same tiles behind the live ones',
+      '        const q = this._loadQueue = this._loadQueue.filter((e) => !e.rec?.dead);',
+      '        if (!q.length) return;',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '                const d = boxCamDistSq(q[i].node, cam);',
+    ].join('\n'),
+    with: [
+      '                // what the camera sees first, then the nearest: out of view counts as four times as far',
+      '                const d = boxCamDistSq(q[i].node, cam) * (this._tree?.inView(q[i].node, cam) ? 1 : 16);',
+    ].join('\n'),
+  },
+  // every tile downloaded once: its bytes kept (a capped cache, oldest out first)
+  {
+    replace: [
+      '                    const res = await fetch(url);',
+      '                    if (!res.ok) throw new Error(`tile ${res.status}`);',
+      '                    const bytes = await res.arrayBuffer();',
+    ].join('\n'),
+    with: [
+      '                    // a tile downloaded before (turned away from, evicted, its load called off) comes from',
+      '                    // the bytes kept, not the network',
+      '                    let bytes = this._glbCacheGet(node.content.uri);',
+      '                    if (!bytes) {',
+      '                        const res = await fetch(url);',
+      '                        if (!res.ok) throw new Error(`tile ${res.status}`);',
+      '                        bytes = await res.arrayBuffer();',
+      '                        this._glbCachePut(node.content.uri, bytes);',
+      '                    }',
+    ].join('\n'),
+  },
+  // a loaded tile shown a few a frame (the reveal queue)
+  {
+    replace: [
+      '                    this._chunkEntity(entity);',
+      '                }',
+      '                if (this.directLight) this._tuneEntity(entity);',
+      '            } finally {',
+      '                this._releaseSlot();',
+      '            }',
+      '        } finally {',
+    ].join('\n'),
+    with: [
+      '                    this._chunkEntity(entity);',
+      '                }',
+      '                if (this.directLight) this._tuneEntity(entity);',
+      '                // hidden until its turn to be shown (below): its first draw uploads its texture and mesh',
+      '                entity.enabled = false;',
+      '            } finally {',
+      '                this._releaseSlot();',
+      '            }',
+      '            // its turn, the download slot already free for the next: a few tiles a frame (_revealTick), so a',
+      '            // burst landing together doesn\'t stall one frame for 100 ms; its parent stays up meanwhile',
+      '            if (rec.entity && !rec.dead) {',
+      '                await this._revealTurn(node);',
+      '                if (!rec.dead && session === this._sessionId && !tree.contentHidden.get(node.content.uri)) rec.entity.enabled = true;',
+      '            }',
+      '        } finally {',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        this._updateTimer += dt;',
+    ].join('\n'),
+    with: [
+      '        this._revealTick(dt);   // every frame (the rest of update runs ten times a second)',
+      '        this._updateTimer += dt;',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        const pending = this._loadSlots + this._loadQueue.length, loaded = this._records.size;',
+    ].join('\n'),
+    with: [
+      '        const pending = this._loadSlots + this._loadQueue.length + (this._revealQueue?.length || 0), loaded = this._records.size;',
     ].join('\n'),
   },
   {
@@ -660,9 +743,28 @@ const PATCHES = [
       '    _unloadTile(node) {',
     ].join('\n'),
     with: [
+      '    /** The downloaded tiles\' bytes, by their address: most recently used last; capped (a phone less). */',
+      '    _glbCacheGet(uri) {',
+      '        const c = this._glbCache, b = c?.get(uri);',
+      '        if (b) { c.delete(uri); c.set(uri, b); }',
+      '        return b || null;',
+      '    }',
+      '',
+      '    _glbCachePut(uri, bytes) {',
+      '        const c = (this._glbCache ||= new Map());',
+      '        const cap = (globalThis.matchMedia?.("(pointer: coarse)").matches ? 96 : 384) * 1024 * 1024;',
+      '        c.set(uri, bytes);',
+      '        this._glbCacheBytes = (this._glbCacheBytes || 0) + bytes.byteLength;',
+      '        for (const [k, v] of c) {',
+      '            if (this._glbCacheBytes <= cap) break;',
+      '            c.delete(k);',
+      '            this._glbCacheBytes -= v.byteLength;',
+      '        }',
+      '    }',
+      '',
       '    /** A loaded tile\'s turn to be shown: resolved by _revealTick, a few a frame. */',
-      '    _revealTurn() {',
-      '        return new Promise((resolve) => (this._revealQueue ||= []).push(resolve));',
+      '    _revealTurn(node) {',
+      '        return new Promise((resolve) => (this._revealQueue ||= []).push({ node, resolve }));',
       '    }',
       '',
       '    /** A frame that ran long lets two tiles through; quick frames let more (up to eight) a frame. */',
@@ -670,23 +772,101 @@ const PATCHES = [
       '        const q = this._revealQueue;',
       '        if (!q?.length) return;',
       '        this._revealBudget = dt > 1 / 40 ? 2 : Math.min(8, (this._revealBudget || 2) + 1);',
-      '        for (let k = 0; k < this._revealBudget && q.length; k++) q.shift()();',
+      '        // a backlog (a slow machine): what the camera sees first, then the nearest (as the downloads)',
+      '        const cam = this._camTile;',
+      '        if (q.length > this._revealBudget && cam) {',
+      '            const score = (e) => boxCamDistSq(e.node, cam) * (this._tree?.inView(e.node, cam) ? 1 : 16);',
+      '            for (const e of q) e.score = score(e);',
+      '            q.sort((a, b) => a.score - b.score);',
+      '        }',
+      '        for (let k = 0; k < this._revealBudget && q.length; k++) q.shift().resolve();',
       '    }',
       '',
       '    _unloadTile(node) {',
     ].join('\n'),
   },
-  // out of view only: kept, while the tiles loaded stay under the memory budget
+  // out of view: finished tiles kept (the cache, least recently seen out first past the budget), loads still under way called off
   {
     replace: [
+      '        for (const node of Array.from(this.expanded)) {',
+      '            // 1.15 slack = hysteresis so nodes at the boundary don\'t churn',
       '            if (!this.inRange(node, cameraPos, 1.15) ||',
       '                !this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK)) {',
+      '                this.collapseNode(node);',
+      '                continue;',
+      '            }',
     ].join('\n'),
     with: [
-      '            // out of range: always; out of view only past the memory budget (overBudget): a turn of the',
-      '            // camera away and back no longer throws away what was just looked at and loads it again',
-      '            if (!this.inRange(node, cameraPos, 1.15) ||',
-      '                (this.overBudget?.() !== false && !this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK))) {',
+      '        // Out of range: gone, always. Out of view: an expansion still loading is called off (its queued',
+      '        // requests dropped, nothing downloaded for a tile turned away from); a finished one is kept, the',
+      '        // cache (turning back needs no reload). Past the memory budget the ones looked at longest ago go,',
+      '        // a few a tick, the finest first (never a parent over children still drawn).',
+      '        const now = performance.now(), stale = [];',
+      '        for (const node of Array.from(this.expanded)) {',
+      '            // 1.15 slack = hysteresis so nodes at the boundary don\'t churn',
+      '            if (!this.inRange(node, cameraPos, 1.15)) { this.collapseNode(node); continue; }',
+      '            if (this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK)) node._seen = now;',
+      '            else if (!node._ready || !this.overBudget) { this.collapseNode(node); continue; }',
+      '            else { stale.push(node); continue; }',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '                    this.expandNode(child).catch(err => console.warn("GoogleTiles:", err.message));',
+      '                }',
+      '            }',
+      '        }',
+      '    }',
+    ].join('\n'),
+    with: [
+      '                    this.expandNode(child).catch(err => console.warn("GoogleTiles:", err.message));',
+      '                }',
+      '            }',
+      '        }',
+      '        if (stale.length && this.overBudget()) {',
+      '            const leaves = stale.filter((n) => !n.children?.some((c) => this.expanded.has(c)));',
+      '            leaves.sort((a, b) => (a._seen ?? 0) - (b._seen ?? 0));',
+      '            for (let k = 0; k < Math.min(8, leaves.length) && this.overBudget(); k++) this.collapseNode(leaves[k]);',
+      '        }',
+      '    }',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '            this.handlers.hide(node);',
+      '            this.contentHidden.set(node.content.uri, true);',
+      '        }',
+      '    }',
+    ].join('\n'),
+    with: [
+      '            this.handlers.hide(node);',
+      '            this.contentHidden.set(node.content.uri, true);',
+      '        }',
+      '        node._ready = true;   // its children all in',
+      '    }',
+    ].join('\n'),
+  },
+  // a collapse takes its expanded descendants with it (kept out of view, they'd draw under the coarse tile shown again)
+  {
+    replace: [
+      '    collapseNode(node) {',
+      '        if (node.children) {',
+    ].join('\n'),
+    with: [
+      '    collapseNode(node) {',
+      '        if (node.children) for (const child of node.children) if (this.expanded.has(child)) this.collapseNode(child);',
+      '        if (node.children) {',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        this.expanded.delete(node);',
+      '    }',
+    ].join('\n'),
+    with: [
+      '        this.expanded.delete(node);',
+      '        node._ready = false;',
+      '    }',
     ].join('\n'),
   },
   {
@@ -703,12 +883,62 @@ const PATCHES = [
       '    static INITIAL_LOAD_TIMEOUT_S = 90;',
     ].join('\n'),
     with: [
-      '    /** Tiles kept loaded at most (out of view ones go past it): by the device\'s memory, a phone fewer. */',
+      '    /** Tiles kept loaded at most (out of view ones go past it). Firefox and Safari tell no memory: a desktop\'s then. */',
       '    static get TILE_BUDGET() {',
-      '        const gb = navigator.deviceMemory || 4;',
+      '        const gb = navigator.deviceMemory ?? (globalThis.matchMedia?.("(pointer: coarse)").matches ? 2 : 8);',
       '        return gb >= 8 ? 1500 : gb >= 4 ? 900 : 500;',
       '    }',
       '    static INITIAL_LOAD_TIMEOUT_S = 90;',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '    static MAX_CONCURRENT_LOADS = 10;',
+    ].join('\n'),
+    with: [
+      '    static MAX_CONCURRENT_LOADS = 16;   // HTTP/2: the tiles stream in parallel',
+    ].join('\n'),
+  },
+  // the sun set: the room's sun out at the horizon, the tiles (a daylit photo, unlit) dimmed through dusk
+  {
+    after: 'const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);',
+    insert: '/** 0 below a, 1 above b, smooth between. */\nconst gtSmooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };',
+  },
+  {
+    replace: [
+      '            if (!this._roomSunRot.has(l.entity)) this._roomSunRot.set(l.entity, l.entity.getRotation().clone());',
+      '            l.entity.setRotation(q);',
+      '        }',
+    ].join('\n'),
+    with: [
+      '            if (!this._roomSunRot.has(l.entity)) this._roomSunRot.set(l.entity, l.entity.getRotation().clone());',
+      '            l.entity.setRotation(q);',
+      '            // below the horizon it lights nothing: full from ~6° up, out at the horizon (its own intensity kept)',
+      '            this._roomSunI ??= new Map();',
+      '            if (!this._roomSunI.has(l.entity)) this._roomSunI.set(l.entity, l.intensity);',
+      '            l.intensity = this._roomSunI.get(l.entity) * gtSmooth(-0.01, 0.1, up.y);',
+      '        }',
+      '        // the tiles are a daylit photo: dimmed through dusk, to a twentieth by nautical twilight (sun 12° down)',
+      '        const day = 0.05 + 0.95 * gtSmooth(-0.21, 0.06, up.y);',
+      '        if (day !== this._dayLight) { this._dayLight = day; this._applyColorGradeUniforms(); }',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        mat.setParameter("uBrightness", this.materialBrightness);',
+    ].join('\n'),
+    with: [
+      '        mat.setParameter("uBrightness", this.materialBrightness * (this._dayLight ?? 1));   // dimmed through dusk (_alignRoomSuns)',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '            for (const [e, q] of this._roomSunRot) if (e.light) e.setRotation(q);',
+    ].join('\n'),
+    with: [
+      '            for (const [e, q] of this._roomSunRot) if (e.light) e.setRotation(q);',
+      '            for (const [e, i] of this._roomSunI || []) if (e.light) e.light.intensity = i;',
+      '            this._roomSunI = null;',
     ].join('\n'),
   },
 ];
