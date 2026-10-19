@@ -205,7 +205,7 @@ export class Extra300 extends ArrivalScript {
     // in flight the sun's shadow map is fitted round the airplane, wherever the camera is
     this._shadowFit = new PlaneShadowFit(this.app, () => this._shadowFocus());
     // and its paint reflects the world round it (a small cube rendered from it, two faces a frame)
-    this._probe = new ReflectionProbe(this.app, this.isMobile ? { size: 64, every: 2, faces: 1 } : {});   // the whole cube every 3 frames (a phone: every 12)
+    this._probe = new ReflectionProbe(this.app, this.isMobile ? { size: 128, every: 2, faces: 1 } : {});   // 256 px faces, the whole cube every 3 frames (a phone: 128 px, every 12)
 
     // input
     this._onKeyDown = (e) => this._keyDown(e);

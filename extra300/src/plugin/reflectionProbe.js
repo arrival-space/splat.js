@@ -23,7 +23,7 @@ export class ReflectionProbe {
    * @param {{ size?: number, every?: number, faces?: number }} [o]  face size (px); frames between renders;
    *        faces rendered each time
    */
-  constructor(app, { size = 128, every = 1, faces = 2 } = {}) {
+  constructor(app, { size = 256, every = 1, faces = 2 } = {}) {
     this.app = app;
     this.every = every;
     this.perFrame = faces;

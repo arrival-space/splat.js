@@ -60,6 +60,56 @@ export function setReflectionCube(tex) {
   for (const m of reflective) { m.cubeMap = live || cube; m.update(); }
 }
 
+// The engine dims what lies under the clear coat by (1 − the coat's Fresnel × its strength): a coat
+// stronger than 1 (the boost above) drove that below zero toward grazing, where the Fresnel nears 1,
+// and the paint went black along every edge seen side on. Capped, the coat reflects all there is at
+// grazing (the paint under it gone, as on a real topcoat) and stays boosted facing the eye.
+const FRESNEL_DEFAULT_GLSL = `
+float pow5(float x) { float x2 = x * x; return x2 * x2 * x; }
+vec3 getFresnel(float cosTheta, float gloss, vec3 specularity
+#if defined(LIT_IRIDESCENCE)
+    , vec3 iridescenceFresnel, float iridescenceIntensity
+#endif
+) {
+    float fresnel = pow5(1.0 - saturate(cosTheta));
+    float glossSq = gloss * gloss;
+    float specIntensity = max(specularity.r, max(specularity.g, specularity.b));
+    vec3 ret = specularity + (max(vec3(glossSq * specIntensity), specularity) - specularity) * fresnel;
+#if defined(LIT_IRIDESCENCE)
+    return mix(ret, iridescenceFresnel, iridescenceIntensity);
+#else
+    return ret;
+#endif
+}
+`;
+const FRESNEL_DEFAULT_WGSL = `
+fn pow5(x: f32) -> f32 { let x2: f32 = x * x; return x2 * x2 * x; }
+fn getFresnel(cosTheta: f32, gloss: f32, specularity: vec3f
+#if defined(LIT_IRIDESCENCE)
+    , iridescenceFresnel: vec3f, iridescenceIntensity: f32
+#endif
+) -> vec3f {
+    let fresnel: f32 = pow5(1.0 - saturate(cosTheta));
+    let glossSq: f32 = gloss * gloss;
+    let specIntensity: f32 = max(specularity.r, max(specularity.g, specularity.b));
+    let ret: vec3f = specularity + (max(vec3f(glossSq * specIntensity), specularity) - specularity) * fresnel;
+#if defined(LIT_IRIDESCENCE)
+    return mix(ret, iridescenceFresnel, iridescenceIntensity);
+#else
+    return ret;
+#endif
+}
+`;
+function coatCapped(m, strength) {
+  const cap = (1 / strength).toFixed(5);
+  m.getShaderChunks('glsl').set('fresnelSchlickPS', `${FRESNEL_DEFAULT_GLSL}
+float getFresnelCC(float cosTheta) { return min(${cap}, 0.04 + 0.96 * pow5(1.0 - saturate(cosTheta))); }
+`);
+  m.getShaderChunks('wgsl').set('fresnelSchlickPS', `${FRESNEL_DEFAULT_WGSL}
+fn getFresnelCC(cosTheta: f32) -> f32 { return min(${cap}, 0.04 + 0.96 * pow5(1.0 - saturate(cosTheta))); }
+`);
+}
+
 /**
  * Aircraft paint: a polyurethane topcoat over the colour, glossy and clear-coated, the sky sliding
  * across it as the airplane moves (white, red, the yellow prop tips, the spinner). `satin`: a
@@ -76,6 +126,7 @@ export function paintMaterial(device, colour, satin = false, probe = true) {
   m.gloss = satin ? 0.55 : 0.82;
   m.clearCoat = (satin ? 0.25 : 1) * REFLECTANCE;   // (the coat's reflection goes by this, not by reflectivity)
   m.clearCoatGloss = satin ? 0.7 : 0.93;
+  if (m.clearCoat > 1) coatCapped(m, m.clearCoat);
   reflecting(m, probe);
   m.reflectivity = REFLECTANCE;
   m.update();
