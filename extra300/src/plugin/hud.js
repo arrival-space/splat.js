@@ -653,7 +653,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
   }
 
   /** The small take-off card (the start of a flight); hides itself once flying, see the plugin. */
-  showQuick(on) { this.quick.style.display = on && !this._quickClosed ? 'block' : 'none'; }
+  showQuick(on) { this.quick.style.display = on && !this._quickClosed && !this.isMobile ? 'block' : 'none'; }   // (not on a phone)
 
   showDemoStatus(text) {
     this.demoStatus.textContent = text || '';
