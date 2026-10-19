@@ -43,9 +43,9 @@ test('the whole runway lies on Northerly Island', () => {
 
 test('the Sears Tower is ~2.2 km north and ~2.3 km west of the runway', () => {
   const w = buildMeigs();
-  const sears = w.landmarks.find((l) => l.name === 'Sears Tower');
-  assert.ok(sears.ne[0] > 1800 && sears.ne[0] < 2600);
-  assert.ok(sears.ne[1] < -1900 && sears.ne[1] > -2700);
+  const sears = w.frame.toNE(41.8789, -87.6359);
+  assert.ok(sears[0] > 1800 && sears[0] < 2600);
+  assert.ok(sears[1] < -1900 && sears[1] > -2700);
 });
 
 test('triangulation covers a polygon exactly (area preserved)', () => {
@@ -70,8 +70,7 @@ test('the Google-tiles cut-out covers the runway and the island, and stops short
   const rw = w.runway;
   assert.ok(inside(...rw.thr36) && inside(...rw.thr18) && inside(...rw.centre), 'the runway');
   for (const [n, e] of w.island) assert.ok(inside(n, e), `island ${n.toFixed(0)}, ${e.toFixed(0)}`);
-  const sears = w.landmarks.find((l) => /Sears|Willis/.test(l.name));
-  if (sears) assert.ok(!inside(...sears.ne, 100));
+  assert.ok(!inside(...w.frame.toNE(41.8789, -87.6359), 100), 'the Sears Tower');
   assert.ok(!inside(rw.centre[0], rw.centre[1] - 1500), '1.5 km west: the mainland');
 });
 

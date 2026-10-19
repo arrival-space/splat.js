@@ -1,11 +1,9 @@
-// The OpenStreetMap pipeline on synthetic data: codec, coastline closing,
-// procedural buildings, and the world's land mask and building collisions.
+// The OpenStreetMap pipeline on synthetic data: codec, coastline closing, and the world's land mask.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { gzipSync } from 'node:zlib';
 import { encodeOsm, decodeOsm, inflateOsm, maskLookup, QUANTUM } from '../src/world/osmCodec.js';
 import { closeCoast } from '../scripts/bake-osm.mjs';
-import { buildCity, parseColour, groundLayer, ribbons } from '../src/render/buildings.js';
 import { buildMeigs } from '../src/world/meigs.js';
 import { pointInPolygon } from '../src/world/geo.js';
 
@@ -73,106 +71,11 @@ test('coastline: a shore running north with land on its left closes into the wes
   assert.ok(Math.abs(area(p) - (100 * 200 + 60 * 40)) < 1, `area ${area(p)}`);
 });
 
-test('buildings: walls, flat roofs with courtyards, gabled houses, the skyline year', () => {
-  const d = decodeOsm(encodeOsm(sample()));
-  const in2002 = buildCity(d.buildings, { year: 2002 });
-  const in2026 = buildCity(d.buildings, { year: 2026 });
-  assert.equal(in2002.shown, 2, 'the 2009 tower is not there yet');
-  assert.equal(in2026.shown, 3);
-  const roofs = in2002.filter((p) => p.kind === 'roofs');
-  const verts = roofs.reduce((s, p) => s + p.mesh.vertexCount, 0);
-  assert.ok(verts > 8, 'roofs built');
-  const walls = in2002.find((p) => p.style === 'glass');
-  // 4 outer + 4 courtyard walls, 4 verts each
-  assert.equal(walls.mesh.vertexCount, 32);
-  assert.ok(walls.mesh.uvs.length === 64, 'facade UVs');
-  // the glass tower's 120 m in floors of 3.9 m
-  const vmax = Math.max(...walls.mesh.uvs.filter((_, i) => i % 2 === 1));
-  assert.ok(Math.abs(vmax - 120.5 / 3.9) < 1e-6);
-  // the house got a gable: its roof rises above the wall top
-  const house = in2002.find((p) => p.style === 'house');
-  const ys = house.mesh.positions.filter((_, i) => i % 3 === 1);
-  assert.equal(ys.filter((y) => Math.abs(y - 9) < 1e-9).length, 2, 'only the two gable apexes reach the ridge');
-  assert.ok(ys.filter((y) => y > 0.1 && y < 8.99).length >= 8, 'the walls stop at the eaves');
-  const roofTop = Math.max(...roofs.flatMap((p) => p.mesh.positions.filter((_, i) => i % 3 === 1)).filter((y) => y < 50));
-  assert.ok(Math.abs(roofTop - 9) < 1e-9, 'ridge at full height');
-});
-
-test('buildings: wall normals point out of the footprint', () => {
-  const parts = buildCity([{ outer: square(0, 0, 10), holes: [], h: 30, minH: 0, year: 0, style: 'stone', roof: 0, colour: '' }]);
-  const w = parts.find((p) => p.kind === 'walls').mesh;
-  for (let v = 0; v < w.vertexCount; v += 4) {
-    const cx = (w.positions[v * 3] + w.positions[(v + 1) * 3]) / 2, cz = (w.positions[v * 3 + 2] + w.positions[(v + 1) * 3 + 2]) / 2;
-    const out = [cx - 5, cz - -5];   // centre of the footprint in render space is (e=5, z=-5)
-    assert.ok(w.normals[v * 3] * out[0] + w.normals[v * 3 + 2] * out[1] > 0);
-  }
-});
-
-test('buildings: minimum height drops the small stuff, colour tags win', () => {
-  const d = decodeOsm(encodeOsm(sample()));
-  assert.equal(buildCity(d.buildings, { minHeight: 15, year: 2002 }).shown, 1);
-  assert.equal(buildCity(d.buildings, { minHeight: 15 }).shown, 2, 'today (the default) includes the 2009 tower');
-  assert.deepEqual(parseColour('black'), [36, 36, 38]);
-  assert.deepEqual(parseColour('#fff'), [255, 255, 255]);
-  assert.equal(parseColour('not a colour'), null);
-});
-
-test('ground layers and road ribbons triangulate', () => {
-  const g = groundLayer([square(0, 0, 10)], 0);
-  assert.equal(g.indices.length, 6);
-  const r = ribbons([{ pts: [[0, 0], [10, 0], [10, 10]], w: 4 }], 0);
-  assert.equal(r.vertexCount, 8);
-});
-
-test('world: OSM mask decides land and lake, buildings are solid for their skyline year', () => {
+test('world: OSM mask decides land and lake', () => {
   const w = buildMeigs();
-  const d = decodeOsm(encodeOsm(sample()));
-  w.attachOsm(d, 2002);
+  w.attachOsm(decodeOsm(encodeOsm(sample())));
   assert.equal(w.ground(0, 0).surface, 'asphalt', 'the runway stays');
-  // (e, n) = (-44, -44) sits in the house; ground there is land
   assert.equal(w.ground(-44, -60).surface, 'grass');
-  assert.ok(w.buildingAt(-44, -44, 5), 'inside the house');
-  assert.equal(w.buildingAt(-44, -44, 12), null, 'above it');
-  assert.equal(w.buildingAt(30, -70, 100), null, 'not in 2002: the 2009 tower');
-  w.setSkylineYear(2026);
-  assert.ok(w.buildingAt(30, -70, 100));
-});
-
-test('every triangle faces outward: winding agrees with its normal, and the normal points away from the building', () => {
-  const sq = (x, y, s) => [[x, y], [x + s, y], [x + s, y + s], [x, y + s]];
-  const hex = (cx, cy, r) => [...Array(6).keys()].map((k) => [cx + r * Math.cos((k * Math.PI) / 3), cy + r * Math.sin((k * Math.PI) / 3)]);
-  const kinds = [
-    { name: 'flat + courtyard', b: { outer: sq(0, 0, 40), holes: [[[10, 10], [10, 30], [30, 30], [30, 10]]], h: 50, minH: 0, style: 'stone', roof: 0 } },
-    { name: 'raised part', b: { outer: sq(100, 0, 20), holes: [], h: 80, minH: 30, style: 'glass', roof: 0 } },
-    { name: 'gabled house', b: { outer: sq(200, 0, 10), holes: [], h: 9, minH: 0, style: 'house', roof: 0 } },
-    { name: 'pyramid', b: { outer: hex(300, 0, 12), holes: [], h: 30, minH: 0, style: 'stone', roof: 3 } },
-    { name: 'dome', b: { outer: hex(400, 0, 12), holes: [], h: 30, minH: 0, style: 'white', roof: 4 } },
-    { name: 'clockwise input', b: { outer: sq(500, 0, 15).reverse(), holes: [], h: 20, minH: 0, style: 'brick', roof: 0 } },
-  ];
-  for (const { name, b } of kinds) {
-    const centre = b.outer.reduce((s, p) => [s[0] + p[0] / b.outer.length, s[1] + p[1] / b.outer.length], [0, 0]);
-    const inside = [centre[0], (b.minH + b.h) / 2, -centre[1]];   // render space
-    // a clockwise outer ring is what the bake would fix; feed the generator what the bake produces
-    if (name === 'clockwise input') b.outer.reverse();
-    for (const part of buildCity([{ year: 0, colour: '', ...b }], { year: 2026 })) {
-      const { positions: P, normals: N, indices: I } = part.mesh;
-      for (let t = 0; t < I.length; t += 3) {
-        const [a, c, d] = [I[t], I[t + 1], I[t + 2]];
-        const u = [0, 1, 2].map((k) => P[c * 3 + k] - P[a * 3 + k]);
-        const v = [0, 1, 2].map((k) => P[d * 3 + k] - P[a * 3 + k]);
-        const f = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-        const n = [N[a * 3], N[a * 3 + 1], N[a * 3 + 2]];
-        const fn = f[0] * n[0] + f[1] * n[1] + f[2] * n[2];
-        assert.ok(fn > 0, `${name} ${part.kind}: triangle ${t / 3} wound against its normal`);
-        // the courtyard walls face into the courtyard, i.e. away from the solid ring around it
-        if (name === 'flat + courtyard' && part.kind === 'walls') continue;
-        const m = [0, 1, 2].map((k) => (P[a * 3 + k] + P[c * 3 + k] + P[d * 3 + k]) / 3 - inside[k]);
-        const out = m[0] * n[0] + m[1] * n[1] + m[2] * n[2];
-        if (part.kind === 'roofs' && b.minH > 0 && n[1] < 0) continue;   // the underside of a raised part faces down
-        assert.ok(out > -1e-9, `${name} ${part.kind}: triangle ${t / 3} faces into the building`);
-      }
-    }
-  }
 });
 
 test('world: past the OSM box the suburbs are land and the lake is lake, out to the horizon', async () => {
@@ -187,5 +90,5 @@ test('world: past the OSM box the suburbs are land and the lake is lake, out to 
   assert.equal(at(42.05, -87.62), 'water', 'off Evanston');
   assert.equal(at(41.80, -87.55), 'water', 'off Hyde Park');
   assert.equal(at(42.0, -87.3), 'water', 'mid-lake');
-  assert.ok(groundLayer([w.farLand], 0).vertexCount > 10, 'and it draws');
+  assert.ok(w.farLand.length > 10, 'a shore out to the horizon');
 });

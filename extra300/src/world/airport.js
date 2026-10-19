@@ -254,12 +254,10 @@ export function buildAirport(data, osm, dem = null) {
     /** The pavement as drawn when Google's tiles aren't there: strips and areas, (n, e). */
     pavement: { strips, areas },
     isPaved: (n, e) => { const k = rasterAt(n, e); return k >= 0 && paved[k] === 1; },
-    /** Lake or river here (the fallback terrain colours it, render/terrainModel.js). */
+    /** Lake or river here. */
     isWater,
     attachCarrier() {},
     attachOsm() {},
-    setSkylineYear() {},
-    buildingAt() { return null; },
     /** On the default runway (or the other with alt), lined up just past its threshold. */
     startPosition(alt = false) {
       const back = 60;

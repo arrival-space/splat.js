@@ -15,7 +15,6 @@ import { CarrierPilot, CARRIER_APPROACH } from '../autopilot/carrierApproach.js'
 import { buildMeigs } from '../world/meigs.js';
 import { buildInnsbruck, inflateLowiDem } from '../world/innsbruck.js';
 import { buildRenton, inflateRentonDem } from '../world/renton.js';
-import { TerrainVisual } from './terrainVisual.js';
 import { CLOUD_PRESETS, CloudLayer } from './clouds.js';
 import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
@@ -40,7 +39,6 @@ import { Hud } from './hud.js';
 import { disposeMaterials, toMesh } from './pcMesh.js';
 import { disposeGroundTextures } from './groundMaterial.js';
 import { disposeFinishes, glassReflectionMaterial, mirrorMaterial, paintMaterial, setReflectionCube } from './finishes.js';
-import { OsmVisual } from './osmVisual.js';
 import { inflateOsm } from '../world/osmCodec.js';
 import { CHICAGO_OSM } from '../world/data/chicagoOsm.js';
 import { buildSkyDome } from '../render/sky.js';
@@ -59,7 +57,7 @@ const CARVE_FLOOR = -0.3;
 // where the airplane can be: Meigs (the full scenery, the carrier) or Innsbruck (Google's tiles,
 // flattened under the runway, or the elevation grids when they aren't there)
 const DESTINATIONS = {
-  meigs: { id: 'meigs', title: 'Chicago Meigs (KCGX)', short: 'Chicago', runways: ['36', '18'], credit: 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago' },
+  meigs: { id: 'meigs', title: 'Chicago Meigs (KCGX)', short: 'Chicago', runways: ['36', '18'], credit: 'Map data © OpenStreetMap contributors (ODbL)' },
   lowi: { id: 'lowi', title: 'Innsbruck (LOWI)', short: 'Innsbruck', runways: ['26', '08'], credit: 'Map data © OpenStreetMap contributors (ODbL) · Elevation: Terrarium (Mapzen, AWS Open Data)' },
   krnt: { id: 'krnt', title: 'Renton, Boeing 737 field (KRNT)', short: 'Renton', runways: ['34', '16'], credit: 'Map data © OpenStreetMap contributors (ODbL) · Elevation: Terrarium (Mapzen, AWS Open Data)' },
 };
@@ -105,8 +103,6 @@ export class Extra300 extends ArrivalScript {
   windFromDeg = 0;
   qnhInHg = 29.92;
   oatC = 15;
-  skylineYear = 2026;
-  cityDetail = 'full';
   easyMode = true;            // the default: stall-proof, the attitude held hands off (the top bar's switch, or L)
   playIntro = true;
   introAtStart = true;
@@ -125,10 +121,10 @@ export class Extra300 extends ArrivalScript {
     destination: { title: 'Where to fly (also the ✈ button on the top bar, or ?airport=lowi / krnt on the address)', options: Object.values(DESTINATIONS).map((d) => d.title) },
     startRunway: { title: 'Start: runway 36, 18 (at Innsbruck: 26, 08), or on final to the carrier (Backspace goes back there)', options: ['36', '18', 'Carrier approach'] },
     showCarrier: { title: 'Aircraft carrier in the lake (USS Nimitz, arresting wires for the F-15\'s hook)' },
-    waterReflections: { title: 'Reflections in the lake (screen-space: the airplane, the carrier, the skyline)' },
+    waterReflections: { title: 'Reflections in the lake (screen-space: the airplane, the carrier)' },
     engineRunningAtStart: { title: 'Engine running at start (off: the first throttle cranks it with the starter)' },
     showPanel: { title: 'Instrument panel' },
-    showScenery: { title: 'Meigs & Chicago scenery' },
+    showScenery: { title: 'Meigs scenery (the field, its tower and lights)' },
     fuelLiters: { title: 'Fuel, centre tank (L) — the Extra (the F-15 carries ~64 % internal)', min: 5, max: 60, step: 1 },
     clouds: { title: 'Clouds (volumetric, drifting with the wind)', options: Object.keys(CLOUD_PRESETS) },
     cloudBaseFt: { title: 'Cloud base (ft above the field)', min: 500, max: 15000, step: 100 },
@@ -136,8 +132,6 @@ export class Extra300 extends ArrivalScript {
     windFromDeg: { title: 'Wind from (°true)', min: 0, max: 359, step: 1 },
     qnhInHg: { title: 'QNH (inHg)', min: 28.5, max: 31, step: 0.01 },
     oatC: { title: 'Sea-level temperature (°C)', min: -30, max: 45, step: 1 },
-    skylineYear: { title: 'Skyline year (2026 = today, 2002 = the last Meigs year)', min: 1980, max: 2026, step: 1 },
-    cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
     introAtStart: { title: 'Intro film at load, round the parked airplane while Google\'s tiles stream in (then on foot beside it)' },
@@ -164,7 +158,6 @@ export class Extra300 extends ArrivalScript {
     this._dest = 'meigs';
     // per airport: its world and grids, its own terrain and runway, its water and flatten masks
     this._airports = {};
-    this._terrains = {};
     this._runways = {};
     this._waters = {};
     this._ssrs = {};
@@ -277,7 +270,7 @@ export class Extra300 extends ArrivalScript {
     this._onPrerender = () => { this._applyCamera(); this._cloudsTick(); };
     this.app.on('prerender', this._onPrerender);
 
-    // nothing heavy loads (the city, the airport, Google's tiles: held) until the start is picked,
+    // nothing heavy loads (the airport, Google's tiles: held) until the start is picked,
     // once the space's airport and airplane vibes are there to pick from
     this._worldRoot.enabled = false;
     this.app.googleTilesHold = true;   // the tiles vibe streams nothing meanwhile (scripts/tilesWater.mjs)
@@ -428,7 +421,7 @@ export class Extra300 extends ArrivalScript {
     this._menu?.setStatus(`Loading ${this._placeEntry(placeId)?.title || ''}…`);
     this._pickAircraft(planeId);
     await this._goTo(placeId);
-    if (this._dest === 'meigs') this._ensureCity();   // also when the airport couldn't be loaded
+    if (this._dest === 'meigs') this._ensureLake();   // also when the airport couldn't be loaded
     this._started = true;
     if (this._destroyed) return;
     this._menu?.destroy();
@@ -450,8 +443,8 @@ export class Extra300 extends ArrivalScript {
     if (!this._intro) this._loadIntro = false;   // couldn't board (another vehicle has the visitor)
   }
 
-  /** The OpenStreetMap city, loaded the first time Meigs is where we are. */
-  _ensureCity() { this._cityLoad ??= this._loadCity(); }
+  /** Lake Michigan's shore (the land/water mask), read the first time Meigs is where we are. */
+  _ensureLake() { this._lakeLoad ??= this._loadLake(); }
 
   // ── destinations ─────────────────────────────────────────────────────────
   get _place() { return this._info(this._dest); }
@@ -503,7 +496,7 @@ export class Extra300 extends ArrivalScript {
     this._placeId = id;
     this._dest = base;
     if (DESTINATIONS[base]) this.destination = DESTINATIONS[base].title;
-    if (base === 'meigs') this._ensureCity();
+    if (base === 'meigs') this._ensureLake();
     this.world = base === 'meigs' ? this.meigs : this._airports[base].world;
     this._applyClouds();
     this._placeWorldRoot();
@@ -529,16 +522,12 @@ export class Extra300 extends ArrivalScript {
     this.hud.setCredit(this._place.credit);
     this.scenery.visible = meigs && this.showScenery;
     this.lights.visible = meigs && this.showScenery;
-    if (this.city) this.city.visible = meigs && this.showScenery;
     this.carrierVisual.visible = meigs && this.showCarrier;
     this.meigs.attachCarrier(meigs && this.showCarrier ? this.carrier : null);
     for (const [id, ssr] of Object.entries(this._ssrs)) ssr.visible = id === this._dest && this.waterReflections;
-    // the airport's own ground (when Google's tiles aren't there) and our own runway over the
-    // photograph of it (the photo cut away beneath, see _publishCarve)
+    // our own runway over the photograph of it (the photo cut away beneath, see _publishCarve)
     const ap = this._airports[this._dest];
-    if (ap && !this._terrains[this._dest]) this._terrains[this._dest] = new TerrainVisual(this.app, this._worldRoot, ap.world, ap.dem);
     if (ap && !this._runways[this._dest] && ap.world.runway.layout) this._runways[this._dest] = new RunwayVisual(this.app, this._worldRoot, ap.world.runway, this._dest);
-    for (const [id, t] of Object.entries(this._terrains)) t.visible = id === this._dest && !this._google;
     for (const [id, r] of Object.entries(this._runways)) r.visible = id === this._dest;
     // the tower view's cab, the carrier's deck view
     const t = meigs ? this.meigs.landmarks.find((l) => l.name === 'Meigs Tower') : { ne: this.world.tower.ne, h: this.world.tower.h };
@@ -750,7 +739,6 @@ export class Extra300 extends ArrivalScript {
     this._worldRoot.setPosition(p.x - a[0] * ws, p.y - a[1] * ws, p.z - a[2] * ws);
   }
 
-  /** Decode the baked OpenStreetMap Chicago and start raising it; the stand-in city shows meanwhile. */
   /** Offer the avatar animation catalog as the pilot-pose choices in the editor (as the vehicle demo does). */
   async _loadPoses() {
     try {
@@ -760,24 +748,20 @@ export class Extra300 extends ArrivalScript {
     } catch { /* the default pose still works */ }
   }
 
-  async _loadCity() {
+  /** Decode the baked land/water mask round Meigs: the gear's land and lake, Google's water shading, our reflections. */
+  async _loadLake() {
     try {
       const osm = await inflateOsm(CHICAGO_OSM);
       if (this._destroyed) return;
-      this.meigs.attachOsm(osm, this.skylineYear);
-      this._publishWater();   // the lake's mask: Google's water shading and our reflections
-      this.city = new OsmVisual(this.app, this._worldRoot, this.meigs, this._cityOptions());
-      this.city.visible = this.showScenery && this._dest === 'meigs';
-      if (this._google) this.city.setGoogle(true);
-      // the stand-in skyline stays up until the last OSM tile is built (see update)
+      this.meigs.attachOsm(osm);
+      this._publishWater();
     } catch (e) {
-      console.warn('[extra300] OpenStreetMap city unavailable, keeping the stand-in skyline:', e);
+      console.warn('[extra300] the lake\'s mask unavailable, the shore as drawn by hand:', e);
     }
   }
 
   // ── Google Photorealistic 3D Tiles (the "Google 3D Tiles" vibe in the same space) ──────
   // Its tiles are the city, the land and the lake; we keep only Meigs itself, cut out of the tiles.
-  // Our OpenStreetMap buildings aren't drawn then, and aren't solid either.
   _googleTick(dt) {
     // the vibe sets app.googleTilesLoading while its first tiles stream in and clears it when they are up
     if (!this._google && this.app.googleTilesLoading === false) this._setGoogle(true);
@@ -799,10 +783,7 @@ export class Extra300 extends ArrivalScript {
 
   _setGoogle(on) {
     this._google = on;
-    for (const [id, t] of Object.entries(this._terrains)) t.visible = id === this._dest && !on;
-    this.city?.setGoogle(on);
     this.scenery.setGoogle(on);
-    if (on) this.scenery.standInCity = false;
     // the tiles vibe brings its own sky
     if (this._sky) this._showSky(this._flying && !on);
   }
@@ -856,13 +837,6 @@ export class Extra300 extends ArrivalScript {
       this._ssrs[this._dest] = new WaterReflections(this.app, this._worldRoot, this.world.water, masks, { steps: this.isMobile ? 40 : 160 });
       this._ssrs[this._dest].visible = this.waterReflections;
     }
-  }
-
-  _cityOptions() {
-    let minHeight = { full: 0, 'mid-rise and up': 15, 'towers only': 45 }[this.cityDetail] ?? 0;
-    // ~15,000 buildings is ~500k vertices: on a phone, 'full' leaves out the low-rise
-    if (this.isMobile) minHeight = Math.max(minHeight, 15);
-    return { year: this.skylineYear, minHeight };
   }
 
   _weather() {
@@ -1007,11 +981,10 @@ export class Extra300 extends ArrivalScript {
   }
 
   // ── the intro film ──────────────────────────────────────────────────────
-  /** Film mode: wait for the city (and Google's first tiles, if they come), settle, then board and roll. */
+  /** Film mode: wait for Google's first tiles (if they come), settle, then board and roll. */
   _filmTick(dt) {
-    const cityUp = this._dest !== 'meigs' || (this.city && !this.city.queue.length);
     const tilesUp = this.app.googleTilesLoading !== true;
-    this._filmWait = cityUp && tilesUp ? (this._filmWait || 0) + dt : 0;
+    this._filmWait = tilesUp ? (this._filmWait || 0) + dt : 0;
     if (this._filmWait < 2.5) return;
     this._filmPending = false;
     this._filmMode = true;
@@ -1377,10 +1350,6 @@ export class Extra300 extends ArrivalScript {
     this._colliders?.tick();
     this._lightsTick(dt);
     this._googleTick(dt);
-    if (this.city && this.city.queue.length) {
-      this.city.tick(this._flying ? 3 : 8);
-      if (!this.city.queue.length) this.scenery.standInCity = false;
-    }
     if (!this._flying) {
       if (this._filmPending) this._filmTick(dt);
       if (!this._flying) this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? this.profile.title : `Press E to fly the ${this.profile.title}`) : '');
@@ -1418,7 +1387,7 @@ export class Extra300 extends ArrivalScript {
       else this.ac.controls.parkingBrake = true;
     }
     if (!this._paused) this.ac.update(dt);
-    this._checkBuildings();
+    this._checkShip();
     // the controls card has done its job once the airplane is flying
     if (!this._helpAutoHidden && this.ac.agl > 30) { this._helpAutoHidden = true; this.hud.showQuick(false); }
     const v = this.instruments.update(this.ac, dt);
@@ -1509,28 +1478,17 @@ export class Extra300 extends ArrivalScript {
     this._placeSky();
   }
 
-  /** Fly into a building (or the carrier's side, or its island) and the flight ends there. */
-  _checkBuildings() {
-    if (this.showCarrier && this._dest === 'meigs' && !this.ac.damage.crashed) {
-      const p = this.ac.state.pos, h = -p[2];
-      if (this.carrier.hullContains(p[0], p[1], h - 1) || this.carrier.islandContains(p[0], p[1], h)) {
-        this._crash('You hit the ship. Backspace to reset');
-        return;
-      }
-    }
-    // only the city we draw is solid: under Google's tiles the OpenStreetMap buildings aren't there
-    if (!this.world.osm || this.ac.damage.crashed || this._google) return;
-    const p = this.ac.state.pos;
-    const h = -p[2];
-    if (h > 450) return;
-    if (this.world.buildingAt(p[0], p[1], h)) this._crash('You hit a building. Backspace to reset');
+  /** Fly into the carrier's side or its island and the flight ends there. */
+  _checkShip() {
+    if (!this.showCarrier || this._dest !== 'meigs' || this.ac.damage.crashed) return;
+    const p = this.ac.state.pos, h = -p[2];
+    if (this.carrier.hullContains(p[0], p[1], h - 1) || this.carrier.islandContains(p[0], p[1], h)) this._crash('You hit the ship. Backspace to reset');
   }
 
-  /** What a laser bolt bursts on: the ground or the water, the ship, a building (n, e, h above the datum). */
+  /** What a laser bolt bursts on: the ground or the water, the ship (n, e, h above the datum). */
   _laserSolid = (n, e, h) => {
     if (h <= this.world.ground(n, e).h) return true;
-    if (this.showCarrier && this._dest === 'meigs' && (this.carrier.hullContains(n, e, h) || this.carrier.islandContains(n, e, h))) return true;
-    return !!(this.world.osm && h < 450 && this.world.buildingAt(n, e, h));
+    return !!(this.showCarrier && this._dest === 'meigs' && (this.carrier.hullContains(n, e, h) || this.carrier.islandContains(n, e, h)));
   };
 
   _crash(message) {
@@ -1648,10 +1606,6 @@ export class Extra300 extends ArrivalScript {
     if (name === 'showScenery' || name === 'waterReflections' || name === 'showCarrier') this._applyDestination();
     if (name === 'destination') { const e = this._placeEntries().find((x) => x.base === airportBase(this.destination)); if (e) this._goTo(e.id); }
     if (name === 'clouds' || name === 'cloudBaseFt') this._applyClouds();
-    if ((name === 'skylineYear' || name === 'cityDetail') && this.city) {
-      this.meigs.setSkylineYear(this.skylineYear);
-      this.city.build(this._cityOptions());
-    }
     if (name === 'easyMode') this._setEasy(this.easyMode);
     if (name === 'aircraft') { const e = this._planeEntries().find((x) => x.base === aircraftBase(this.aircraft)); if (e && e.id !== this._planeId) this._pickAircraft(e.id); }
     if (name === 'introOnLoad' && this.introOnLoad && !this._flying) this._filmPending = true;
@@ -1673,7 +1627,6 @@ export class Extra300 extends ArrivalScript {
     if (this._dest !== 'meigs') { this.world = this.meigs; this._publishOrigin(); }
     this.app.fire('googletiles:flatten-region-clear', `extra300-flatten-${this.entity.getGuid()}`);
     for (const f of Object.values(this._flatMasks)) f.texture.destroy();
-    for (const t of Object.values(this._terrains)) t.destroy();
     for (const r of Object.values(this._runways)) r.destroy();
     this.cloudLayer?.destroy();
     this.app.fire('googletiles:receive-shadows', 0);
@@ -1698,7 +1651,6 @@ export class Extra300 extends ArrivalScript {
     this.sound.stop();
     this.visual.destroy();
     this.scenery.destroy();
-    this.city?.destroy();
     this.carrierVisual.destroy();
     this.lights.destroy();
     this.lasers.destroy();

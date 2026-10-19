@@ -1,26 +1,13 @@
-// bake-osm.mjs — compact the raw OpenStreetMap download (scripts/fetch-osm.mjs)
-// into src/world/data/chicagoOsm.js, the module the plugin ships with.
+// bake-osm.mjs — the land/water mask round Meigs from the raw OpenStreetMap download
+// (scripts/fetch-osm.mjs), into src/world/data/chicagoOsm.js, the module the plugin ships with.
 //
-// What happens here, once, so the browser only has to extrude:
-//   • building outlines and building:parts are deduplicated across tiles; an
-//     outline that has parts is hidden (Simple 3D Buildings rule), so towers
-//     like Sears get their real setbacks from the parts
-//   • heights: OSM height > City of Chicago stories > OSM building:levels >
-//     a default by building type; the City's year_built (joined on
-//     chicago:building_id) plus a list of post-2003 towers give each
-//     building a year, so the plugin can show today's skyline (the default)
-//     or the one of any earlier year
-//   • whatever stands on the airfield today (Northerly Island's pavilion and
-//     park buildings) is left out: Meigs is open again
-//   • the Lake Michigan coastline is chained and closed against the box into
-//     land polygons, and rasterised into a 4 m land/water mask for the gear
-//   • rivers, parks, the main roads and the rail lines come along for the ground
-//   • footprints are simplified, quantised to 0.25 m in the Meigs local frame,
-//     delta + varint coded, gzipped and base64'd
+// Only Lake Michigan's shore is kept (Google's 3D tiles are the city now): the coastline chained
+// and closed against the box into land polygons, the rivers cut out of them, rasterised into a 4 m
+// land/water mask — the gear's land and lake, and the water Google's tiles are shaded as.
 //
-// Data © OpenStreetMap contributors (ODbL 1.0) and the City of Chicago data portal.
+// Data © OpenStreetMap contributors (ODbL 1.0).
 
-import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, readdirSync, writeFileSync, mkdirSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -32,57 +19,6 @@ import { encodeOsm, QUANTUM, MASK_CELL } from '../src/world/osmCodec.js';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RAW = join(ROOT, 'data', 'osm', 'raw');
 const OUT = join(ROOT, 'src', 'world', 'data', 'chicagoOsm.js');
-
-// Towers in the box that rose after Meigs closed (31 March 2003), for those the
-// City's footprint data has no year for. Matched case-insensitively on OSM name.
-export const POST_2003 = [
-  ['trump international', 2009], ['aqua', 2009], ['st. regis', 2020], ['st regis', 2020], ['vista tower', 2020],
-  ['legacy at millennium park', 2010], ['one museum park', 2009], ['the heritage at millennium park', 2005],
-  ['blue cross blue shield', 2010], ['300 north lasalle', 2009], ['150 north riverside', 2017], ['river point', 2017],
-  ['110 north wacker', 2020], ['bmo tower', 2022], ['salesforce tower', 2023], ['nema', 2019], ['wolf point', 2016],
-  ['coast at lakeshore east', 2013], ['optima chicago center', 2017], ['oneeleven', 2014], ['waldorf astoria', 2010],
-  ['353 north clark', 2009], ['hyatt center', 2005], ['111 south wacker', 2005], ['71 south wacker', 2005],
-  ['155 north wacker', 2009], ['joffrey tower', 2008], ['the regatta', 2010], ['the tides', 2008], ['the shoreham', 2005],
-  ['the lancaster', 2007], ['cirrus', 2022], ['helix', 2022], ['1000m', 2023], ['one bennett park', 2019],
-  ['no. 9 walton', 2017], ['one chicago', 2022], ['44 west walton', 2018], ['the paramount', 2009],
-  ['huntington bank pavilion', 2005], ['firstmerit bank pavilion', 2005], ['spertus', 2007], ['roosevelt collection', 2010],
-  ['museum park', 2008], ['soldier field', 0],
-];
-
-const num = (s) => {
-  if (s == null) return NaN;
-  const m = String(s).replace(',', '.').match(/-?\d+(\.\d+)?/);
-  if (!m) return NaN;
-  let v = parseFloat(m[0]);
-  if (/ft|'/.test(s)) v *= 0.3048;
-  return v;
-};
-
-const ROOF = { flat: 0, gabled: 1, hipped: 2, pyramidal: 3, dome: 4, skillion: 5 };
-export const STYLES = ['brick', 'stone', 'glass', 'dark', 'white', 'plain', 'house'];
-
-function styleFor(t, h, id) {
-  const mat = (t['building:material'] || t['building:facade:material'] || '').toLowerCase();
-  const col = (t['building:colour'] || '').toLowerCase();
-  const kind = t.building || t['building:part'] || 'yes';
-  if (/glass/.test(mat)) return 'glass';
-  if (/black|#0|#1|#2|dark/.test(col)) return 'dark';
-  if (/white|#f|#e/.test(col) || /marble/.test(mat)) return 'white';
-  if (/brick/.test(mat)) return 'brick';
-  if (/stone|limestone|granite|concrete/.test(mat)) return 'stone';
-  if (/^(house|detached|semidetached_house|terrace|garage|garages|shed)$/.test(kind) && h < 14) return 'house';
-  if (/^(industrial|warehouse|parking|garage|service|roof|train_station|transportation|hangar)$/.test(kind)) return 'plain';
-  const r = hash(id);
-  if (h > 90) return r < 0.45 ? 'glass' : r < 0.75 ? 'stone' : r < 0.88 ? 'dark' : 'white';
-  if (h > 35) return r < 0.3 ? 'glass' : r < 0.75 ? 'stone' : 'brick';
-  return r < 0.65 ? 'brick' : 'stone';
-}
-
-function hash(n) {
-  let x = (Number(String(n).replace(/\D/g, '').slice(-9)) || 1) >>> 0;
-  x ^= x << 13; x >>>= 0; x ^= x >>> 17; x ^= x << 5; x >>>= 0;
-  return (x % 10000) / 10000;
-}
 
 /** Douglas–Peucker on a closed ring of [e, n]. */
 function simplify(ring, tol) {
@@ -109,10 +45,6 @@ const area2 = (r) => { let s = 0; for (let i = 0, j = r.length - 1; i < r.length
 const centroid = (r) => { let x = 0, y = 0; for (const p of r) { x += p[0]; y += p[1]; } return [x / r.length, y / r.length]; };
 
 function loadAll() {
-  const elements = new Map();
-  for (const f of readdirSync(RAW).filter((f) => f.startsWith('buildings_'))) {
-    for (const e of JSON.parse(readFileSync(join(RAW, f), 'utf8')).elements) elements.set(`${e.type}/${e.id}`, e);
-  }
   // a layer may have come down whole or in quarters (land, landa, landb …): merge by element id
   const layer = (name) => {
     const byId = new Map();
@@ -124,8 +56,7 @@ function loadAll() {
   };
   const land = layer('land');
   const shore = layer('shore');
-  const city = existsSync(join(RAW, 'chicago_bldgs.json')) ? JSON.parse(readFileSync(join(RAW, 'chicago_bldgs.json'), 'utf8')) : [];
-  return { elements: [...elements.values()], land, shore, city };
+  return { land, shore };
 }
 
 /** Outer and inner rings (lat/lon) of a way or a multipolygon relation, with ways chained. */
@@ -166,101 +97,7 @@ export function bake() {
   const toEN = (p) => { const [n, e] = frame.toNE(p.lat, p.lon); return [e, n]; };
   const meigsIsland = MEIGS.island.map(([lat, lon]) => { const [n, e] = frame.toNE(lat, lon); return [e, n]; });
   const onMeigs = ([e, n]) => pointInPolygon(e, n, meigsIsland);
-  // the airfield: the island plus the runway strip with its overruns (150 m past each end, 60 m either side)
-  const rw = MEIGS.runway;
-  const [rcn, rce] = frame.toNE(rw.centre[0], rw.centre[1]);
-  const brg = (rw.trueBearing * Math.PI) / 180;
-  const half = (rw.lengthFt * 0.3048) / 2 + 150, side = (rw.widthFt * 0.3048) / 2 + 60;
-  const ax = [Math.sin(brg), Math.cos(brg)];          // along the runway, (e, n)
-  const strip = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, c]) => [rce + ax[0] * a * half + ax[1] * c * side, rcn + ax[1] * a * half - ax[0] * c * side]);
-  const airfield = [meigsIsland, strip];
-  /** Does a footprint touch the airfield? (any corner inside it, or any airfield corner inside the footprint) */
-  const onAirfield = (ring) => airfield.some((poly) => ring.some(([e, n]) => pointInPolygon(e, n, poly)) || poly.some(([e, n]) => pointInPolygon(e, n, ring)));
-  const { elements, land, shore, city } = loadAll();
-  const cityById = new Map(city.map((c) => [c.bldg_id, c]));
-
-  // ── buildings ────────────────────────────────────────────────────────────
-  const shapes = [];
-  const stats = { elements: elements.length, noGeom: 0, tooSmall: 0, onAirfield: 0, demolished: 0 };
-  for (const e of elements) {
-    const t = e.tags || {};
-    const g = rings(e);
-    if (!g || !g.outer.length) { stats.noGeom++; continue; }
-    const isPart = !!t['building:part'] && !t.building;
-    if (t.building === 'no' || t['building:part'] === 'no') continue;
-    const c = cityById.get(t['chicago:building_id']);
-    let year = 0;
-    const sd = num(t.start_date);
-    if (Number.isFinite(sd) && sd > 1700) year = Math.round(sd);
-    const cy = c ? parseInt(c.year_built, 10) : 0;
-    if (!year && cy > 1700) year = cy;
-    const name = (t.name || '').toLowerCase();
-    if (name) for (const [k, y] of POST_2003) if (name.includes(k) && y) { year = Math.max(year, y); break; }
-    if (c && (c.demolished === 'true' || /DEMOLISH/i.test(c.bldg_statu || ''))) continue;
-
-    const levels = num(t['building:levels']);
-    const roofLevels = num(t['roof:levels']) || 0;
-    const cityStories = c ? Math.max(num(c.stories) || 0, num(c.no_stories) || 0) : 0;
-    let h = num(t.height);
-    const floorH = (lv) => (lv > 12 ? 3.9 : 3.4);
-    if (!(h > 0) && levels > 0) h = (levels + roofLevels) * floorH(levels);
-    if (!(h > 0) && cityStories > 0) h = cityStories * floorH(cityStories);
-    const kind = t.building || t['building:part'];
-    if (!(h > 0)) h = /^(garage|garages|shed|roof|carport)$/.test(kind) ? 3 : /house|detached|terrace/.test(kind) ? 8 : 9;
-    let minH = num(t.min_height);
-    if (!(minH >= 0)) minH = (num(t['building:min_level']) || 0) * floorH(levels || 1);
-    if (!(minH >= 0) || minH >= h) minH = 0;
-
-    for (let oi = 0; oi < g.outer.length; oi++) {
-      let outer = g.outer[oi].map(toEN);
-      if (outer.length > 2 && outer[0][0] === outer[outer.length - 1][0] && outer[0][1] === outer[outer.length - 1][1]) outer.pop();
-      outer = simplify([...outer, outer[0]], 0.35).slice(0, -1);
-      if (outer.length < 3) continue;
-      if (area2(outer) < 0) outer.reverse();                       // outer CCW in (e, n)
-      if (area2(outer) < 6) { stats.tooSmall++; continue; }          // sheds smaller than 6 m²
-      const holes = oi === 0 ? g.inner.map((r) => {
-        let h2 = r.map(toEN);
-        if (h2.length > 2 && h2[0][0] === h2[h2.length - 1][0]) h2.pop();
-        h2 = simplify([...h2, h2[0]], 0.35).slice(0, -1);
-        if (area2(h2) > 0) h2.reverse();                            // holes CW
-        return h2;
-      }).filter((r) => r.length >= 3) : [];
-      const cen = centroid(outer);
-      if (onAirfield(outer)) { stats.onAirfield++; continue; }      // nothing stands on Meigs but Meigs
-      shapes.push({
-        id: `${e.type}/${e.id}`, isPart, outer, holes, cen, h, minH, year,
-        style: styleFor(t, h, e.id),
-        roof: ROOF[t['roof:shape']] ?? 0,
-        colour: t['building:colour'] || '',
-        name: t.name || '',
-      });
-    }
-  }
-  // Simple 3D Buildings: an outline with parts inside is drawn by its parts
-  const parts = shapes.filter((s) => s.isPart);
-  const grid = new Map();
-  const cell = 200;
-  for (const p of parts) {
-    const k = `${Math.floor(p.cen[0] / cell)},${Math.floor(p.cen[1] / cell)}`;
-    if (!grid.has(k)) grid.set(k, []);
-    grid.get(k).push(p);
-  }
-  const buildings = shapes.filter((s) => {
-    if (s.isPart) return true;
-    let minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
-    for (const [x, y] of s.outer) { minx = Math.min(minx, x); maxx = Math.max(maxx, x); miny = Math.min(miny, y); maxy = Math.max(maxy, y); }
-    for (let gx = Math.floor(minx / cell); gx <= Math.floor(maxx / cell); gx++) {
-      for (let gy = Math.floor(miny / cell); gy <= Math.floor(maxy / cell); gy++) {
-        for (const p of grid.get(`${gx},${gy}`) || []) if (pointInPolygon(p.cen[0], p.cen[1], s.outer)) {
-          if (!p.year && s.year) p.year = s.year;
-          return false;
-        }
-      }
-    }
-    return true;
-  });
-  // spatial order makes the deltas small
-  buildings.sort((a, b) => (Math.floor(a.cen[1] / 250) - Math.floor(b.cen[1] / 250)) || (a.cen[0] - b.cen[0]));
+  const { land, shore } = loadAll();
 
   // ── coastline → land polygons ───────────────────────────────────────────
   const [s0, w0] = frame.toNE(BBOX.south, BBOX.west);
@@ -298,36 +135,20 @@ export function bake() {
     return out;
   };
   const water = polysOf((t) => t.natural === 'water');
-  const parks = polysOf((t) => /park|garden|pitch|golf_course/.test(t.leisure || '') || /grass|recreation_ground/.test(t.landuse || ''));
-  const lines = (pred, widthOf) => {
-    const out = [];
-    for (const e of land) {
-      if (e.type !== 'way' || !e.geometry || !pred(e.tags || {})) continue;
-      const pts = simplify(e.geometry.map(toEN), 0.8);
-      if (pts.length < 2) continue;
-      if (onMeigs(pts[0]) && onMeigs(pts[pts.length - 1])) continue;
-      out.push({ pts, w: widthOf(e.tags) });
-    }
-    return out;
-  };
-  const ROADW = { motorway: 22, trunk: 20, primary: 16, secondary: 13, tertiary: 10 };
-  const roads = lines((t) => ROADW[t.highway] && t.tunnel !== 'yes' && t.layer !== '-1', (t) => ROADW[t.highway]);
-  const rail = lines((t) => t.railway === 'rail' && t.tunnel !== 'yes', () => 4);
   const mask = rasterise(landPolys, water, box);
 
   const header = {
-    attribution: '© OpenStreetMap contributors (ODbL), City of Chicago data portal',
+    attribution: '© OpenStreetMap contributors (ODbL)',
     origin: MEIGS.runway.centre, quantum: QUANTUM, maskCell: MASK_CELL, box,
-    styles: STYLES, fetched: new Date().toISOString().slice(0, 10),
+    styles: [], fetched: new Date().toISOString().slice(0, 10),
   };
-  const bin = encodeOsm({ header, buildings, land: landPolys, water, parks, roads, rail, mask });
+  const bin = encodeOsm({ header, buildings: [], land: [], water: [], parks: [], roads: [], rail: [], mask });
   const gz = gzipSync(bin, { level: 9 });
   mkdirSync(dirname(OUT), { recursive: true });
   writeFileSync(OUT, `// Generated by scripts/bake-osm.mjs on ${header.fetched} — do not edit.\n`
-    + `// ${header.attribution}. ${buildings.length} buildings, ${landPolys.length} land polygons, ${roads.length} roads.\n`
+    + `// ${header.attribution}. The land/water mask: ${mask.nx} × ${mask.ny} cells of ${MASK_CELL} m.\n`
     + `export const CHICAGO_OSM = '${gz.toString('base64')}';\n`);
-  return { stats, shapes: shapes.length, buildings: buildings.length, parts: parts.length, land: landPolys.length, water: water.length, parks: parks.length, roads: roads.length, rail: rail.length, raw: bin.length, gz: gz.length,
-    tallest: buildings.slice().sort((a, b) => b.h - a.h).slice(0, 12).map((b) => `${b.name || b.id} ${b.h.toFixed(0)}m ${b.year || '?'}`) };
+  return { land: landPolys.length, rivers: water.length, mask: `${mask.nx} × ${mask.ny}`, raw: bin.length, gz: gz.length };
 }
 
 /**

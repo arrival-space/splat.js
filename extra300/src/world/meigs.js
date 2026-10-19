@@ -56,26 +56,10 @@ export const MEIGS = {
       [41.730, -87.527], [41.680, -87.480], [41.640, -87.400], [41.620, -87.330], [41.640, -87.150]],
   },
   navyPier: [[41.8908, -87.6118], [41.8908, -87.5985], [41.8925, -87.5985], [41.8925, -87.6118]],
-  // landmarks, roof heights in metres [verify positions against tiles]
   landmarks: [
-    { name: 'Sears Tower', at: [41.8789, -87.6359], h: 442, w: 68, d: 68, kind: 'bundled', color: '#2a2a2e' },
-    { name: 'Aon Center', at: [41.8853, -87.6215], h: 346, w: 59, d: 59, kind: 'box', color: '#e8e6e0' },
-    { name: 'John Hancock Center', at: [41.8988, -87.6229], h: 344, w: 50, d: 80, kind: 'taper', color: '#1f1f22', mast: 113 },
-    { name: 'Two Prudential Plaza', at: [41.8850, -87.6232], h: 303, w: 40, d: 40, kind: 'spire', color: '#b9b4ab' },
-    { name: 'AT&T Corporate Center', at: [41.8807, -87.6344], h: 307, w: 45, d: 45, kind: 'box', color: '#8c7f73' },
-    { name: '311 South Wacker', at: [41.8774, -87.6360], h: 293, w: 45, d: 45, kind: 'crown', color: '#c9b9a0' },
-    { name: 'Water Tower Place', at: [41.8978, -87.6236], h: 262, w: 60, d: 45, kind: 'box', color: '#cfcac0' },
-    { name: 'Lake Point Tower', at: [41.8917, -87.6128], h: 197, w: 45, d: 45, kind: 'trefoil', color: '#3a3328' },
-    { name: 'Field Museum', at: [41.8663, -87.6170], h: 30, w: 230, d: 100, kind: 'box', color: '#e4dfd2' },
-    { name: 'Shedd Aquarium', at: [41.8676, -87.6140], h: 25, w: 90, d: 90, kind: 'box', color: '#e4dfd2' },
-    { name: 'Adler Planetarium', at: [41.8663, -87.6068], h: 22, w: 50, d: 50, kind: 'dome', color: '#c8b48c' },
-    { name: 'Soldier Field', at: [41.8623, -87.6167], h: 30, w: 170, d: 260, kind: 'stadium', color: '#cfcac0' },
-    { name: 'McCormick Place Lakeside', at: [41.8512, -87.6155], h: 25, w: 250, d: 220, kind: 'box', color: '#2b2b2b' },
     // the control tower (render/tower.js models it): its cab's eye height, for the tower view
     { name: 'Meigs Tower', at: [41.85865, -87.60981], h: 18, w: 7, d: 7, kind: 'tower', color: '#d8d4cb' },
   ],
-  // where the Loop's fabric of mid-rises goes (procedural blocks) [approx]
-  downtown: { south: 41.8730, north: 41.8960, west: -87.6420, east: -87.6190, minH: 25, maxH: 210, seed: 1982 },
 };
 
 /** Where the lake starts along one row of the land mask: the west end of the last stretch of open water. */
@@ -161,65 +145,23 @@ export function buildMeigs(data = MEIGS) {
     return { h: water, normal: UP, surface: 'water' };
   };
 
-  // buildings, indexed on a 100 m grid for collision checks
-  const CELL = 100;
-  let grid = null;
-  let skylineYear = 2026;
-
   const landmarks = data.landmarks.map((l) => ({ ...l, ne: toNE(l.at) }));
-
-  /** East coordinate of the mainland shore at a given north (linear between shoreline points). */
-  const shoreEastAt = (n) => {
-    if (n <= shore[0][0]) return shore[0][1];
-    for (let i = 1; i < shore.length; i++) {
-      if (n <= shore[i][0]) {
-        const t = (n - shore[i - 1][0]) / (shore[i][0] - shore[i - 1][0]);
-        return shore[i - 1][1] + t * (shore[i][1] - shore[i - 1][1]);
-      }
-    }
-    return shore[shore.length - 1][1];
-  };
 
   return {
     id: 'meigs',
-    data, frame, elevation, water, ground, shoreEastAt,
+    data, frame, elevation, water, ground,
     osm: null,
-    /** Hand the world the decoded OpenStreetMap scenery: land/water raster for the gear, buildings for collisions. */
-    attachOsm(osm, year = 2026) {
+    /** Hand the world the decoded OpenStreetMap land/water raster, for the gear. */
+    attachOsm(osm) {
       this.osm = osm;
       isLand = maskLookup(osm.mask, osm.header.box);
       const b = osm.header.box;
       inBox = (e, n) => e >= b.x0 && e < b.x1 && n >= b.y0 && n < b.y1;
       farLand = this.farLand = buildFarLand(osm.mask, b, data.farShore.north.map(toNE), data.farShore.south.map(toNE));
-      skylineYear = year;
-      grid = new Map();
-      osm.buildings.forEach((b, i) => {
-        let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-        for (const [x, y] of b.outer) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
-        for (let gx = Math.floor(x0 / CELL); gx <= Math.floor(x1 / CELL); gx++) {
-          for (let gy = Math.floor(y0 / CELL); gy <= Math.floor(y1 / CELL); gy++) {
-            const k = gx * 100003 + gy;
-            if (!grid.has(k)) grid.set(k, []);
-            grid.get(k).push(i);
-          }
-        }
-      });
     },
-    setSkylineYear(year) { skylineYear = year; },
     /** A ship to land on (world/carrier.js): its deck joins the ground. */
     attachCarrier(c) { carrier = this.carrier = c; },
     carrier: null,
-    /** The building (if any) whose volume contains the point; height h above the datum. */
-    buildingAt(n, e, h) {
-      if (!grid) return null;
-      for (const i of grid.get(Math.floor(e / CELL) * 100003 + Math.floor(n / CELL)) || []) {
-        const b = this.osm.buildings[i];
-        if (b.year && b.year > skylineYear) continue;
-        if (h > b.h || h < b.minH) continue;
-        if (pointInPolygon(e, n, b.outer)) return b;
-      }
-      return null;
-    },
     runway: { centre: c, dir, length: len, width: wid, thr36, thr18, bearing: brg },
     /**
      * The airfield as a box aligned with the runway: Northerly Island and a margin. Google's tiles
@@ -238,7 +180,6 @@ export function buildMeigs(data = MEIGS) {
       return { centre, dir, halfAlong: (a1 - a0) / 2 + margin, halfAcross: (c1 - c0) / 2 + margin };
     },
     island, mainland, shore, pier, landmarks,
-    downtown: { ...data.downtown, sw: toNE([data.downtown.south, data.downtown.west]), ne: toNE([data.downtown.north, data.downtown.east]) },
     /** Classic start: lined up on runway 36 just past the numbers (or on 18 with alt). */
     startPosition(alt = false) {
       if (alt) return { n: thr18[0] - dir[0] * 30, e: thr18[1] - dir[1] * 30, heading: brg + Math.PI };

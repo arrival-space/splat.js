@@ -1,5 +1,4 @@
-// sceneryVisual.js — Meigs Field itself, plus the hand-placed stand-in city
-// that shows until (or unless) the OpenStreetMap city is ready.
+// sceneryVisual.js — Meigs Field itself: the island, the runway, the tower, the lake round it.
 
 import { buildScenery } from '../render/scenery.js';
 import { material, meshEntity } from './pcMesh.js';
@@ -10,14 +9,12 @@ export class SceneryVisual {
   constructor(app, parent, world) {
     this.root = new pc.Entity('MeigsScenery');
     parent.addChild(this.root);
-    this.city = new pc.Entity('StandInCity');
-    this.root.addChild(this.city);
     const parts = buildScenery(world);
     this.tower = parts.tower;            // the beacon's and the obstruction light's places, for the lights
     const textured = [];
     for (const part of parts) {
       if (!part.mesh.vertexCount) continue;
-      const flat = ['lake', 'mainland', 'island', 'runway', 'markings', 'taxiLine'].includes(part.name);
+      const flat = ['lake', 'island', 'runway', 'markings', 'taxiLine'].includes(part.name);
       let mat = part.finish === 'glass' ? glassMaterial(app.graphicsDevice, part.color)
         : part.finish === 'metal' ? metalMaterial(app.graphicsDevice, part.color)
           : part.finish === 'mirror' ? metalMaterial(app.graphicsDevice, part.color, true) : material(part.color);
@@ -27,7 +24,7 @@ export class SceneryVisual {
         if (part.cullBack) mat.cull = pc.CULLFACE_BACK;
         mat.update();
       }
-      const e = meshEntity(app, part.layer === 'city' ? this.city : this.root, part.name, part.mesh, mat, { castShadows: !flat, receiveShadows: true });
+      const e = meshEntity(app, this.root, part.name, part.mesh, mat, { castShadows: !flat, receiveShadows: true });
       if (part.name === 'lake') this.lake = e;
       if (part.texture) textured.push({ part, e });
     }
@@ -48,11 +45,8 @@ export class SceneryVisual {
     setTimeout(paint, 0);
   }
   set visible(v) { this.root.enabled = v; }
-  /** Hide the stand-in city once the OpenStreetMap one is up. */
-  set standInCity(v) { this.city.enabled = v; }
   /** With Google's tiles only Meigs itself stays; Google's own lake is the water. */
   setGoogle(on) {
-    this.city.enabled = !on && this.city.enabled;
     if (this.lake) this.lake.enabled = !on;
   }
   destroy() {

@@ -1,11 +1,11 @@
-// fetch-osm.mjs — download the OpenStreetMap data the scenery is built from,
-// in tiles, from a public Overpass mirror. Raw responses land in
+// fetch-osm.mjs — download the OpenStreetMap data the land/water mask round Meigs is made from
+// (the lake shore, the rivers and harbours), from a public Overpass mirror. Raw responses land in
 // data/osm/raw/ (not committed); scripts/bake-osm.mjs compacts them into the
 // module the plugin ships with.
 //
 //   node scripts/fetch-osm.mjs            fetch what is missing
 //   node scripts/fetch-osm.mjs --force    refetch everything
-//   node scripts/fetch-osm.mjs --only land   one tile (land = shore, water, parks, roads)
+//   node scripts/fetch-osm.mjs --only land   one layer (land: inland water; shore: the lake's)
 //
 // Data © OpenStreetMap contributors, ODbL 1.0 — https://www.openstreetmap.org/copyright
 
@@ -16,9 +16,8 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const RAW = join(ROOT, 'data', 'osm', 'raw');
 
-// The scenery box: South Loop / McCormick Place to the Gold Coast, the lake to Halsted
+// The box: South Loop / McCormick Place to the Gold Coast, the lake to Halsted
 export const BBOX = { south: 41.838, west: -87.660, north: 41.906, east: -87.592 };
-const TILES_LAT = 4, TILES_LON = 4;
 
 const MIRRORS = [
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
@@ -30,16 +29,11 @@ const UA = 'extra300-meigs/0.1 (+https://github.com/arrival-space/splat.js)';
 const bb = (b) => `${b.south},${b.west},${b.north},${b.east}`;
 
 const LAYERS = {
-  // footprints and parts; parts carry the setbacks of the tall towers
-  buildings: (b) => `[out:json][timeout:240];(way["building"](${bb(b)});way["building:part"](${bb(b)});relation["building"](${bb(b)});relation["building:part"](${bb(b)}););out tags geom;`,
-  // the lake shore, inland water, green space and the main roads, for the whole box at once
-  // ground cover: rivers, harbours, ponds, parks, roads, rail (Lake Michigan itself comes as `shore`)
-  land: (b) => `[out:json][timeout:240];(way["natural"="water"](${bb(b)});relation["natural"="water"]["name"!="Lake Michigan"](${bb(b)});way["waterway"="river"](${bb(b)});way["leisure"~"park|garden|pitch|golf_course"](${bb(b)});relation["leisure"="park"](${bb(b)});way["landuse"~"grass|recreation_ground"](${bb(b)});way["highway"~"^(motorway|trunk|primary|secondary|tertiary)$"](${bb(b)});way["railway"="rail"](${bb(b)}););out geom;`,
+  // inland water: rivers, harbours, ponds (Lake Michigan itself comes as `shore`)
+  land: (b) => `[out:json][timeout:240];(way["natural"="water"](${bb(b)});relation["natural"="water"]["name"!="Lake Michigan"](${bb(b)}););out geom;`,
   // the lake shore: the member ways of the Lake Michigan multipolygon that cross the box
   // (the relation as a whole is the entire lake), plus any mapped coastline
   shore: (b) => `[out:json][timeout:240];(relation["natural"="water"]["name"="Lake Michigan"];way(r)(${bb(b)});way["natural"="coastline"](${bb(b)}););out geom;`,
-  // multipolygon buildings need their members (the tiles above only carry ways' geometry)
-  buildingRelations: (b) => `[out:json][timeout:240];(relation["building"](${bb(b)});relation["building:part"](${bb(b)}););out geom;`,
 };
 
 async function overpass(query) {
@@ -67,20 +61,10 @@ async function overpass(query) {
 }
 
 export function tiles() {
-  const out = [];
-  const dLat = (BBOX.north - BBOX.south) / TILES_LAT, dLon = (BBOX.east - BBOX.west) / TILES_LON;
-  for (let i = 0; i < TILES_LAT; i++) {
-    for (let j = 0; j < TILES_LON; j++) {
-      out.push({ name: `buildings_${i}_${j}`, layer: 'buildings', box: { south: BBOX.south + i * dLat, north: BBOX.south + (i + 1) * dLat, west: BBOX.west + j * dLon, east: BBOX.west + (j + 1) * dLon } });
-    }
-  }
-  out.push({ name: 'land', layer: 'land', box: BBOX });
-  out.push({ name: 'shore', layer: 'shore', box: BBOX });
-  out.push({ name: 'buildings_relations', layer: 'buildingRelations', box: BBOX });
-  return out;
+  return [{ name: 'land', layer: 'land', box: BBOX }, { name: 'shore', layer: 'shore', box: BBOX }];
 }
 
-/** Fetch one tile; a tile the mirror chokes on (dense downtown) is split into four, twice at most. */
+/** Fetch one tile; a tile the mirror chokes on is split into four, twice at most. */
 async function fetchTile(t, force, depth = 0) {
   const file = join(RAW, `${t.name}.json`);
   if (existsSync(file) && !force) return;
@@ -94,7 +78,7 @@ async function fetchTile(t, force, depth = 0) {
       console.log(`${t.name}: ${(text.length / 1e6).toFixed(1)} MB in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
       return;
     } catch (e) {
-      if (t.layer !== 'buildings' || depth >= 2) throw e;
+      if (depth >= 2) throw e;
       console.log(`${t.name}: ${e.message.slice(0, 80)} — splitting`);
     }
   }

@@ -96,8 +96,9 @@ Northerly Island is cut out of the tiles, so the 1990s field shows flat and pave
 instead of today's park. The cut starts just under the runway's surface, so
 Google's water and low shore stay all round the island.
 
-Google's buildings aren't solid, and the OpenStreetMap ones aren't drawn or solid while the tiles are on. Without a key,
-or before the tiles arrive, the procedural OpenStreetMap city is drawn as before.
+Google's tiles are all the scenery round the fields: the city, the land, the mountains. Without a key, or
+before the tiles arrive, only the fields themselves are drawn (Meigs, the runways). The ground the airplane
+rolls and crashes on stays ours everywhere, from the airports' elevation grids and the lakes' masks.
 The sync writes the tiles host (`space/space/entities/google-3d-tiles.json`) but
 leaves its key alone. That file is git-ignored, because it holds the key once one
 is set.
@@ -116,18 +117,10 @@ is set.
   - **G-meter**: max/min tell-tales.
   - **Whiskey compass**: pendulous card, with turning and acceleration errors from Chicago's 70° dip.
   - **Engine**: slip ball, tachometer, manifold pressure, fuel flow, and the engine monitor stack.
-- **Chicago from OpenStreetMap**: about 15,000 building footprints, extruded at load time into procedural geometry.
-  - **Facades:** procedural window patterns sized to real floors and bays.
-  - **Roofs:** flat roofs with courtyards; gabled houses; pyramids and domes where OSM tags them.
-  - **Tall towers:** built from their OSM `building:part`s, so Sears keeps its setbacks and antennas.
-  - **Heights:** from OSM, or from the City of Chicago's storey counts.
-  - **Years:** the default is today's skyline. Anything standing on the airfield (island, runway and overruns) is left out, so Meigs is open again amid the 2026 city. A building's year comes from the City's `year_built`, and the *Skyline year* setting shows any year back to 1980 (2002 was the last full Meigs year).
-  - **Ground:** the Lake Michigan shore, the river, parks, the main roads and the rail lines. The gear knows land from water.
-  - **Collisions:** hitting a building ends the flight (the OpenStreetMap city only, not under Google's tiles).
+- **Lake Michigan's shore from OpenStreetMap**: a 4 m land/water mask round Meigs. The gear knows land from water, and Google's lake is shaded as water from it.
 - **Meigs Field**:
   - The 3,948 ft runway on Northerly Island, painted as it was.
-  - The terminal and tower, Burnham Harbor, Navy Pier.
-  - The Loop skyline as it stood in the 1990s: Sears, Aon, Hancock, Two Prudential, 311 S Wacker, Lake Point Tower.
+  - The tower.
   - Lake Michigan at its real level, 15 ft below the field.
 
 The published numbers it is tested against:
@@ -216,8 +209,8 @@ Anything edited in the browser stays as it is.
 src/sim/          flight model: atmosphere, aero, engine, propeller, gear, rigid body (no PlayCanvas)
 src/sim/aircraft/ the airplanes as data (extra300l.js, f15c.js, xwing.js), every number tagged [pub] / [est] / [tune]
 src/instruments/  gauge physics, the Extra's canvas instrument panel, the F-15's HUD
-src/world/        WGS-84 local frame, Meigs Field, the OSM codec and the baked city
-src/render/       engine-free geometry: the Extra (baked from Blender), Meigs, procedural buildings, ground textures, sky, camera maths, sound
+src/world/        WGS-84 local frame, Meigs Field, the airports, the OSM codec and the baked lake shore
+src/render/       engine-free geometry: the Extra (baked from Blender), Meigs, the runways, ground textures, sky, camera maths, sound
 scripts/blender/  the Extra 300L, the F-15C and the X-wing modelled in Blender, by script (kit.py: the shared helpers)
 src/input/        keyboard / gamepad / touch / mouse-yoke → controls
 src/plugin/       the Arrival.Space glue (the only code that touches pc / ArrivalSpace)

@@ -19,8 +19,8 @@ on runway 36 at Meigs Field the way Flight Simulator 1.0 through 2002 did.
  │ sim/aircraft/extra300l.js   the airplane as data        │   │   camera takeover, HUD, UI  │
  │ instruments/ gauge physics · canvas panel               │──▶│ plugin/aircraftVisual.js    │
  │ world/      WGS-84 local frame · Meigs · ground query   │──▶│ plugin/sceneryVisual.js     │
- │             OSM codec · baked Chicago (data/)           │──▶│ plugin/osmVisual.js         │
- │ render/     model, Meigs, OSM buildings, sky, camera    │──▶│ plugin/pcMesh.js            │
+ │             OSM codec · baked lake shore (data/)        │──▶│ plugin/runwayVisual.js      │
+ │ render/     model, Meigs, runways, sky, camera          │──▶│ plugin/pcMesh.js            │
  │ input/      device state → controls                     │   └──────────────┬──────────────┘
  └────────────────────────────────────────────────────────┘                  │ scripts/build.mjs (esbuild)
                                                                              ▼
@@ -68,7 +68,7 @@ The rule that keeps it testable is that only `src/plugin/` may touch `pc`, `Arri
 | model | `tests/model.test.js` | 8.0 m span, ~7 m length, wheels on the gear contact points, frame mapping |
 | deliverable | `tests/bundle.test.js` | single file, one ArrivalScript class, scriptName, no reserved fields |
 | sync | `tests/sync.test.js` | staged files, one default spawn, untouched foreign entities, managed room keys only |
-| city | `tests/osm.test.js` | codec round trip, coastline closing (peninsula), gables, courtyards, outward walls, skyline year, building collisions |
+| lake shore | `tests/osm.test.js` | codec round trip, coastline closing (peninsula), the land/water mask out to the horizon |
 | browser | `tests/e2e/shots.mjs` | the bundle runs in PlayCanvas: boards with E, rolls at full throttle, screenshots of every view |
 | Arrival client | `tests/e2e/arrival-client.cjs` | the real arrival.space client (guest, all writes blocked): every API the vibe calls exists, click-to-board, flight, camera override holds, exit hands the camera back |
 
@@ -76,8 +76,6 @@ The rule that keeps it testable is that only `src/plugin/` may touch `pc`, `Arri
 
 ## Known approximations (phase 1)
 
-- **Buildings without a year in the City's data** are shown in every skyline year. A curated list in `scripts/bake-osm.mjs` catches the notable post-2003 towers by name.
-- **Heights** come from OSM, then City storeys, then OSM levels, then a default by building type. Storeys are converted at 3.4 m, or 3.9 m above 12 storeys.
 - **Meigs coordinates** are hand-placed from memory of the layout. These need surveying: the runway centre, its true bearing, the island outline, the shoreline and the landmark positions. Every one is marked `[verify]` in `src/world/meigs.js`.
 - **Ground effect** reduces induced drag only; there is no lift increase.
 - **Downwash and slipstream** use single lagged values. The slipstream covers fixed fractions of the tail and inner wing, regardless of yaw.
@@ -109,9 +107,9 @@ The rule that keeps it testable is that only `src/plugin/` may touch `pc`, `Arri
 
 **Phase 3: the place.**
 
-- **Done:** OpenStreetMap Chicago, a procedural sky, and the skyline year.
+- **Done:** a procedural sky; Google's photorealistic 3D tiles as the city and the land (the procedural OpenStreetMap Chicago they replaced is gone, its lake shore kept as the land/water mask).
 - **Survey:** pin the `[verify]` Meigs coordinates against FAA 5010 data and period aerial photos, and align the runway with the OSM shore of Northerly Island.
-- **Night:** lit windows (an emissive facade map with random lit cells) and runway lights.
+- **Night:** runway lights.
 - **Google 3D Tiles (optional layer):** use the existing `google-3d-tiles` vibe with a key. Align it to the local frame, crop today's Northerly Island park, and draw the 1990s runway over it.
 - **Retro mode:** FS1-style wireframe and flat-shaded rendering.
 - **Time of day and night lighting:** runway edge lights, the Loop lit up.

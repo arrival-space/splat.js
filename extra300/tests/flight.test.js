@@ -1,5 +1,5 @@
 // The whole thing, end to end: one Platzrunde at Meigs in the real world
-// (OSM ground, buildings as obstacles). Takeoff from 36, right traffic over
+// (the OSM land and lake). Takeoff from 36, right traffic over
 // the lake, a loop on downwind flown by holding the pitch key, base, final,
 // flare, three-point landing, stop on the runway.
 import test from 'node:test';
@@ -13,7 +13,6 @@ test('Platzrunde: takeoff, loop, landing — on the runway, nothing broken, noth
     assert.ok(phases.includes(p), `never reached ${p} (got ${phases.join(' → ')})`);
   }
   assert.ok(!r.damage.propStrike && !r.damage.crashed, `damage ${JSON.stringify(r.damage)}`);
-  assert.equal(r.hitBuilding, null);
   assert.equal(r.stallBeforeFlare, 0, 'the wing never stalled between lift-off and the flare');
   // the loop: round, on line, not much height gained or lost
   assert.ok(r.loop.seconds > 7 && r.loop.seconds < 14, `loop ${r.loop.seconds} s`);

@@ -51,12 +51,11 @@ test('render quaternion maps body axes the same way fromBody does', () => {
   }
 });
 
-test('scenery builds with every landmark and a few thousand Loop blocks', () => {
+test('scenery builds Meigs itself: the lake, the island, the runway, the tower', () => {
   const parts = buildScenery(buildMeigs());
   const names = parts.map((p) => p.name);
-  for (const n of ['lake', 'mainland', 'island', 'runway', 'markings', 'seawall']) assert.ok(names.includes(n), n);
-  const loop = parts.filter((p) => p.name.startsWith('loop')).reduce((s, p) => s + p.mesh.vertexCount, 0);
-  assert.ok(loop > 5000 && loop < 60000, `loop verts ${loop}`);
+  for (const n of ['lake', 'island', 'islandWall', 'runway', 'markings']) assert.ok(names.includes(n), n);
+  assert.ok(parts.tower && parts.length > 8);
   for (const p of parts) assert.ok(p.mesh.positions.every(Number.isFinite), p.name);
 });
 
@@ -64,7 +63,7 @@ test('scenery walls: each two-sided pair is marked for back-face culling, and ea
   const { buildScenery } = await import('../src/render/scenery.js');
   const { buildMeigs } = await import('../src/world/meigs.js');
   const parts = buildScenery(buildMeigs());
-  for (const name of ['islandWall', 'seawall', 'navyPierWall']) {
+  for (const name of ['islandWall']) {
     const p = parts.find((x) => x.name === name);
     assert.ok(p && p.cullBack, `${name} culls back faces`);
     // the two quads of a segment: same corners, opposite normals (so exactly one is front-facing from anywhere)
