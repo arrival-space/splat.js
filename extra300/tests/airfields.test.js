@@ -3,7 +3,7 @@
 // the Terrarium terrain grid (world/terrarium.js).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { airfieldDescriptor, airfieldsFrom, airfieldWorld, distanceM, fold, geoidAt, nearestAirfields, parseCsv, runwayLevel, searchAirfields } from '../src/world/airfields.js';
+import { airfieldDescriptor, airfieldsFrom, airfieldWorld, distanceM, fold, geoidAt, nearestAirfields, parseCsv, searchAirfields } from '../src/world/airfields.js';
 import { terrariumGrid } from '../src/world/terrarium.js';
 import { LocalFrame } from '../src/world/geo.js';
 
@@ -120,24 +120,16 @@ test('terrarium: tiles decoded and sampled onto a grid round the centre, south r
   assert.ok(slope.h[0] > slope.h[20 * 21]);
 });
 
-test('runway level: the terrain mean along the runway; a world built on it, flat ground when no tiles', async () => {
+test('runway level: the runway\'s surveyed ends, whatever the elevation tiles say (a reef runway\'s seabed); flat ground when no tiles', async () => {
   const g = byIdent('LOWG');
-  const ends = g.runways[0].ends, centre = [(ends[0][0] + ends[1][0]) / 2, (ends[0][1] + ends[1][1]) / 2];
-  const f = new LocalFrame(...centre);
-  // a ground falling 10 m from north to south along the runway: its mean, the middle's height
-  const grid = { half: 2000, step: 40, n: 101, h: new Float32Array(101 * 101) };
-  for (let j = 0; j < 101; j++) for (let i = 0; i < 101; i++) grid.h[j * 101 + i] = 340 + (-2000 + j * 40) / 300;
-  assert.ok(Math.abs(runwayLevel(grid, ends, centre) - 340) < 0.05);
-  assert.ok(f.toNE(...ends[0])[0] > 0);
-
-  const level = await airfieldWorld(g, tileOf(() => 352));
-  assert.ok(Math.abs(level.world.elevation - 352) < 0.5);
-  assert.equal(level.world.runway.ident.join('/'), '16C/34C');
-  const s = level.world.startPosition();
-  assert.equal(level.world.ground(s.n, s.e).surface, 'asphalt');
-  // off by more than 40 m from the published: the elevation tiles are wrong there, the published kept
-  const wild = await airfieldWorld(g, tileOf(() => 2000));
-  assert.ok(Math.abs(wild.world.elevation - 1108 * 0.3048) < 0.01);
+  for (const h of [352, -20, 2000]) {
+    const w = await airfieldWorld(g, tileOf(() => h));
+    assert.ok(Math.abs(w.world.elevation - 1108 * 0.3048) < 0.01, `tiles at ${h} m: ${w.world.elevation}`);
+  }
+  const w = await airfieldWorld(g, tileOf(() => 352));
+  assert.equal(w.world.runway.ident.join('/'), '16C/34C');
+  const s = w.world.startPosition();
+  assert.equal(w.world.ground(s.n, s.e).surface, 'asphalt');
   const none = await airfieldWorld(g, async () => { throw new Error('offline'); });
   assert.equal(none.dem, null);
   assert.ok(Math.abs(none.world.elevation - 1108 * 0.3048) < 0.01);

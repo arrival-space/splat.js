@@ -173,6 +173,8 @@ export async function airfieldDescriptor(a) {
     ends = [f.toLatLon(-Math.cos(hdg) * h, -Math.sin(hdg) * h), f.toLatLon(Math.cos(hdg) * h, Math.sin(hdg) * h)];
   }
   const mid = [(ends[0][0] + ends[1][0]) / 2, (ends[0][1] + ends[1][1]) / 2];
+  // the runway's surveyed ends (the field's elevation where they're not given); Google's ground is
+  // lined up with it once its tiles are in (plugin/extra300.js _alignToGoogle)
   const elevationM = (rw.elevFt ?? a.elevFt) * FT;
   // the tower view: off the runway's middle, 150 m to the side
   const f = new LocalFrame(mid[0], mid[1]);
@@ -195,36 +197,10 @@ export async function airfieldDescriptor(a) {
   };
 }
 
-/** A grid's height (m) at (n, e) round its centre, bilinear. */
-export function gridAt(g, n, e) {
-  const x = Math.max(0, Math.min(g.n - 1.001, (e + g.half) / g.step)), y = Math.max(0, Math.min(g.n - 1.001, (n + g.half) / g.step));
-  const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, h = g.h, N = g.n;
-  return (h[j * N + i] * (1 - fx) + h[j * N + i + 1] * fx) * (1 - fy) + (h[(j + 1) * N + i] * (1 - fx) + h[(j + 1) * N + i + 1] * fx) * fy;
-}
-
-/**
- * The runway's level (m above sea level): the terrain's mean along it, so the flattened runway sits
- * in the ground's own slope (half its fall above, half below) rather than in a trench at one end,
- * where the field's published elevation is its highest point.
- */
-export function runwayLevel(grid, ends, centre) {
-  const f = new LocalFrame(centre[0], centre[1]);
-  const [a, b] = ends.map(([lat, lon]) => f.toNE(lat, lon));
-  let sum = 0;
-  const K = 24;
-  for (let k = 0; k <= K; k++) sum += gridAt(grid, a[0] + ((b[0] - a[0]) * k) / K, a[1] + ((b[1] - a[1]) * k) / K);
-  return sum / (K + 1);
-}
-
 /** The airfield as a world to fly from, its terrain fetched (flat where it can't be). */
 export async function airfieldWorld(a, fetchTile) {
   const { data, osm } = await airfieldDescriptor(a);
   let dem = null;
   try { dem = await terrariumDem(osm.centre, fetchTile); } catch (e) { console.warn('[airfields] no terrain, flat ground:', e); }
-  if (dem) {
-    const level = runwayLevel(dem.near, osm.runway.ends, osm.centre);
-    // the elevation tiles' own errors aside (a few metres); a wild one (a void, a cliff) keeps the published
-    if (Math.abs(level - data.elevationM) < 40) data.elevationM = level;
-  }
   return { dem, world: buildAirport(data, osm, dem) };
 }

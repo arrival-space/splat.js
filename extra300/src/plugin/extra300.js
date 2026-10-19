@@ -16,6 +16,7 @@ import { buildMeigs } from '../world/meigs.js';
 import { buildInnsbruck, inflateLowiDem } from '../world/innsbruck.js';
 import { buildRenton, inflateRentonDem } from '../world/renton.js';
 import { CLOUD_PRESETS, CloudLayer, cloudsAt } from './clouds.js';
+import { tileGroundY } from './tileGround.js';
 import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
@@ -657,9 +658,54 @@ export class Extra300 extends ArrivalScript {
     const s = this.world.startPosition();
     const [latitude, longitude] = this.world.frame.toLatLon(s.n, s.e);
     this.app.fire('googletiles:set-origin', {
-      latitude, longitude, groundAltitude: this.world.elevation + this.world.data.geoidM,
+      // (a found airfield's Google ground lined up with its runway: _alignToGoogle)
+      latitude, longitude, groundAltitude: this.world.elevation + this.world.data.geoidM + (this._altFix?.[this._dest] || 0),
       sun: this._sunNow(longitude),
     });
+  }
+
+  /**
+   * A found airfield (world/airfields.js) has its height from a table and the geoid, a few metres off
+   * Google's photogrammetry (and its runway flattened into a trench, or left on a step, when they
+   * differ): once Google's fine tiles are in under the runway, their ground along it is read off
+   * their meshes (before any flattening) and the globe moved by the difference, the median of a few
+   * points. Once within 30 cm it's done; each point is read in a frame of its own.
+   */
+  async _alignToGoogle() {
+    const dest = this._dest;
+    if (!dest.startsWith('af:') || !this._google || this._aligning || this._aligned?.[dest]) return;
+    const tiles = this._tilesVibe();
+    if (!tiles) return;
+    this._aligning = true;
+    try {
+      const rw = this.world.runway, ws = this._ws, offs = [];
+      for (let k = 0; k < 7; k++) {
+        if (this._dest !== dest || this._destroyed) return;
+        const al = (k / 6 - 0.5) * rw.length * 0.8;
+        const l = fromNE(rw.centre[0] + rw.dir[0] * al, rw.centre[1] + rw.dir[1] * al, 0);
+        const o = this._worldRoot.getPosition();
+        // tiles up to 600 m across: their ground within a metre or so, the median of seven points
+        const hit = tileGroundY(tiles, o.x + l[0] * ws, o.z + l[2] * ws, o.y + 400 * ws, o.y - 400 * ws, (this._alignMaxHalf ?? 300) * ws);
+        if (hit) offs.push((hit.y - o.y) / ws);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+      this._alignLast = offs;          // (what was read, for a look from the console)
+      if (offs.length < 4) return;   // not enough fine tiles yet: the next tick
+      offs.sort((a, b) => a - b);
+      const off = offs[offs.length >> 1];
+      this._altFix ||= {};
+      const tries = this._aligns ||= {};
+      tries[dest] = (tries[dest] || 0) + 1;
+      if (Math.abs(off) < 0.3 || tries[dest] > 6 || Math.abs(off) > 80) {
+        (this._aligned ||= {})[dest] = true;
+        return;
+      }
+      // Google's ground `off` above our runway: raised on the globe by as much, it comes down to it
+      this._altFix[dest] = (this._altFix[dest] || 0) + off;
+      this._publishOrigin();
+    } finally {
+      this._aligning = false;
+    }
   }
 
   // ── the weather menu (the top bar's Weather): what the visitor set, else the place's own ──
@@ -847,6 +893,7 @@ export class Extra300 extends ArrivalScript {
       this._publishShadows();
       // the tiles vibe may have started after we moved: tell it again where we are
       if (this._dest !== 'meigs') this._publishOrigin();
+      this._alignToGoogle();
       // with no API key yet the tiles vibe lays a 50 km green disc at the runway's height, over our lake
       const ph = this.app.root.findByName('google-tiles-placeholder-ground');
       if (ph?.enabled) ph.enabled = false;
