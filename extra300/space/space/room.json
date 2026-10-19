@@ -49,12 +49,12 @@
   },
   "state": {
     "files": 9,
-    "memory": 4469907,
-    "updated": 1792415002766,
+    "memory": 4470869,
+    "updated": 1792415487770,
     "entities": 18,
     "entitySizes": {
       "extra300-meigs": 4301656,
-      "google-3d-tiles": 142206,
+      "google-3d-tiles": 143168,
       "flight-airport-krnt": 2987,
       "flight-airport-lowi": 2987,
       "flight-aircraft-b777": 4271,
