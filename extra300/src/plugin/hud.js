@@ -71,7 +71,7 @@ export class Hud {
 
     this.message = document.createElement('div');
     css(this.message, {
-      position: 'fixed', left: '50%', top: '9%', transform: 'translateX(-50%)', padding: '8px 16px',
+      position: 'fixed', left: '50%', top: 'max(9%, 98px)', transform: 'translateX(-50%)', padding: '8px 16px',   // under the restart button
       background: 'rgba(12,13,16,0.75)', color: '#f1efe8', font: '600 14px "Helvetica Neue", Arial, sans-serif',
       borderRadius: '6px', zIndex: 21, display: 'none', pointerEvents: 'none',
     });
@@ -125,6 +125,10 @@ export class Hud {
     // where to fly: a dropdown of the airports (in the airplane and out of it)
     this.placeButton = button({ ...pill, width: `${wD}px`, left: `calc(50% + ${x0 + wA + wE + wC + 24}px)`, display: 'block' });
     this.setPlace('Chicago');
+    // crashed (or the prop struck, the gear folded): back on the runway, under the top bar
+    this.restartButton = button({ ...pill, width: '210px', left: 'calc(50% - 105px)', top: '54px', background: 'rgba(196,30,42,0.88)', border: '1px solid rgba(255,255,255,0.35)' });
+    this.restartButton.innerHTML = '↺ Restart on the runway';
+    this.restartButton.title = 'Back on the runway, engine off (Backspace)';
     // the weather: sliders in a dropdown (setSliders)
     this.weatherButton = button({ ...pill, width: `${wW}px`, left: `calc(50% + ${x0 + wA + wE + wC + wD + 32}px)`, display: 'block' });
     this.weatherButton.innerHTML = '<span style="opacity:0.8;margin-right:5px">☁</span>Weather<span style="opacity:0.6;margin-left:5px">▾</span>';
@@ -419,6 +423,12 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     }
   }
 
+  /** The restart button: while the airplane lies broken. */
+  showRestart(on) {
+    const d = on ? 'block' : 'none';
+    if (this.restartButton.style.display !== d) this.restartButton.style.display = d;
+  }
+
   /** The throttle grip and the engine button show with the panel. */
   _syncGrip() {
     const d = this.panelCanvas.style.display, h = this._panelAt?.h;
@@ -567,7 +577,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.weatherButton.style.display = 'block';
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
-    if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); }
+    if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); this.showRestart(false); }
   }
 
   toggleHelp(show) {
@@ -581,7 +591,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     window.removeEventListener('pointerdown', this._onOutside, true);
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
-    for (const el of [this.panelCanvas, this.throttleGrip, ...this._lampButtons.values(), this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton,
+    for (const el of [this.panelCanvas, this.throttleGrip, ...this._lampButtons.values(), this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton, this.restartButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

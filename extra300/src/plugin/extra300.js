@@ -261,6 +261,7 @@ export class Extra300 extends ArrivalScript {
     this._onRegistry = (kind) => this._registryChanged(kind);
     this.app.on('flightsim:changed', this._onRegistry);
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
+    this.hud.restartButton.onclick = (ev) => { ev.stopPropagation(); this._action('reset'); };
     // the panel's throttle lever, dragged
     this.hud.onThrottle = (t) => { if (this._flying && !this._intro) { this.mapper.throttle = t; this.sound?.start(); } };
     // its lamps that are switches too (setLampButtons, in _buildAircraft), clicked
@@ -1423,7 +1424,7 @@ export class Extra300 extends ArrivalScript {
         c.mixture = c.mixture > 0.5 ? 0 : 1;
         this.hud.flash(this.ac.jet ? (c.mixture ? 'Fuel on' : 'Fuel off: engines shut down') : (c.mixture ? 'Mixture rich' : 'Mixture cut-off'), 1.5);
         break;
-      case 'parkingBrake': this._autoBrake = false; c.parkingBrake = !c.parkingBrake; break;
+      case 'parkingBrake': this._autoBrake = false; c.parkingBrake = !c.parkingBrake; this._thrAtBrake = this.mapper.throttle; break;
       case 'gReset': if (!this.ac.retractable) this.instruments.resetG(); break;
       case 'gear':
         if (!this.ac.retractable) break;
@@ -1537,6 +1538,10 @@ export class Extra300 extends ArrivalScript {
     if (this._autoBrake && !this._intro) {
       if (this.mapper.throttle > 0.1 || !this.ac.gear.onGround) { this._autoBrake = false; this.ac.controls.parkingBrake = false; }
       else this.ac.controls.parkingBrake = true;
+    } else if (this.ac.controls.parkingBrake && !this._intro && this.mapper.throttle > Math.max(0.1, (this._thrAtBrake ?? 0) + 0.05)) {
+      // a parking brake set by the pilot lets go too as the throttle is opened past where it was set
+      this.ac.controls.parkingBrake = false;
+      this.hud.flash('Parking brake off', 1.2);
     }
     if (!this._paused) this.ac.update(dt);
     this._checkShip();
@@ -1577,6 +1582,9 @@ export class Extra300 extends ArrivalScript {
       inside: this.cameraRig.view === 'cockpit',
     });
 
+    // broken (crashed, the prop struck, the gear folded): the restart button under the top bar
+    const dmg = this.ac.damage;
+    this.hud.showRestart(this._flying && !this._intro && (dmg.crashed || dmg.propStrike || dmg.gearCollapsed));
     this._panelAcc += dt;
     if (this._panelVisible && !this._intro && this._panelAcc > 1 / 30) {
       this._panelAcc = 0;
