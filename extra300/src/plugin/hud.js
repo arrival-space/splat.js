@@ -9,6 +9,9 @@ import { JetHud } from '../instruments/jetHud.js';
 
 export const CREDIT = 'Map data © OpenStreetMap contributors (ODbL) · City of Chicago';
 
+
+// the phone's control stick: full travel gives half deflection (the whole was too quick under a thumb)
+const STICK_GAIN = 0.5;
 export class Hud {
   /**
    * @param {HTMLElement} container  the script's UI container (click-through: pointer-events none)
@@ -217,7 +220,7 @@ export class Hud {
       const m = Math.hypot(dx, dy);
       if (m > lim) { dx *= lim / m; dy *= lim / m; }
       knob.style.transform = `translate(${dx}px, ${dy}px)`;
-      this.stick.x = dx / lim; this.stick.y = -dy / lim;
+      this.stick.x = STICK_GAIN * dx / lim; this.stick.y = -STICK_GAIN * dy / lim;
     };
     this._stickRelease = () => {
       id = null; this.stick.x = 0; this.stick.y = 0;
