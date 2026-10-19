@@ -1,8 +1,7 @@
-// panel.js — the instrument cluster: flight instruments left, engine right,
-// the whiskey compass above them, the way the Extra's own panel reads. Only
-// the instruments are drawn; the canvas is exactly as wide as the cluster
-// and transparent around and between the dials, so the 3D view stays visible
-// everywhere else.
+// panel.js — the instrument cluster: the throttle lever, the four flight instruments, the lamps, the
+// whiskey compass and the slip ball above the dials. Only the instruments are drawn; the canvas is
+// exactly as wide as the cluster and transparent around and between them, so the 3D view stays
+// visible everywhere else. The throttle can be dragged with the mouse (plugin/hud.js: throttleSlot).
 
 import * as G from './gauges.js';
 
@@ -10,13 +9,17 @@ import * as G from './gauges.js';
 function layout(r) {
   const m = r * 0.25;                 // outer margin
   const gap = r * 2.3;                // between gauge centres
-  const lev = { x: m, w: r * 1.5 };
-  const asi = lev.x + lev.w + r * 1.15;
+  const lev = { x: m, w: r * 1.05 };
+  const asi = lev.x + lev.w + r * 1.25;
   const centres = [asi, asi + gap, asi + 2 * gap, asi + 3 * gap];
-  const tach = centres[3] + gap + r * 0.3;
-  const mp = tach + gap;
-  const stack = { x: mp + r * 1.2, w: r * 2.3 };
-  return { m, gap, lev, centres, tach, mp, stack, width: stack.x + stack.w + m };
+  const lamps = { x: centres[3] + r * 1.25, w: r * 1.35 };
+  return { m, gap, lev, centres, lamps, width: lamps.x + lamps.w + m };
+}
+
+/** The throttle's slot: its centre line x, its top (full) and its travel, for a cluster of height h. */
+function slot(r, h) {
+  const L = layout(r), cy = h - r * 1.2;
+  return { x: L.lev.x + L.lev.w / 2, top: cy - r * 0.86, travel: r * 1.5, plate: { x: L.lev.x, y: cy - r * 1.12, w: L.lev.w, h: r * 2.3 } };
 }
 
 export class Panel {
@@ -31,6 +34,8 @@ export class Panel {
   static radiusFor(h) { return h * 0.34; }   // dials + compass above them fill the height
   /** Css width of the cluster for gauge radius r. */
   static widthFor(r) { return layout(r).width; }
+  /** The throttle lever's slot in css px of a cluster h high: { x, top, travel, plate }. */
+  static throttleSlot(h) { return slot(Panel.radiusFor(h), h); }
 
   resize(cssWidth, cssHeight, dpr = 1) {
     this.canvas.width = Math.round(cssWidth * dpr);
@@ -42,7 +47,7 @@ export class Panel {
 
   /**
    * @param {object} v  Instruments.values
-   * @param {object} s  extras: { throttle, prop, trim, parkingBrake, engineRunning, paused }
+   * @param {object} s  extras: { throttle, parkingBrake, engineRunning, paused }
    */
   draw(v, s = {}) {
     const ctx = this.ctx;
@@ -61,18 +66,28 @@ export class Panel {
       ctx.fill();
     };
 
-    // levers on their own small plate
-    plate(L.lev.x - r * 0.1, cy - r * 1.12, L.lev.w + r * 0.2, r * 2.3);
-    const lever = (i, name, t, col) => {
-      const lx = L.lev.x + r * 0.25 + i * r * 0.5, y0 = cy - r * 0.95, h = r * 1.65;
-      ctx.fillStyle = '#050506'; ctx.fillRect(lx - 3, y0, 6, h);
-      ctx.fillStyle = col; ctx.fillRect(lx - r * 0.16, y0 + (1 - t) * h - 6, r * 0.32, 12);
-      ctx.fillStyle = '#bdbab2'; ctx.font = `600 ${Math.round(r * 0.15)}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(name, lx, y0 + h + r * 0.17);
-    };
-    lever(0, 'THR', s.throttle ?? 0, '#d8d4c8');
-    lever(1, 'PROP', s.prop ?? 1, '#2d5bd1');
-    lever(2, 'TRIM', 0.5 + 0.5 * (s.trim ?? 0), '#888');
+    // the throttle: a slot with idle and full marked, a black T-handle with a white grip, its setting
+    const S = slot(r, H), t = Math.max(0, Math.min(1, s.throttle ?? 0));
+    plate(S.plate.x, S.plate.y, S.plate.w, S.plate.h);
+    ctx.fillStyle = '#050506';
+    ctx.beginPath(); ctx.roundRect(S.x - r * 0.05, S.top - r * 0.04, r * 0.1, S.travel + r * 0.08, r * 0.05); ctx.fill();
+    ctx.strokeStyle = '#6d6b66'; ctx.lineWidth = Math.max(1, r * 0.015);
+    for (let k = 0; k <= 4; k++) {
+      const y = S.top + (k / 4) * S.travel, wd = k % 4 === 0 ? r * 0.3 : r * 0.18;
+      ctx.beginPath(); ctx.moveTo(S.x - wd, y); ctx.lineTo(S.x - r * 0.1, y); ctx.moveTo(S.x + r * 0.1, y); ctx.lineTo(S.x + wd, y); ctx.stroke();
+    }
+    const ky = S.top + (1 - t) * S.travel, kw = r * 0.74, kh = r * 0.24;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.roundRect(S.x - kw / 2 + r * 0.02, ky - kh / 2 + r * 0.04, kw, kh, r * 0.07); ctx.fill();
+    ctx.fillStyle = '#1b1c1f';
+    ctx.beginPath(); ctx.roundRect(S.x - kw / 2, ky - kh / 2, kw, kh, r * 0.07); ctx.fill();
+    ctx.fillStyle = '#efece4';
+    ctx.beginPath(); ctx.roundRect(S.x - kw / 2 + r * 0.06, ky - kh * 0.18, kw - r * 0.12, kh * 0.36, r * 0.03); ctx.fill();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#bdbab2'; ctx.font = `700 ${Math.round(r * 0.13)}px Arial`;
+    ctx.fillText('THROTTLE', S.x, S.plate.y + r * 0.13);
+    ctx.fillStyle = '#f1efe8'; ctx.font = `700 ${Math.round(r * 0.15)}px Arial`;
+    ctx.fillText(`${Math.round(t * 100)} %`, S.x, S.top + S.travel + r * 0.2);
 
     // the dials draw their own bezels; nothing between them
     const [asi, alt, vsi, gm] = L.centres;
@@ -80,22 +95,17 @@ export class Panel {
     G.altimeter(ctx, alt, cy, r, v);
     G.vsi(ctx, vsi, cy, r, v);
     G.gmeter(ctx, gm, cy, r, v, lim);
-    G.tach(ctx, L.tach, cy, r, v, lim);
-    G.manifold(ctx, L.mp, cy, r, v);
 
-    // engine monitor and lamps
-    plate(L.stack.x - r * 0.08, cy - r * 1.08, L.stack.w + r * 0.16, r * 2.16);
-    G.engineStack(ctx, L.stack.x, cy - r, L.stack.w, r * 2, v);
-    // the four lamps in a row on the glareshield, above the engine monitor
-    const lw = (L.stack.w + r * 0.16 - r * 0.15) / 2, lh = r * 0.3;
+    // the four lamps stacked beside the G-meter
+    const lh = r * 0.38, lg = r * 0.12, ly0 = cy - (4 * lh + 3 * lg) / 2;
+    plate(L.lamps.x - r * 0.08, ly0 - r * 0.08, L.lamps.w + r * 0.16, 4 * lh + 3 * lg + r * 0.16);
     const lamp = (i, on, text, col) => {
-      const x = L.stack.x - r * 0.08 + (i % 2) * (lw + r * 0.15);
-      const y = cy - r * 1.82 + Math.floor(i / 2) * (lh + r * 0.06);
+      const y = ly0 + i * (lh + lg);
       ctx.fillStyle = on ? col : 'rgba(42,43,46,0.85)';
-      ctx.fillRect(x, y, lw, lh);
+      ctx.fillRect(L.lamps.x, y, L.lamps.w, lh);
       ctx.fillStyle = on ? '#111' : '#7a7b80';
       ctx.font = `700 ${Math.round(r * 0.13)}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(text, x + lw / 2, y + lh / 2);
+      ctx.fillText(text, L.lamps.x + L.lamps.w / 2, y + lh / 2);
     };
     lamp(0, v.stallWarning, 'STALL', '#e0452f');
     lamp(1, !!s.parkingBrake, 'PARK BRK', '#e3c13b');

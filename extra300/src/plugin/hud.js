@@ -25,6 +25,27 @@ export class Hud {
     css(this.panelCanvas, { position: 'fixed', left: '50%', bottom: '4px', transform: 'translateX(-50%)', pointerEvents: 'none', zIndex: 20, display: 'none' });
     container.appendChild(this.panelCanvas);
     this.panel = new Panel(this.panelCanvas, profile.spec.limits);
+    // the throttle lever, dragged with the mouse (or a finger): over its slot on the panel, which
+    // stays click-through everywhere else; onThrottle(0..1) hands the setting to the plugin
+    this.onThrottle = null;
+    this.throttleGrip = document.createElement('div');
+    css(this.throttleGrip, { position: 'fixed', zIndex: 21, display: 'none', cursor: 'ns-resize', touchAction: 'none', pointerEvents: 'auto' });
+    container.appendChild(this.throttleGrip);
+    const setFrom = (ev) => {
+      const sl = this._slot, top = this.throttleGrip.getBoundingClientRect().top;
+      if (!sl) return;
+      this.onThrottle?.(Math.max(0, Math.min(1, 1 - (ev.clientY - top - (sl.top - sl.plate.y)) / sl.travel)));
+    };
+    this.throttleGrip.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation(); ev.preventDefault();
+      this.throttleGrip.setPointerCapture?.(ev.pointerId);
+      this._dragging = true;
+      setFrom(ev);
+    });
+    this.throttleGrip.addEventListener('pointermove', (ev) => { if (this._dragging) { ev.stopPropagation(); setFrom(ev); } });
+    const end = (ev) => { this._dragging = false; this.throttleGrip.releasePointerCapture?.(ev.pointerId); };
+    this.throttleGrip.addEventListener('pointerup', end);
+    this.throttleGrip.addEventListener('pointercancel', end);
     // the jet's head-up display: the whole view, click-through
     this.hudCanvas = document.createElement('canvas');
     css(this.hudCanvas, { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', zIndex: 19, display: 'none' });
@@ -305,7 +326,16 @@ export class Hud {
     if (w > maxW) { h = Math.floor(h * (maxW / w)); w = Panel.widthFor(Panel.radiusFor(h)); }
     this.panel.resize(Math.ceil(w), h, Math.min(2, window.devicePixelRatio || 1));
     this.panelHeight = h;
+    // the throttle grip over the lever's plate (the panel: centred, 4 px off the bottom)
+    const sl = this._slot = Panel.throttleSlot(h);
+    Object.assign(this.throttleGrip.style, {
+      left: `${(window.innerWidth - Math.ceil(w)) / 2 + sl.plate.x}px`, top: `${window.innerHeight - 4 - h + sl.plate.y}px`,
+      width: `${sl.plate.w}px`, height: `${sl.plate.h}px`,
+    });
   }
+
+  /** The throttle grip shows with the panel. */
+  _syncGrip() { this.throttleGrip.style.display = this.panelCanvas.style.display; }
 
   showPrompt(text) {
     this.prompt.textContent = text || '';
@@ -368,7 +398,7 @@ export class Hud {
     this.skipButton.style.display = on ? 'block' : 'none';
     if (!on) this.setIntroFade(0);
     this._introCardShown = -1;
-    if (on) { this.panelCanvas.style.display = 'none'; this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
+    if (on) { this.panelCanvas.style.display = 'none'; this._syncGrip(); this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
     for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton]) b.style.display = on ? 'none' : b.style.display;
   }
 
@@ -418,6 +448,7 @@ export class Hud {
     this._panelVisible = panelVisible;
     const hud = this.profile.display === 'hud';
     this.panelCanvas.style.display = flying && panelVisible && !hud ? 'block' : 'none';
+    this._syncGrip();
     this.hudCanvas.style.display = flying && panelVisible && hud ? 'block' : 'none';
     this.credit.style.display = flying ? 'block' : 'none';
     this.aircraftButton.style.display = 'block';   // which airplane: on foot as well, before boarding
@@ -440,7 +471,7 @@ export class Hud {
     window.removeEventListener('pointerdown', this._onOutside, true);
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
-    for (const el of [this.panelCanvas, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton,
+    for (const el of [this.panelCanvas, this.throttleGrip, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

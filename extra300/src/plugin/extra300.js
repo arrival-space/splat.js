@@ -104,6 +104,7 @@ export class Extra300 extends ArrivalScript {
   qnhInHg = 29.92;
   oatC = 15;
   easyMode = true;            // the default: stall-proof, the attitude held hands off (the top bar's switch, or L)
+  autoTrim = true;            // normal mode: the elevator trimmed for the attitude the stick was let go at
   playIntro = true;
   introAtStart = true;
   introOnLoad = false;
@@ -133,6 +134,7 @@ export class Extra300 extends ArrivalScript {
     qnhInHg: { title: 'QNH (inHg)', min: 28.5, max: 31, step: 0.01 },
     oatC: { title: 'Sea-level temperature (°C)', min: -30, max: 45, step: 1 },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
+    autoTrim: { title: 'Auto trim (normal mode; easy mode always holds the attitude)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
     introAtStart: { title: 'Intro film at load, round the parked airplane while Google\'s tiles stream in (then on foot beside it)' },
     debugSpheres: { title: 'Debug: three spheres over the airplane (its white paint, a mirror, clear glass), lit and reflecting as it is (or ?spheres on the address)' },
@@ -193,7 +195,7 @@ export class Extra300 extends ArrivalScript {
 
     // the airplane until the start picks one (plugin/flightRegistry.js: the space's airplane vibes)
     this.profile = tunedProfile(plainAircraft(askedAircraft || aircraftBase(this.aircraft)));
-    this.mapper = new ControlMapper({ easy: this.easyMode });
+    this.mapper = new ControlMapper({ easy: this.easyMode, autoTrim: this.autoTrim });
     const tower = this.world.landmarks.find((l) => l.name === 'Meigs Tower');
     this.cameraRig = new CameraRig({ eye: this.profile.spec.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
     this._placeDeckCamera();
@@ -248,6 +250,8 @@ export class Extra300 extends ArrivalScript {
     this._onRegistry = (kind) => this._registryChanged(kind);
     this.app.on('flightsim:changed', this._onRegistry);
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
+    // the panel's throttle lever, dragged
+    this.hud.onThrottle = (t) => { if (this._flying && !this._intro) { this.mapper.throttle = t; this.sound?.start(); } };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
     if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._enter();
@@ -1444,7 +1448,7 @@ export class Extra300 extends ArrivalScript {
         });
       } else {
         this.hud.panel.draw(v, {
-          throttle: c.throttle, prop: c.prop, trim: c.elevatorTrim, parkingBrake: c.parkingBrake,
+          throttle: c.throttle, parkingBrake: c.parkingBrake,
           engineRunning: this.ac.engine.running, paused: this._paused,
         });
       }
@@ -1611,6 +1615,7 @@ export class Extra300 extends ArrivalScript {
     if (name === 'destination') { const e = this._placeEntries().find((x) => x.base === airportBase(this.destination)); if (e) this._goTo(e.id); }
     if (name === 'clouds' || name === 'cloudBaseFt') this._applyClouds();
     if (name === 'easyMode') this._setEasy(this.easyMode);
+    if (name === 'autoTrim') this.mapper.autoTrim = !!this.autoTrim;
     if (name === 'aircraft') { const e = this._planeEntries().find((x) => x.base === aircraftBase(this.aircraft)); if (e && e.id !== this._planeId) this._pickAircraft(e.id); }
     if (name === 'introOnLoad' && this.introOnLoad && !this._flying) this._filmPending = true;
     if (name === 'showPanel') { this._panelVisible = this.showPanel; this.hud.setFlying(this._flying, this._panelVisible); }

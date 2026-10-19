@@ -277,3 +277,29 @@ test('let go of the rudder in the air and the nose settles, it does not swing si
     }
   }
 });
+
+test('normal mode auto trim: a pull let go, the nose settles at the new attitude (and off, it does not)', () => {
+  const run = (autoTrim) => {
+    const ac = level(120);
+    const m = new ControlMapper({ easy: false, autoTrim }); m.throttle = ac.controls.throttle;
+    // the level-flight elevator held as trim (the trim tab moves the elevator by 0.35 of its travel)
+    m.trim = ac.controls.elevator / 0.35;
+    const trim0 = m.trim, fps = 60;
+    let theta0 = null, rates = [];
+    for (let i = 0; i < fps * 12; i++) {
+      const t = i / fps;
+      const f = ac.flightState();
+      if (theta0 == null) theta0 = f.pitch;
+      m.update({ keys: t > 1 && t < 1.6 ? new Set(['s']) : new Set() }, 1 / fps, ac.controls, f);   // a short pull
+      ac.update(1 / fps);
+      if (t > 8) rates.push(Math.abs(ac.flightState().pitchRate));
+    }
+    return { gained: (ac.flightState().pitch - theta0) / DEG, rate: Math.max(...rates) / DEG, trim: m.trim - trim0 };
+  };
+  const on = run(true), off = run(false);
+  assert.ok(on.gained > 3, `auto trim: the nose kept ${on.gained.toFixed(1)}° of the pull`);
+  assert.ok(on.rate < 1.5, `auto trim: still pitching ${on.rate.toFixed(1)}°/s 6 s after letting go`);
+  assert.ok(on.trim > 0.02, `auto trim: trimmed nose up (${on.trim.toFixed(3)})`);
+  assert.equal(off.trim, 0, 'off: the trim left alone');
+  assert.ok(Math.abs(off.gained) < on.gained || off.rate > on.rate, `off: the nose went its own way (${off.gained.toFixed(1)}°, ${off.rate.toFixed(1)}°/s)`);
+});

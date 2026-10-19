@@ -180,69 +180,6 @@ export function gmeter(ctx, x, y, r, v, lim) {
   glass(ctx, x, y, r);
 }
 
-/** Tachometer, rpm ×100, green 2000-2700, red line 2700. */
-export function tach(ctx, x, y, r, v, lim) {
-  bezel(ctx, x, y, r);
-  const f = (rpm) => dialAngle(rpm, 0, 3500, -Math.PI * 0.75, Math.PI * 0.75);
-  arc(ctx, x, y, r * 0.88, f(2000), f(lim.rpmRedline), GREEN, r * 0.07);
-  ticks(ctx, x, y, r * 0.95, [f(lim.rpmRedline)], r * 0.2, r * 0.045, RED);
-  const major = [], minor = [];
-  for (let k = 0; k <= 3500; k += 100) (k % 500 === 0 ? major : minor).push(f(k));
-  ticks(ctx, x, y, r * 0.95, major, r * 0.14, r * 0.025);
-  ticks(ctx, x, y, r * 0.95, minor, r * 0.07, r * 0.015);
-  for (let k = 0; k <= 35; k += 5) { const [lx, ly] = polar(x, y, r * 0.66, f(k * 100)); label(ctx, String(k), lx, ly, r * 0.15); }
-  label(ctx, 'RPM', x, y + r * 0.3, r * 0.1, '#bdbab2');
-  label(ctx, 'x100', x, y + r * 0.42, r * 0.08, '#bdbab2');
-  needle(ctx, x, y, r * 0.88, f(v.rpm));
-  glass(ctx, x, y, r);
-}
-
-/** Manifold pressure (inHg) with a fuel-flow sub-scale (gal/h). */
-export function manifold(ctx, x, y, r, v) {
-  bezel(ctx, x, y, r);
-  const f = (mp) => dialAngle(mp, 10, 35, -Math.PI * 0.75, Math.PI * 0.75);
-  arc(ctx, x, y, r * 0.88, f(15), f(29.5), GREEN, r * 0.07);
-  const major = [], minor = [];
-  for (let k = 10; k <= 35; k++) (k % 5 === 0 ? major : minor).push(f(k));
-  ticks(ctx, x, y, r * 0.95, major, r * 0.14, r * 0.025);
-  ticks(ctx, x, y, r * 0.95, minor, r * 0.07, r * 0.015);
-  for (let k = 10; k <= 35; k += 5) { const [lx, ly] = polar(x, y, r * 0.66, f(k)); label(ctx, String(k), lx, ly, r * 0.15); }
-  label(ctx, 'MAN PRESS', x, y + r * 0.26, r * 0.08, '#bdbab2');
-  label(ctx, `FF ${v.fuelFlow.toFixed(1)} GPH`, x, y + r * 0.45, r * 0.09);
-  needle(ctx, x, y, r * 0.88, f(v.mp));
-  glass(ctx, x, y, r);
-}
-
-/** Small horizontal bar gauge for the engine monitor stack. */
-function bar(ctx, x, y, w, h, value, lo, hi, bands, text) {
-  ctx.fillStyle = '#0b0c0e';
-  ctx.fillRect(x, y, w, h);
-  for (const [a, b, col] of bands) {
-    ctx.fillStyle = col;
-    ctx.fillRect(x + ((a - lo) / (hi - lo)) * w, y + h - 3, ((b - a) / (hi - lo)) * w, 3);
-  }
-  const t = Math.max(0, Math.min(1, (value - lo) / (hi - lo)));
-  ctx.fillStyle = INK;
-  ctx.fillRect(x + t * w - 1.5, y + 2, 3, h - 6);
-  ctx.fillStyle = '#bdbab2';
-  ctx.font = `600 ${Math.round(h * 0.42)}px "Helvetica Neue", Arial, sans-serif`;
-  ctx.textAlign = 'left'; ctx.textBaseline = 'top';
-  ctx.fillText(text, x + 3, y + 2);
-}
-
-export function engineStack(ctx, x, y, w, h, v) {
-  const rows = [
-    [v.oilTempF, 60, 260, [[100, 245, GREEN], [245, 260, RED]], `OIL T ${Math.round(v.oilTempF)}°F`],
-    [v.oilPress, 0, 120, [[25, 55, YELLOW], [55, 95, GREEN], [95, 120, RED]], `OIL P ${Math.round(v.oilPress)} PSI`],
-    [v.chtF, 100, 550, [[200, 435, GREEN], [435, 500, YELLOW], [500, 550, RED]], `CHT ${Math.round(v.chtF)}°F`],
-    [v.egtF, 800, 1650, [[1200, 1600, GREEN]], `EGT ${Math.round(v.egtF)}°F`],
-    [v.fuelCenterL, 0, 60, [[0, 8, RED], [8, 60, GREEN]], `FUEL CTR ${v.fuelCenterL.toFixed(0)} L`],
-    [v.fuelWingsL, 0, 120, [[0, 120, GREEN]], `FUEL WINGS ${v.fuelWingsL.toFixed(0)} L`],
-  ];
-  const rh = h / rows.length;
-  rows.forEach((r, i) => bar(ctx, x, y + i * rh + 1, w, rh - 3, ...r));
-}
-
 /** Whiskey compass: a card strip seen through a window, lubber line in the middle. */
 export function compass(ctx, x, y, w, h, headingDeg) {
   ctx.save();

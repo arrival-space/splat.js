@@ -77,6 +77,8 @@ export const EASY = {
 /** How much of its travel a held key may use without Shift. */
 export const KEY_CAP = { elevator: 0.75, aileron: 0.5, rudder: 0.65 };
 const BANK_HOLD_Q = 700;
+const TRIM_Q = 700;        // Pa: the auto trim at full gain up to here (the same scaling as the bank hold)
+const TRIM_PER_RATE = 1.2; // trim per rad/s of pitch rate, per second
 const YAW_Q = 700;         // Pa: the yaw damper at full gain up to here (plugin of the same scaling as the bank hold)   // Pa (about 65 kt at sea level): easy mode's bank hold at full gain up to here
 
 export function keyAuthority(axis, qbar, boost = 1, table = KEY_AUTHORITY) {
@@ -110,6 +112,7 @@ export class ControlMapper {
     this.hook = 0;             // the hook handle (/), up
     this.sfoils = 0;           // the X-wing's S-foils (J): closed
     this.autoRudder = opts.autoRudder ?? true;   // the pilot's feet: keeps the ball centred in the air
+    this.autoTrim = opts.autoTrim ?? true;       // the elevator trimmed for the attitude the stick was let go at
     this.yawKb = 1;     // rudder per rad of sideslip   } the yaw damper (_yawDamper), at full gain
     this.yawKr = 3;     // rudder per rad/s of yaw rate }
     this.yawKi = 1.5;   // the slow sideslip trim on top, per rad s
@@ -235,6 +238,10 @@ export class ControlMapper {
     // the take-off by itself), so a thumb only has to say where to point it
     if (this.easy && !elevIn) ele = this._pitchHold(flight, dt);
     else { this._thetaRef = null; this._holdI = ele; }
+    // normal mode's auto trim (easy mode's pitch hold trims for itself): stick free, the trim winds the
+    // pitch rate away, so the airplane holds the attitude it was let go at instead of a key's release
+    // pitching it back; the trim keys still nudge it
+    if (!this.easy && this.autoTrim && !elevIn) this._autoTrim(flight, dt);
     ele = clamp(ele, -1, 1);
     if (this.easy) {
       // a stick slammed full back reaches the wing faster than any limiter can see it coming:
@@ -352,6 +359,14 @@ export class ControlMapper {
     const err = target - theta;
     this._holdI = clamp((this._holdI ?? 0) + this.E.holdKi * err * dt, -0.6, 0.8);
     return clamp(this._holdI + this.E.holdKp * err - this.E.holdKd * qr, -1, 1);
+  }
+
+  /** The trim run toward no pitch rate, scaled by dynamic pressure; not on the wheels, steep, upside down or slow. */
+  _autoTrim(flight, dt) {
+    const q = flight.qbar ?? 0, D = Math.PI / 180;
+    if (flight.onGround || q < 40 || Math.abs(flight.bank ?? 0) > 60 * D || Math.abs(flight.pitch ?? 0) > 60 * D) return;
+    const g = Math.min(1, TRIM_Q / q);
+    this.trim = clamp(this.trim - TRIM_PER_RATE * g * (flight.pitchRate ?? 0) * dt, -1, 1);
   }
 
   /** Easy mode's feet: the ball centred in the air (with an integrator for the climb torque), the heading held on the ground. */
