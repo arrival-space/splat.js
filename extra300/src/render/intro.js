@@ -39,20 +39,20 @@ export const INTRO_LENGTH = INTRO_SHOTS[INTRO_SHOTS.length - 1].t1;
 
 /**
  * The film at load (plugin/extra300.js), while Google's tiles are still streaming in: the same four
- * captions, shot so their pop-in stays out of the frame. Low hero angles looking up put the airplane
- * against the sky (the horizon under the bottom letterbox), and the shot over the wing looks straight
- * down onto our own runway, there from the first frame. It ends outside, the visitor on foot after.
- * (Body axes as above; the ground at z ≈ 1.33 + 0.2·x, every eye 0.4 m or more over it.)
+ * captions, shot so their pop-in stays out of the frame. The camera looks down onto the airplane, the
+ * runway round it behind (ours, there from the first frame, the horizon above the top of the frame);
+ * one low shot has it against the sky. The airplane is the middle of every frame. It ends outside,
+ * the visitor on foot after. (Body axes as above; the ground at z ≈ 1.33 + 0.2·x.)
  */
 const INTRO_LOAD_SHOTS = [
-  // the spinner from low ahead, against the sky
-  { t0: 0, t1: 5.5, eye: [[4.0, -1.6, 0.95], [3.3, -1.0, 0.85]], at: [[2.1, 0, -0.25], [2.0, 0, -0.4]], fov: [38, 34], card: 0 },
-  // ahead of the left wing, low, the cowl and the canopy rising over the camera
-  { t0: 5.5, t1: 10.5, eye: [[3.0, -3.2, 0.9], [1.6, -3.6, 0.8]], at: [[1.2, 0, -1.0], [-0.8, 0, -1.2]], fov: [44, 46], card: 1 },
-  // straight down over the right wing's sunburst, the runway under it
+  // the spinner from ahead and above, the runway under it
+  { t0: 0, t1: 5.5, eye: [[3.9, -1.5, -1.0], [3.3, -1.0, -0.9]], at: [[2.0, 0, 0.05], [1.9, 0, 0.0]], fov: [38, 34], card: 0 },
+  // low ahead of the left wing, the cowl and the canopy against the sky
+  { t0: 5.5, t1: 10.5, eye: [[3.2, -3.4, 0.7], [2.4, -3.8, 0.6]], at: [[0.4, 0, -0.9], [-0.4, 0, -1.0]], fov: [40, 42], card: 1 },
+  // straight down over the right wing's sunburst
   { t0: 10.5, t1: 15.5, eye: [[0.8, 3.2, -4.6], [-1.0, 1.4, -5.6]], at: [[-0.2, 2.4, 0.1], [-0.5, 0.2, 0.0]], fov: [50, 52], card: 2 },
-  // low behind the tail, swinging round, looking up the fuselage
-  { t0: 15.5, t1: 20.5, eye: [[-8.8, -1.6, -0.85], [-7.8, 1.4, -0.85]], at: [[-4.8, 0, -1.9], [-2.0, 0, -2.0]], fov: [30, 28], card: 3 },
+  // high behind the tail, swinging round, down the fuselage to the nose
+  { t0: 15.5, t1: 20.5, eye: [[-8.0, -1.4, -4.6], [-7.0, 1.6, -4.4]], at: [[-0.6, 0, -0.4], [0.0, 0, -0.4]], fov: [36, 36], card: 3 },
 ];
 
 /** The engine during the intro: still for the first shot's opening, then the starter, then running. */
