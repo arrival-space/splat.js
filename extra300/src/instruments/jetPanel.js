@@ -88,7 +88,7 @@ export class JetPanel {
       ctx.strokeStyle = '#ffb86b'; ctx.lineWidth = Math.max(1.5, r * 0.025);
       ctx.beginPath(); ctx.moveTo(S.x - r * 0.42, y); ctx.lineTo(S.x + r * 0.42, y); ctx.stroke();
     }
-    const ky = S.top + (1 - t) * S.travel, kw = r * 0.74, kh = r * 0.24;
+    const ky = S.top + (1 - t) * S.travel, k = this.knobScale || 1, kw = r * 0.74 * Math.min(k, 1.35), kh = r * 0.24 * k;   // (bigger for a thumb: knobScale)
     const ab = det != null && t > det + 1e-3;
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.beginPath(); ctx.roundRect(S.x - kw / 2 + r * 0.02, ky - kh / 2 + r * 0.04, kw, kh, r * 0.07); ctx.fill();

@@ -84,7 +84,7 @@ export class Panel {
       const y = S.top + (k / 4) * S.travel, wd = k % 4 === 0 ? r * 0.3 : r * 0.18;
       ctx.beginPath(); ctx.moveTo(S.x - wd, y); ctx.lineTo(S.x - r * 0.1, y); ctx.moveTo(S.x + r * 0.1, y); ctx.lineTo(S.x + wd, y); ctx.stroke();
     }
-    const ky = S.top + (1 - t) * S.travel, kw = r * 0.74, kh = r * 0.24;
+    const ky = S.top + (1 - t) * S.travel, k = this.knobScale || 1, kw = r * 0.74 * Math.min(k, 1.35), kh = r * 0.24 * k;   // (bigger for a thumb: knobScale)
     ctx.fillStyle = 'rgba(0,0,0,0.45)';
     ctx.beginPath(); ctx.roundRect(S.x - kw / 2 + r * 0.02, ky - kh / 2 + r * 0.04, kw, kh, r * 0.07); ctx.fill();
     ctx.fillStyle = '#1b1c1f';

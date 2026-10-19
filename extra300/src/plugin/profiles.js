@@ -43,7 +43,7 @@ export const PROFILES = {
     quickMobile: [
       'Engine running, 75 % power: it rolls straight and lifts off by itself',
       '<b>Left stick</b>: down climbs, up dives, sideways banks',
-      'Let go and it holds the attitude · <b>right stick</b>: throttle ↑↓',
+      'Let go and it holds the attitude · drag elsewhere: look round · <b>throttle</b>: the lever on the panel',
     ],
     easyOn: 'Easy mode: the wing won\'t stall, torque handled for you',
     easyTitle: 'Easy mode (L): the wing can\'t stall, rudder and bank are held against the torque',
@@ -87,7 +87,7 @@ export const PROFILES = {
     quickMobile: [
       'Engines at 75 % throttle: it rolls straight, lifts off and raises the gear by itself',
       '<b>Left stick</b>: down climbs, up dives, sideways banks',
-      'Let go and it holds the attitude · <b>right stick</b>: throttle ↑↓ (the top fifth is burner)',
+      'Let go and it holds the attitude · drag elsewhere: look round · <b>throttle</b>: the lever on the panel (above the line: burner)',
     ],
     easyOn: 'Easy mode: α and g limited, rudder and gear handled for you',
     easyTitle: 'Easy mode (L): angle of attack and g limited, rudder, bank and gear handled',
@@ -131,7 +131,7 @@ export const PROFILES = {
     quickMobile: [
       'Engines at 75 %: it rolls, lifts off and its S-foils open by themselves',
       '<b>Left stick</b>: down climbs, up dives, sideways banks',
-      '<b>Fire</b> shoots the lasers · <b>right stick</b>: throttle ↑↓ (the top fifth is boost)',
+      '<b>Fire</b> shoots the lasers · drag elsewhere: look round · <b>throttle</b>: the lever on the panel (above the line: boost)',
     ],
     easyOn: 'Easy mode: limits held, rudder and gear handled for you',
     easyTitle: 'Easy mode (L): angle of attack and g limited, rudder, bank and gear handled',
@@ -172,7 +172,7 @@ export const PROFILES = {
     quickMobile: [
       'Take-off thrust: it rolls straight, rotates at ~145 kt and raises the gear by itself',
       '<b>Left stick</b>: down climbs, up dives, sideways banks',
-      'Let go and it holds the attitude · <b>right stick</b>: thrust ↑↓',
+      'Let go and it holds the attitude · drag elsewhere: look round · <b>thrust</b>: the lever on the panel',
     ],
     easyOn: 'Easy mode: α and g limited, rotation, rudder and gear handled for you',
     easyTitle: 'Easy mode (L): angle of attack and g limited, rotation, rudder, bank and gear handled',

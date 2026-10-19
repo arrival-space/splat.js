@@ -225,8 +225,13 @@ export class Extra300 extends ArrivalScript {
     window.addEventListener('blur', this._onBlur);
     window.addEventListener('resize', this._onResize);
     const canvas = this.app.graphicsDevice.canvas;
-    this._onPointerDown = (e) => { if (this._flying) this.sound?.start(); this._mouse.dragging = true; this._mouse.lastX = e.clientX; this._mouse.lastY = e.clientY; };
-    this._onPointerUp = () => { this._mouse.dragging = false; };
+    // a drag on the scene turns the camera: one finger at a time (a phone's other thumb is on the stick)
+    this._onPointerDown = (e) => {
+      if (this._flying) this.sound?.start();
+      if (this._mouse.dragging && e.pointerId !== this._mouse.id) return;
+      this._mouse.dragging = true; this._mouse.id = e.pointerId; this._mouse.lastX = e.clientX; this._mouse.lastY = e.clientY;
+    };
+    this._onPointerUp = (e) => { if (e.pointerId === this._mouse.id) this._mouse.dragging = false; };
     this._onPointerMove = (e) => this._pointerMove(e);
     canvas.addEventListener('pointerdown', this._onPointerDown);
     // mouse wheel: chase distance, or zoom in the other views
@@ -237,6 +242,7 @@ export class Extra300 extends ArrivalScript {
     };
     canvas.addEventListener('wheel', this._onWheel, { passive: false });
     window.addEventListener('pointerup', this._onPointerUp);
+    window.addEventListener('pointercancel', this._onPointerUp);
     window.addEventListener('pointermove', this._onPointerMove);
 
     // the top bar's dropdowns: which airplane, where to fly
@@ -268,6 +274,7 @@ export class Extra300 extends ArrivalScript {
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     this.hud.restartButton.onclick = (ev) => { ev.stopPropagation(); this._action('reset'); };
     // the panel's throttle lever, dragged
+    this.hud.onStick = () => { if (this._flying) this.sound?.start(); };
     this.hud.onThrottle = (t) => { if (this._flying && !this._intro) { this.mapper.throttle = t; this.sound?.start(); } };
     // its lamps that are switches too (setLampButtons, in _buildAircraft), clicked
     this.hud.onLamp = (key) => {
@@ -1496,6 +1503,7 @@ export class Extra300 extends ArrivalScript {
   _pointerMove(e) {
     this._mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
     this._mouse.y = (e.clientY / window.innerHeight) * 2 - 1;
+    if (this._mouse.dragging && e.pointerId !== this._mouse.id) return;
     if (this._flying && this._mouse.dragging && !this._yoke) {
       const dx = e.clientX - this._mouse.lastX, dy = e.clientY - this._mouse.lastY;
       this.cameraRig.look(-dx * 0.005, -dy * 0.005);
@@ -1537,8 +1545,9 @@ export class Extra300 extends ArrivalScript {
     const raw = {
       keys: this._keys,
       pad: this._readPad(),
-      left: this.isMobile ? this.getLeftStick() : null,
-      right: this.isMobile ? this.getRightStick() : null,
+      // a phone: our control stick (hud.js); the platform's right stick is the camera's drag, not the throttle
+      left: this.isMobile ? this.hud.stick : null,
+      right: null,
       yoke: this._yoke ? { x: this._mouse.x, y: this._mouse.y } : null,
       fire: this._fire,
     };
@@ -1839,6 +1848,7 @@ export class Extra300 extends ArrivalScript {
     window.removeEventListener('blur', this._onBlur);
     window.removeEventListener('resize', this._onResize);
     window.removeEventListener('pointerup', this._onPointerUp);
+    window.removeEventListener('pointercancel', this._onPointerUp);
     window.removeEventListener('pointermove', this._onPointerMove);
     this.app.graphicsDevice.canvas.removeEventListener('pointerdown', this._onPointerDown);
     this.app.graphicsDevice.canvas.removeEventListener('wheel', this._onWheel);

@@ -36,9 +36,9 @@ export class Hud {
     css(this.throttleGrip, { position: 'fixed', zIndex: 21, display: 'none', cursor: 'ns-resize', touchAction: 'none', pointerEvents: 'auto' });
     container.appendChild(this.throttleGrip);
     const setFrom = (ev) => {
-      const sl = this._slot, top = this.throttleGrip.getBoundingClientRect().top;
-      if (!sl) return;
-      this.onThrottle?.(Math.max(0, Math.min(1, 1 - (ev.clientY - top - (sl.top - sl.plate.y)) / sl.travel)));
+      const sl = this._slot;
+      if (!sl || !this._panelAt) return;
+      this.onThrottle?.(Math.max(0, Math.min(1, 1 - (ev.clientY - this._panelAt.py - sl.top) / sl.travel)));
     };
     this.throttleGrip.addEventListener('pointerdown', (ev) => {
       ev.stopPropagation(); ev.preventDefault();
@@ -184,7 +184,75 @@ export class Hud {
       mk('reset', 'Reset', { right: '12px', top: 'calc(42% + 104px)' });
       mk('fire', 'Fire', { right: '12px', top: 'calc(42% + 8px)', background: 'rgba(196,40,30,0.75)' });
     }
+    // the control stick (a phone): like the walk stick, a thumb pad on the left that centres where the
+    // thumb lands; stick.x, stick.y -1..1 (x right, y up = push forward). Touches elsewhere turn the camera.
+    this.stick = { x: 0, y: 0 };
+    if (isMobile) this._makeStick(container);
     this.layout();
+  }
+
+  _makeStick(container) {
+    const css = (el, st) => Object.assign(el.style, st);
+    const R = this._stickR = 54, lim = R * 0.8;
+    // where a thumb takes it: the lower left, under the top bar, the cluster's grip and lamps above it
+    this.stickZone = document.createElement('div');
+    css(this.stickZone, { position: 'fixed', left: 0, top: '30%', width: '40%', bottom: 0, zIndex: 18, display: 'none', touchAction: 'none', pointerEvents: 'auto' });
+    container.appendChild(this.stickZone);
+    this.stickBase = document.createElement('div');
+    css(this.stickBase, {
+      position: 'fixed', width: `${2 * R}px`, height: `${2 * R}px`, boxSizing: 'border-box', borderRadius: '50%', opacity: 0.55,
+      border: '2px solid rgba(241,239,232,0.5)', background: 'rgba(12,13,16,0.28)', pointerEvents: 'none', zIndex: 18, display: 'none',
+    });
+    const knob = document.createElement('div');
+    css(knob, {
+      position: 'absolute', left: `${R - 26}px`, top: `${R - 26}px`, width: '52px', height: '52px', borderRadius: '50%',
+      background: 'rgba(241,239,232,0.7)', boxShadow: '0 2px 8px rgba(0,0,0,0.4)',
+    });
+    this.stickBase.appendChild(knob);
+    container.appendChild(this.stickBase);
+    let id = null, cx = 0, cy = 0;
+    const place = (x, y) => { this.stickBase.style.left = `${x - R}px`; this.stickBase.style.top = `${y - R}px`; };
+    const move = (ev) => {
+      let dx = ev.clientX - cx, dy = ev.clientY - cy;
+      const m = Math.hypot(dx, dy);
+      if (m > lim) { dx *= lim / m; dy *= lim / m; }
+      knob.style.transform = `translate(${dx}px, ${dy}px)`;
+      this.stick.x = dx / lim; this.stick.y = -dy / lim;
+    };
+    this._stickRelease = () => {
+      id = null; this.stick.x = 0; this.stick.y = 0;
+      knob.style.transform = ''; this.stickBase.style.opacity = 0.55;
+      const r = this._stickRest(); place(r.x, r.y);
+    };
+    this.stickZone.addEventListener('pointerdown', (ev) => {
+      ev.stopPropagation(); ev.preventDefault();
+      if (id != null) return;
+      id = ev.pointerId;
+      this.stickZone.setPointerCapture?.(id);
+      cx = ev.clientX; cy = ev.clientY; place(cx, cy);
+      this.stickBase.style.opacity = 1;
+      move(ev);
+      this.onStick?.();
+    });
+    this.stickZone.addEventListener('pointermove', (ev) => { if (ev.pointerId === id) { ev.stopPropagation(); move(ev); } });
+    const end = (ev) => { if (ev.pointerId === id) { this.stickZone.releasePointerCapture?.(id); this._stickRelease(); } };
+    this.stickZone.addEventListener('pointerup', end);
+    this.stickZone.addEventListener('pointercancel', end);
+  }
+
+  /** Where the control stick rests: left of the cluster, or above it when the cluster spans the screen. */
+  _stickRest() {
+    const R = this._stickR, x = 20 + R, beside = (this._panelAt?.px ?? 0) > 2 * R + 40;
+    return { x, y: window.innerHeight - (beside ? 56 : (this.panelHeight || 0) + 24) - R };   // (over the tile count)
+  }
+
+  /** The control stick shows while flying (not in the film). */
+  _syncStick() {
+    if (!this.stickZone) return;
+    const d = this._flying && !this._introOn ? 'block' : 'none';
+    if (this.stickZone.style.display === d) return;
+    this.stickZone.style.display = d; this.stickBase.style.display = d;
+    this._stickRelease();
   }
 
   /** The place button names where we are (or are going, busy), its dropdown the others. */
@@ -425,10 +493,14 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.panelHeight = h;
     // the throttle grip over the lever's plate (the panel: centred, 4 px off the bottom)
     const sl = this._slot = P.throttleSlot(h), px = (window.innerWidth - Math.ceil(w)) / 2, py = window.innerHeight - 4 - h;
+    // (a phone: the grip reaches well round the plate, for a thumb; the handle is drawn bigger too)
+    const gx = this.isMobile ? 18 : 0, gy = this.isMobile ? 14 : 0;
     Object.assign(this.throttleGrip.style, {
-      left: `${px + sl.plate.x}px`, top: `${py + sl.plate.y}px`, width: `${sl.plate.w}px`, height: `${sl.plate.h}px`,
+      left: `${px + sl.plate.x - gx}px`, top: `${py + sl.plate.y - gy}px`, width: `${sl.plate.w + 2 * gx}px`, height: `${sl.plate.h + gy}px`,
     });
+    this.panel.knobScale = this.jetPanel.knobScale = this.isMobile ? 1.7 : 1;
     this._panelAt = { px, py, h };
+    if (this.stickBase && !this.stick.x && !this.stick.y) { const r = this._stickRest(); this.stickBase.style.left = `${r.x - this._stickR}px`; this.stickBase.style.top = `${r.y - this._stickR}px`; }
     for (const [key, el] of this._lampButtons) {
       const b = P.lampBoxFor(h, key);
       if (b) Object.assign(el.style, { left: `${px + b.x}px`, top: `${py + b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
@@ -529,6 +601,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.skipButton.style.display = on ? 'block' : 'none';
     if (!on) this.setIntroFade(0);
     this._introCardShown = -1;
+    this._introOn = on; this._syncStick();
     if (on) { this.panelCanvas.style.display = 'none'; this._syncGrip(); this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
     for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton]) b.style.display = on ? 'none' : b.style.display;
   }
@@ -580,6 +653,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     const hud = this.profile.display === 'hud';
     this.panelCanvas.style.display = flying && panelVisible ? 'block' : 'none';   // the jets' cluster under their HUD
     this._syncGrip();
+    this._syncStick();
     this.hudCanvas.style.display = flying && panelVisible && hud ? 'block' : 'none';
     this.credit.style.display = flying ? 'block' : 'none';
     this.aircraftButton.style.display = 'block';   // which airplane: on foot as well, before boarding
@@ -603,6 +677,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     window.removeEventListener('pointerdown', this._onOutside, true);
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
+    for (const el of [this.stickZone, this.stickBase].filter(Boolean)) el.remove();
     for (const el of [this.panelCanvas, this.throttleGrip, ...this._lampButtons.values(), this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton, this.restartButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
