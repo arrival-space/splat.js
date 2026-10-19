@@ -177,7 +177,7 @@ export class Hud {
         this.buttons[id] = b;
         return b;
       };
-      mk('board', `Fly the ${profile.title}`, { left: '50%', bottom: '26%', transform: 'translateX(-50%)', display: 'none' });
+      mk('board', 'Fly', { left: '50%', bottom: '26%', transform: 'translateX(-50%)', display: 'none' });
       mk('exit', 'Exit', { right: '12px', top: '22%' });
       mk('view', 'View', { right: '12px', top: 'calc(22% + 48px)' });
       mk('brake', 'Brake', { right: '12px', top: 'calc(42% + 56px)' });
@@ -476,7 +476,6 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.setEasy(this._easy ?? false);
     // (from the constructor, the rest of the DOM isn't built yet)
     if (this.buttons) {
-      if (this.buttons.board) this.buttons.board.textContent = `Fly the ${p.title}`;
       this.setFlying(this._flying ?? false, this._panelVisible ?? false);
     }
   }
@@ -542,7 +541,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
 
   showPrompt(text) {
     this.prompt.textContent = text || '';
-    this.prompt.style.display = text ? 'block' : 'none';
+    this.prompt.style.display = text && !this.buttons.board ? 'block' : 'none';   // (a phone: only its Fly button)
     if (this.buttons.board) this.buttons.board.style.display = text ? 'block' : 'none';
   }
 
