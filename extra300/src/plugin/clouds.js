@@ -484,6 +484,20 @@ export const CLOUD_PRESETS = {
   Overcast: { coverage: 0.9, depth: 900 },
 };
 
+/** A layer of any coverage (0..1): the presets' depths between them; none below 2 %. */
+export function cloudsAt(coverage) {
+  if (!(coverage >= 0.02)) return null;
+  const pts = Object.values(CLOUD_PRESETS).filter(Boolean).sort((a, b) => a.coverage - b.coverage);
+  if (coverage <= pts[0].coverage) return { coverage, depth: pts[0].depth };
+  for (let i = 1; i < pts.length; i++) {
+    if (coverage <= pts[i].coverage) {
+      const t = (coverage - pts[i - 1].coverage) / (pts[i].coverage - pts[i - 1].coverage);
+      return { coverage, depth: pts[i - 1].depth + t * (pts[i].depth - pts[i - 1].depth) };
+    }
+  }
+  return { coverage: Math.min(1, coverage), depth: pts[pts.length - 1].depth };
+}
+
 export class CloudLayer {
   /**
    * @param {object} app

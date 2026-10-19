@@ -108,14 +108,18 @@ export class Hud {
       font: `600 ${isMobile ? 12 : 13}px "Helvetica Neue", Arial, sans-serif`, boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
       backdropFilter: 'blur(6px)', whiteSpace: 'nowrap', textAlign: 'center', overflow: 'hidden',
     };
-    const [wA, wE, wC, wD] = isMobile ? [118, 118, 80, 108] : [146, 132, 92, 126];
-    const x0 = -(wA + wE + wC + wD + 24) / 2;
+    const [wA, wE, wC, wD, wW] = isMobile ? [118, 118, 80, 108, 92] : [146, 132, 92, 126, 106];
+    const x0 = -(wA + wE + wC + wD + wW + 32) / 2;
     this.aircraftButton = button({ ...pill, width: `${wA}px`, left: `calc(50% + ${x0}px)` });
     this.easyButton = button({ ...pill, width: `${wE}px`, left: `calc(50% + ${x0 + wA + 8}px)` });
     this.controlsButton = button({ ...pill, width: `${wC}px`, left: `calc(50% + ${x0 + wA + wE + 16}px)` });
     // where to fly: a dropdown of the airports (in the airplane and out of it)
     this.placeButton = button({ ...pill, width: `${wD}px`, left: `calc(50% + ${x0 + wA + wE + wC + 24}px)`, display: 'block' });
     this.setPlace('Chicago');
+    // the weather: sliders in a dropdown (setSliders)
+    this.weatherButton = button({ ...pill, width: `${wW}px`, left: `calc(50% + ${x0 + wA + wE + wC + wD + 32}px)`, display: 'block' });
+    this.weatherButton.innerHTML = '<span style="opacity:0.8;margin-right:5px">☁</span>Weather<span style="opacity:0.6;margin-left:5px">▾</span>';
+    this.weatherButton.title = 'Clouds, time of day, season, temperature';
     // the airplane and place buttons open dropdowns (setMenu): one at a time, closed by a pick, a
     // click anywhere else or Esc
     this._menu = createUI('div', { interactive: true, lockKeyboard: false });
@@ -192,12 +196,55 @@ export class Hud {
     button.onclick = (ev) => { ev.stopPropagation(); this._menuOpen === key ? this.closeMenu() : this.openMenu(key); };
   }
 
+  /**
+   * A dropdown of sliders on a top bar button (the weather).
+   * @param {'weather'} key
+   * @param {{ key: string, label: string, min: number, max: number, step: number, value: () => number,
+   *           format: (v: number) => string }[]} fields
+   * @param {(key: string, value: number) => void} change  as a slider moves
+   */
+  setSliders(key, fields, change) {
+    const button = this.weatherButton;
+    this._menus[key] = { button, fields, change };
+    button.onclick = (ev) => { ev.stopPropagation(); this._menuOpen === key ? this.closeMenu() : this.openMenu(key); };
+  }
+
+  _sliders(m) {
+    for (const f of m.fields) {
+      const row = document.createElement('div');
+      Object.assign(row.style, { padding: '8px 10px 6px', width: '240px' });
+      const head = document.createElement('div');
+      Object.assign(head.style, { display: 'flex', justifyContent: 'space-between', marginBottom: '4px' });
+      const name = document.createElement('span'), val = document.createElement('span');
+      name.textContent = f.label;
+      Object.assign(val.style, { color: '#ff8a90', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', marginLeft: '12px' });
+      head.append(name, val);
+      const input = document.createElement('input');
+      Object.assign(input, { type: 'range', min: f.min, max: f.max, step: f.step });
+      input.value = String(f.value());
+      Object.assign(input.style, { width: '100%', accentColor: '#c41e2a', cursor: 'pointer' });
+      val.textContent = f.format(Number(input.value));
+      input.oninput = () => { const v = Number(input.value); val.textContent = f.format(v); m.change(f.key, v); };
+      // let go, the keys fly the airplane again (a focused slider would take the arrows)
+      input.onpointerup = () => input.blur();
+      input.onchange = () => input.blur();
+      row.append(head, input);
+      this._menu.appendChild(row);
+    }
+  }
+
   openMenu(key) {
     const m = this._menus[key];
     if (!m) return;
     this._menuOpen = key;
-    const now = m.current();
     this._menu.innerHTML = '';
+    if (m.fields) {
+      this._sliders(m);
+      this._menu.style.display = 'block';
+      this._placeMenu(m);
+      return;
+    }
+    const now = m.current();
     if (m.search) this._searchBox(m);
     for (const it of typeof m.items === 'function' ? m.items() : m.items) {
       const row = document.createElement('div');
@@ -399,7 +446,7 @@ export class Hud {
     if (!on) this.setIntroFade(0);
     this._introCardShown = -1;
     if (on) { this.panelCanvas.style.display = 'none'; this._syncGrip(); this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
-    for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton]) b.style.display = on ? 'none' : b.style.display;
+    for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton]) b.style.display = on ? 'none' : b.style.display;
   }
 
   /** Black over the scene (0 none … 1 all), under the letterbox and the captions. */
@@ -455,6 +502,7 @@ export class Hud {
     this.easyButton.style.display = flying ? 'block' : 'none';
     this.controlsButton.style.display = flying ? 'block' : 'none';
     this.placeButton.style.display = 'block';
+    this.weatherButton.style.display = 'block';
     for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
     if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
     if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); }
@@ -471,7 +519,7 @@ export class Hud {
     window.removeEventListener('pointerdown', this._onOutside, true);
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
-    for (const el of [this.panelCanvas, this.throttleGrip, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton,
+    for (const el of [this.panelCanvas, this.throttleGrip, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

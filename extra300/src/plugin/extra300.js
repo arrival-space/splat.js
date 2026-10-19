@@ -15,7 +15,7 @@ import { CarrierPilot, CARRIER_APPROACH } from '../autopilot/carrierApproach.js'
 import { buildMeigs } from '../world/meigs.js';
 import { buildInnsbruck, inflateLowiDem } from '../world/innsbruck.js';
 import { buildRenton, inflateRentonDem } from '../world/renton.js';
-import { CLOUD_PRESETS, CloudLayer } from './clouds.js';
+import { CLOUD_PRESETS, CloudLayer, cloudsAt } from './clouds.js';
 import { buildCarrier } from '../world/carrier.js';
 import { Arrestor } from '../sim/arrestor.js';
 import { CarrierVisual } from './carrierVisual.js';
@@ -246,6 +246,16 @@ export class Extra300 extends ArrivalScript {
         blur: () => { if (!this._flying) this.unlockKeyboard(); },
       });
     this._found = new Map();   // airfields found by name this visit: listed after the space's airports
+    // the weather (no wind: that stays the space's setting)
+    const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const hhmm = (h) => `${String(Math.floor(h)).padStart(2, '0')}:${String(Math.round((h % 1) * 60)).padStart(2, '0')}`;
+    this.hud.setSliders('weather', [
+      { key: 'coverage', label: 'Cloud cover', min: 0, max: 95, step: 1, value: () => Math.round(this._wx('coverage') * 100), format: (v) => (v < 2 ? 'Clear' : `${v} %`) },
+      { key: 'baseFt', label: 'Cloud base', min: 1000, max: 12000, step: 100, value: () => this._wx('baseFt'), format: (v) => `${v.toLocaleString('en-US')} ft` },
+      { key: 'hour', label: 'Time of day', min: 5, max: 21, step: 0.25, value: () => this._wx('hour'), format: hhmm },
+      { key: 'month', label: 'Season', min: 1, max: 12, step: 1, value: () => this._wx('month'), format: (v) => MONTHS[v - 1] },
+      { key: 'tempC', label: 'Temperature', min: -20, max: 40, step: 1, value: () => this._wx('tempC'), format: (v) => `${v} °C` },
+    ], (key, v) => this._setWeather(key, v));
     // an airport or airplane vibe tuned, added or deleted: taken on as it is
     this._onRegistry = (kind) => this._registryChanged(kind);
     this.app.on('flightsim:changed', this._onRegistry);
@@ -638,8 +648,56 @@ export class Extra300 extends ArrivalScript {
     const [latitude, longitude] = this.world.frame.toLatLon(s.n, s.e);
     this.app.fire('googletiles:set-origin', {
       latitude, longitude, groundAltitude: this.world.elevation + this.world.data.geoidM,
-      sun: this._placeCfg?.sun || this.world.data.sun,   // the airport vibe's, the place's own (Renton's imagery), else the space's
+      sun: this._sunNow(longitude),
     });
+  }
+
+  // ── the weather menu (the top bar's Weather): what the visitor set, else the place's own ──
+  /** The sun: the visitor's time of day and season, else the airport vibe's, the place's own (Renton's imagery), else the space's. */
+  _sunNow(lon) {
+    const own = this._placeCfg?.sun || this.world.data.sun, u = this._wxUser || {};
+    if (u.hour == null && u.month == null) return own;
+    const doy = u.month != null ? Math.round((u.month - 0.5) * 30.44) : own?.dayOfYear;
+    return { timeUTC: (((this._wx('hour') - lon / 15) % 24) + 24) % 24, dayOfYear: doy };
+  }
+
+  /** The place's longitude (its runway start). */
+  _lon() { const s = this.world.startPosition(); return this.world.frame.toLatLon(s.n, s.e)[1]; }
+
+  /** The Google tiles vibe (its sun: the space's time of day, where the place sets none). */
+  _tilesVibe() {
+    if (this._tiles?.entity && !this._tiles.entity._destroyed) return this._tiles;
+    for (const c of this.app.root.findComponents('script')) for (const sc of c.scripts || []) if ('groundAltitude' in sc && 'timeUTC' in sc) return (this._tiles = sc);
+    return null;
+  }
+
+  /** One weather value as it is now: the visitor's, else the place's (cloud cover 15 % under its preset). */
+  _wx(key) {
+    const u = this._wxUser?.[key];
+    if (u != null) return u;
+    const own = this._placeCfg?.sun || this.world.data.sun, tiles = this._tilesVibe();
+    switch (key) {
+      case 'coverage': return 0.85 * (CLOUD_PRESETS[this._placeCfg?.clouds || this.clouds]?.coverage || 0);
+      case 'baseFt': return this.cloudBaseFt;
+      case 'hour': {
+        const utc = own?.timeUTC ?? tiles?.timeUTC;
+        return utc == null ? 13.5 : Math.round(((((utc + this._lon() / 15) % 24) + 24) % 24) * 4) / 4;
+      }
+      case 'month': {
+        const doy = own?.dayOfYear ?? tiles?.dayOfYear;
+        return doy == null ? 6 : Math.min(12, Math.floor(doy / 30.44) + 1);
+      }
+      case 'tempC': return this.oatC;
+      default: return null;
+    }
+  }
+
+  /** A weather slider moved: the clouds, the sun or the air taken on at once. */
+  _setWeather(key, v) {
+    (this._wxUser ||= {})[key] = key === 'coverage' ? v / 100 : v;
+    if (key === 'coverage' || key === 'baseFt') this._applyClouds();
+    else if (key === 'hour' || key === 'month') this._publishOrigin();
+    else if (key === 'tempC') this.ac.weather = this._weather();
   }
 
   /** Google's ground levelled where the airplane rolls (Innsbruck's runway, taxiways, aprons). */
@@ -847,7 +905,7 @@ export class Extra300 extends ArrivalScript {
     const from = this.windFromDeg * DEG;
     const v = this.windKt * KT;
     // air moves *toward* from+180°: NED components
-    return { qnh: this.qnhInHg * INHG, dT: this.oatC - 15, wind: [-Math.cos(from) * v, -Math.sin(from) * v, 0] };
+    return { qnh: this.qnhInHg * INHG, dT: (this._wxUser?.tempC ?? this.oatC) - 15, wind: [-Math.cos(from) * v, -Math.sin(from) * v, 0] };
   }
 
   /** The LSO platform: on the port deck edge abeam the wires, a man's height up — the deck view. */
@@ -1543,7 +1601,7 @@ export class Extra300 extends ArrivalScript {
    */
   /** The clouds' settings: the preset, the base above this field. */
   _applyClouds() {
-    this.cloudLayer?.set(CLOUD_PRESETS[this._placeCfg?.clouds || this.clouds] || null, this.world.elevation + this.cloudBaseFt * 0.3048);
+    this.cloudLayer?.set(cloudsAt(this._wx('coverage')), this.world.elevation + this._wx('baseFt') * 0.3048);
   }
 
   _cloudsTick() {
