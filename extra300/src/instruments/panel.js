@@ -16,6 +16,12 @@ function layout(r) {
   return { m, gap, lev, centres, lamps, width: lamps.x + lamps.w + m };
 }
 
+/** Lamp i of the four (STALL, PARK BRK, ENGINE OFF, PAUSED): its box, for a cluster of height h. */
+function lampBox(r, h, i) {
+  const L = layout(r), cy = h - r * 1.2, lh = r * 0.38, lg = r * 0.12, y0 = cy - (4 * lh + 3 * lg) / 2;
+  return { x: L.lamps.x, y: y0 + i * (lh + lg), w: L.lamps.w, h: lh, y0, total: 4 * lh + 3 * lg };
+}
+
 /** The throttle's slot: its centre line x, its top (full) and its travel, for a cluster of height h. */
 function slot(r, h) {
   const L = layout(r), cy = h - r * 1.2;
@@ -36,6 +42,8 @@ export class Panel {
   static widthFor(r) { return layout(r).width; }
   /** The throttle lever's slot in css px of a cluster h high: { x, top, travel, plate }. */
   static throttleSlot(h) { return slot(Panel.radiusFor(h), h); }
+  /** The ENGINE OFF lamp, a button too (plugin/hud.js): its box in css px of a cluster h high. */
+  static engineLamp(h) { return lampBox(Panel.radiusFor(h), h, 2); }
 
   resize(cssWidth, cssHeight, dpr = 1) {
     this.canvas.width = Math.round(cssWidth * dpr);
@@ -96,20 +104,21 @@ export class Panel {
     G.vsi(ctx, vsi, cy, r, v);
     G.gmeter(ctx, gm, cy, r, v, lim);
 
-    // the four lamps stacked beside the G-meter
-    const lh = r * 0.38, lg = r * 0.12, ly0 = cy - (4 * lh + 3 * lg) / 2;
-    plate(L.lamps.x - r * 0.08, ly0 - r * 0.08, L.lamps.w + r * 0.16, 4 * lh + 3 * lg + r * 0.16);
-    const lamp = (i, on, text, col) => {
-      const y = ly0 + i * (lh + lg);
+    // the four lamps stacked beside the G-meter; ENGINE OFF is a button as well (outlined)
+    const b0 = lampBox(r, H, 0);
+    plate(b0.x - r * 0.08, b0.y0 - r * 0.08, b0.w + r * 0.16, b0.total + r * 0.16);
+    const lamp = (i, on, text, col, button = false) => {
+      const b = lampBox(r, H, i);
       ctx.fillStyle = on ? col : 'rgba(42,43,46,0.85)';
-      ctx.fillRect(L.lamps.x, y, L.lamps.w, lh);
-      ctx.fillStyle = on ? '#111' : '#7a7b80';
+      ctx.fillRect(b.x, b.y, b.w, b.h);
+      if (button) { ctx.strokeStyle = on ? 'rgba(0,0,0,0.5)' : 'rgba(227,193,59,0.7)'; ctx.lineWidth = Math.max(1, r * 0.02); ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1); }
+      ctx.fillStyle = on ? '#111' : button ? '#d9d2b4' : '#7a7b80';
       ctx.font = `700 ${Math.round(r * 0.13)}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(text, L.lamps.x + L.lamps.w / 2, y + lh / 2);
+      ctx.fillText(text, b.x + b.w / 2, b.y + b.h / 2);
     };
     lamp(0, v.stallWarning, 'STALL', '#e0452f');
     lamp(1, !!s.parkingBrake, 'PARK BRK', '#e3c13b');
-    lamp(2, !s.engineRunning, 'ENGINE OFF', '#e3c13b');
+    lamp(2, !s.engineRunning, 'ENGINE OFF', '#e3c13b', true);
     lamp(3, !!s.paused, 'PAUSED', '#7fb0ff');
 
     // on the glareshield: the whiskey compass over the altimeter–VSI gap, the ball over ASI–ALT

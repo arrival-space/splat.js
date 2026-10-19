@@ -154,7 +154,8 @@ export class CameraRig {
       const off = this.chasePos;
       const r = Math.hypot(D, H);   // its length as set (the lagged offset's shortens while it swings)
       const az = Math.atan2(off[0], off[2]) + this.lookYaw;
-      const el = Math.max(-0.05, Math.min(1.45, Math.asin(off[1] / (Math.hypot(off[0], off[1], off[2]) || 1)) - this.lookPitch));
+      // from above or below (up from under the belly in the air; on the ground the lens stays over the runway)
+      const el = Math.max(-1.45, Math.min(1.45, Math.asin(off[1] / (Math.hypot(off[0], off[1], off[2]) || 1)) - this.lookPitch));
       const cam = [pos[0] + r * Math.cos(el) * Math.sin(az), pos[1] + r * Math.sin(el), pos[2] + r * Math.cos(el) * Math.cos(az)];
       // keep the lens from sinking under the runway
       cam[1] = Math.max(cam[1], 1.0);

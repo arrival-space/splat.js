@@ -46,6 +46,13 @@ export class Hud {
     const end = (ev) => { this._dragging = false; this.throttleGrip.releasePointerCapture?.(ev.pointerId); };
     this.throttleGrip.addEventListener('pointerup', end);
     this.throttleGrip.addEventListener('pointercancel', end);
+    // the ENGINE OFF lamp, clicked: onEngineOff() (the engine stopped, the throttle closed)
+    this.onEngineOff = null;
+    this.engineButton = document.createElement('div');
+    css(this.engineButton, { position: 'fixed', zIndex: 21, display: 'none', cursor: 'pointer', pointerEvents: 'auto' });
+    this.engineButton.title = 'Switch the engine off (raise the throttle to start it again)';
+    this.engineButton.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); ev.preventDefault(); this.onEngineOff?.(); });
+    container.appendChild(this.engineButton);
     // the jet's head-up display: the whole view, click-through
     this.hudCanvas = document.createElement('canvas');
     css(this.hudCanvas, { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', zIndex: 19, display: 'none' });
@@ -210,6 +217,22 @@ export class Hud {
   }
 
   _sliders(m) {
+    // one look in every browser: Firefox draws its own grey slider unless the parts are styled for it too
+    if (!document.getElementById('extra300-range')) {
+      const st = document.createElement('style');
+      st.id = 'extra300-range';
+      const track = 'height:4px;border-radius:2px;background:rgba(255,255,255,0.22);border:none';
+      const thumb = 'width:16px;height:16px;border-radius:50%;background:#c41e2a;border:2px solid #f4f2ec;box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:pointer';
+      st.textContent = `
+input.extra300-range{-webkit-appearance:none;appearance:none;width:100%;height:18px;margin:0;background:transparent;cursor:pointer}
+input.extra300-range:focus{outline:none}
+input.extra300-range::-webkit-slider-runnable-track{${track}}
+input.extra300-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;margin-top:-6px;${thumb}}
+input.extra300-range::-moz-range-track{${track}}
+input.extra300-range::-moz-range-progress{height:4px;border-radius:2px;background:#c41e2a}
+input.extra300-range::-moz-range-thumb{${thumb}}`;
+      document.head.appendChild(st);
+    }
     for (const f of m.fields) {
       const row = document.createElement('div');
       Object.assign(row.style, { padding: '8px 10px 6px', width: '240px' });
@@ -222,9 +245,15 @@ export class Hud {
       const input = document.createElement('input');
       Object.assign(input, { type: 'range', min: f.min, max: f.max, step: f.step });
       input.value = String(f.value());
-      Object.assign(input.style, { width: '100%', accentColor: '#c41e2a', cursor: 'pointer' });
+      input.className = 'extra300-range';
+      // the filled part, left of the thumb (Chrome and Safari have no part for it: a gradient behind)
+      const fill = () => {
+        const pct = ((Number(input.value) - f.min) / (f.max - f.min)) * 100;
+        input.style.background = `linear-gradient(to right, #c41e2a ${pct}%, transparent ${pct}%) center / 100% 4px no-repeat`;
+      };
+      fill();
       val.textContent = f.format(Number(input.value));
-      input.oninput = () => { const v = Number(input.value); val.textContent = f.format(v); m.change(f.key, v); };
+      input.oninput = () => { const v = Number(input.value); val.textContent = f.format(v); fill(); m.change(f.key, v); };
       // let go, the keys fly the airplane again (a focused slider would take the arrows)
       input.onpointerup = () => input.blur();
       input.onchange = () => input.blur();
@@ -374,15 +403,16 @@ export class Hud {
     this.panel.resize(Math.ceil(w), h, Math.min(2, window.devicePixelRatio || 1));
     this.panelHeight = h;
     // the throttle grip over the lever's plate (the panel: centred, 4 px off the bottom)
-    const sl = this._slot = Panel.throttleSlot(h);
+    const sl = this._slot = Panel.throttleSlot(h), px = (window.innerWidth - Math.ceil(w)) / 2, py = window.innerHeight - 4 - h;
     Object.assign(this.throttleGrip.style, {
-      left: `${(window.innerWidth - Math.ceil(w)) / 2 + sl.plate.x}px`, top: `${window.innerHeight - 4 - h + sl.plate.y}px`,
-      width: `${sl.plate.w}px`, height: `${sl.plate.h}px`,
+      left: `${px + sl.plate.x}px`, top: `${py + sl.plate.y}px`, width: `${sl.plate.w}px`, height: `${sl.plate.h}px`,
     });
+    const eb = Panel.engineLamp(h);
+    Object.assign(this.engineButton.style, { left: `${px + eb.x}px`, top: `${py + eb.y}px`, width: `${eb.w}px`, height: `${eb.h}px` });
   }
 
-  /** The throttle grip shows with the panel. */
-  _syncGrip() { this.throttleGrip.style.display = this.panelCanvas.style.display; }
+  /** The throttle grip and the engine button show with the panel. */
+  _syncGrip() { this.throttleGrip.style.display = this.engineButton.style.display = this.panelCanvas.style.display; }
 
   showPrompt(text) {
     this.prompt.textContent = text || '';
@@ -519,7 +549,7 @@ export class Hud {
     window.removeEventListener('pointerdown', this._onOutside, true);
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
-    for (const el of [this.panelCanvas, this.throttleGrip, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton,
+    for (const el of [this.panelCanvas, this.throttleGrip, this.engineButton, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

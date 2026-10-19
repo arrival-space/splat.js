@@ -226,7 +226,7 @@ fn getFresnelCC(cosTheta: f32) -> f32 { return 0.04 + 0.96 * pow5(1.0 - saturate
 // the engine's lobe gives at this gloss. At the engine's, 6 % of it was a faint grey smudge where the
 // sun should glare off the canopy. Only the sun's own highlight is raised: the glass's reflection of
 // the world stays at its 6 %.
-const SUN_RADIANCE = 40;
+const SUN_RADIANCE = 10;
 const SUN_SPEC_GLSL = `
 float calcLightSpecular(float gloss, vec3 worldNormal, vec3 h) {
     float nh = max(dot(h, worldNormal), 0.0);

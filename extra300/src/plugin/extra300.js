@@ -262,6 +262,16 @@ export class Extra300 extends ArrivalScript {
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     // the panel's throttle lever, dragged
     this.hud.onThrottle = (t) => { if (this._flying && !this._intro) { this.mapper.throttle = t; this.sound?.start(); } };
+    // its ENGINE OFF lamp, clicked: the engine stopped, the throttle closed; raising it cranks it again
+    this.hud.onEngineOff = () => {
+      if (!this._flying || this._intro || !this.ac.engine.running) return;
+      this.ac.setEngineRunning(false);
+      this.mapper.throttle = 0;
+      this.ac.controls.starter = false;
+      this._autoStarter = true;
+      this._crankT = 0;
+      this.hud.flash('Engine off · raise the throttle to start it', 2.5);
+    };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
     if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._enter();
