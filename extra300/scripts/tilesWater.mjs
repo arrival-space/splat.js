@@ -6,6 +6,8 @@
 //   - the globe re-anchored on request ("googletiles:set-origin": another destination, its sun)
 //   - the room sun's shadow map on Google's unlit tiles ("googletiles:receive-shadows")
 //   - the streaming held while another vibe asks (app.googleTilesHold: its start menu)
+//   - the first-load card and the tile count at the top middle, small and faint (not over the
+//     flight vibe's instrument panel, nor in the middle of its intro film)
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
 // the vibe is staged as it is, with a warning, rather than half-patched.
@@ -567,6 +569,56 @@ const PATCHES = [
     ].join('\n'),
     insert: [
       "        this._setShadowOn(mat);        // unlit again: back under the sun's shadow map, if asked",
+    ].join('\n'),
+  },
+  // the first-load card: a slim one at the top middle, under the flight vibe's top bar and the tile count
+  {
+    replace: [
+      '                    position: "fixed", left: "50%", top: "50%", transform: "translate(-50%, -50%)",',
+      '                    width: "260px", padding: "16px 18px 14px", borderRadius: "14px",',
+      '                    background: "rgba(10,16,26,0.88)", color: "#eaf2ff", fontFamily: "sans-serif",',
+      '                    boxShadow: "0 12px 40px rgba(0,0,0,.45)", zIndex: "998", pointerEvents: "none", textAlign: "center",',
+    ].join('\n'),
+    with: [
+      '                    position: "fixed", left: "50%", top: "78px", transform: "translateX(-50%)",',
+      '                    width: "200px", padding: "7px 12px 6px", borderRadius: "10px",',
+      '                    background: "rgba(10,16,26,0.55)", color: "#eaf2ff", fontFamily: "sans-serif",',
+      '                    zIndex: "998", pointerEvents: "none", textAlign: "center", opacity: "0.85",',
+    ].join('\n'),
+  },
+  {
+    replace: '`<div style="font-weight:700;font-size:14px;">🌍 Downloading Google 3D Tiles</div>` +',
+    with: '`<div style="font-weight:600;font-size:11px;">🌍 Downloading Google 3D Tiles</div>` +',
+  },
+  {
+    replace: '`<div style="height:6px;border-radius:3px;background:#1d2a3d;margin:12px 0 8px;overflow:hidden;">` +',
+    with: '`<div style="height:3px;border-radius:2px;background:#1d2a3d;margin:6px 0 4px;overflow:hidden;">` +',
+  },
+  {
+    replace: '`<div class="gt-load-text" style="font-size:12px;opacity:.7;">Connecting…</div>`,',
+    with: '`<div class="gt-load-text" style="font-size:10px;opacity:.7;">Connecting…</div>`,',
+  },
+  // the tile count: a faint line at the top middle, not a box over the instrument panel
+  {
+    replace: [
+      '                        bottom: "32px",',
+      '                        left: "50%",',
+      '                        transform: "translateX(-50%)",',
+      '                        background: "rgba(10,15,25,0.82)",',
+      '                        color: "#6fdf6f",',
+      '                        padding: "8px 14px",',
+      '                        fontFamily: "monospace",',
+      '                        fontSize: "13px",',
+    ].join('\n'),
+    with: [
+      '                        top: "56px",',
+      '                        left: "50%",',
+      '                        transform: "translateX(-50%)",',
+      '                        background: "rgba(10,15,25,0.35)",',
+      '                        color: "rgba(200,235,200,0.75)",',
+      '                        padding: "2px 8px",',
+      '                        fontFamily: "monospace",',
+      '                        fontSize: "10px",',
     ].join('\n'),
   },
 ];

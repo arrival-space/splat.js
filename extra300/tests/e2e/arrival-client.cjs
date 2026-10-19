@@ -183,6 +183,7 @@ const log = (...a) => console.log(`[${new Date().toISOString().slice(11, 19)}]`,
     if (!vibe) return { error: 'no vibe' };
     const r = {};
     r.alreadyFlyingFromClick = vibe._flying;
+    if (vibe._loadIntro) vibe._endIntro();   // the film at load still running: back on foot first
     vibe.playIntro = false;   // straight to flying: the film has its own checks (tests/intro.test.js, the harness ?intro=1)
     try { vibe._enter(); } catch (e) { r.enterError = String(e && e.stack || e); }
     if (vibe._intro) vibe._endIntro();   // boarded by the click above, which started the film

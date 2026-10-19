@@ -109,6 +109,7 @@ export class Extra300 extends ArrivalScript {
   cityDetail = 'full';
   easyMode = true;            // the default: stall-proof, the attitude held hands off (the top bar's switch, or L)
   playIntro = true;
+  introAtStart = true;
   introOnLoad = false;
   startMenu = false;
   registryWait = 3;
@@ -139,6 +140,7 @@ export class Extra300 extends ArrivalScript {
     cityDetail: { title: 'City detail', options: ['full', 'mid-rise and up', 'towers only'] },
     easyMode: { title: 'Easy mode at start (no stalls, torque handled; L in flight)' },
     playIntro: { title: 'Intro film on first boarding (skippable)' },
+    introAtStart: { title: 'Intro film at load, round the parked airplane while Google\'s tiles stream in (then on foot beside it)' },
     debugSpheres: { title: 'Debug: three spheres over the airplane (its white paint, a mirror, clear glass), lit and reflecting as it is (or ?spheres on the address)' },
     registryWait: { title: 'At load: wait this long (s) for the airport and airplane vibes before starting', min: 0, max: 15 },
     startMenu: { title: 'Start menu: pick the airport and airplane before anything loads (skipped when the address names both)' },
@@ -436,6 +438,16 @@ export class Extra300 extends ArrivalScript {
     this.app.googleTilesHold = false;
     // the visitor's avatar, to walk round the airplane (not a free camera); film mode boards by itself
     if (!this._flying && !this._filmPending) ArrivalSpace.setCameraMode?.('third');
+    // the airplane's film while the tiles stream in, the visitor on foot beside it after
+    if (this.introAtStart && !this._flying && !this._filmPending) this._startLoadIntro();
+  }
+
+  /** The intro film as the first thing seen: the engine left off, the airplane left parked, the visitor on foot at its end. */
+  _startLoadIntro() {
+    this._loadIntro = true;
+    this._introPlayed = false;
+    this._enter();
+    if (!this._intro) this._loadIntro = false;   // couldn't board (another vehicle has the visitor)
   }
 
   /** The OpenStreetMap city, loaded the first time Meigs is where we are. */
@@ -952,7 +964,7 @@ export class Extra300 extends ArrivalScript {
       this._introPlayed = true;
       this._resetToRunway();
       this.hud.flash(this.ac.spec.hook ? 'On final to USS Nimitz: fly the ball, the hook is down (/)' : 'On final to USS Nimitz: land on the angled deck', 5);
-    } else if (this.playIntro && !this._introPlayed && !this._demo && this._dest === 'meigs') this._startIntro();
+    } else if (this._loadIntro || (this.playIntro && !this._introPlayed && !this._demo && this._dest === 'meigs')) this._startIntro();
     else this._showTakeoffCard();
   }
 
@@ -1029,20 +1041,43 @@ export class Extra300 extends ArrivalScript {
     const c = this.ac.controls;
     const film = this.profile.intro;
     c.throttle = 0; c.parkingBrake = true;
-    c.starter = it.t > film.starter[0] && it.t < film.starter[1] && !this.ac.engine.running;
+    c.starter = !this._loadIntro && it.t > film.starter[0] && it.t < film.starter[1] && !this.ac.engine.running;
     const shot = introAt(it.t, film);
+    // at load it ends before the last shot (into the pilot's seat): the visitor stays outside
+    const end = this._loadIntro ? film.shots[film.shots.length - 1].t0 : film.length;
+    if (it.t >= end) { this._endIntro(); return null; }
     // the last second flies into the pilot's seat: the pilot's own head goes, and the canopy
     const inside = it.t > film.length - 1.2;
     this._setAvatarVisible(!inside);
     this.visual.setCockpitView(inside);
-    this.hud.setIntroCard(shot.card >= 0 ? film.cards[shot.card] : null, shot.cardAlpha, Math.min(1, it.t / film.length));
+    this.hud.setIntroCard(shot.card >= 0 ? this._introCard(film.cards[shot.card]) : null, shot.cardAlpha, Math.min(1, it.t / end));
     if (shot.done) { this._endIntro(); return null; }
     return this.cameraRig.bodyPose(this.ac, shot.eye, shot.at, shot.fov, this.ac.cg);
+  }
+
+  /** A caption as it reads here: the place and runway the airplane stands on, not the film's own (Meigs, runway 36). */
+  _introCard(card) {
+    const place = this._placeCfg?.title || this._place?.title || '';
+    const rw = this._runwayName;
+    return {
+      ...card,
+      title: /^Runway /.test(card.title) ? `Runway ${rw}` : card.title,
+      lines: card.lines.map((l) => (/· runway \S+$/.test(l) ? `${place} · runway ${rw}` : l)),
+    };
   }
 
   /** The film ends (or is skipped): the engine runs, the brake is off, the pilot is in the cockpit view. */
   _endIntro() {
     if (!this._intro) return;
+    if (this._loadIntro) {
+      // the film at load: back on foot beside the airplane, parked as it was
+      this._loadIntro = false;
+      this._intro = null;
+      this.ac.controls.starter = false;
+      this.hud.showIntro(false);
+      this._exit();
+      return;
+    }
     this._intro = null;
     this._filmMode = false;
     const c = this.ac.controls;

@@ -90,6 +90,7 @@ const withVibes = params.get('vibes') === '1';
 const vibe = host.script.create(mod.Extra300, { properties: {
   startMenu: params.get('menu') === '1', destination: params.get('home') === 'lowi' ? 'Innsbruck (LOWI)' : 'Chicago Meigs (KCGX)',
   registryWait: withVibes ? 3 : 0,
+  introAtStart: params.get('loadintro') === '1',   // the film at load only when asked for: ?loadintro=1
 } });
 if (withVibes) {
   const [ap, ac] = await Promise.all([import(`../../dist/flight-airport.mjs?t=${Date.now()}`), import(`../../dist/flight-aircraft.mjs?t=${Date.now()}`)]);
