@@ -90,7 +90,7 @@ export class Hud {
     // what a new pilot needs, and nothing else: shown at the start, gone once the airplane is flying
     this.quick = document.createElement('div');
     css(this.quick, {
-      position: 'fixed', left: '16px', top: '58px', padding: '10px 14px', maxWidth: '330px',
+      position: 'fixed', left: '16px', top: '58px', padding: '10px 28px 10px 14px', maxWidth: '330px',   // (room for its ×)
       background: 'rgba(12,13,16,0.78)', color: '#ece9e1', font: '13px/1.6 "Helvetica Neue", Arial, sans-serif',
       borderRadius: '10px', zIndex: 22, display: 'none', pointerEvents: 'none', boxShadow: '0 6px 24px rgba(0,0,0,0.3)',
     });
@@ -388,6 +388,18 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
       + (isMobile ? p.quickMobile : p.quick).map((t) => `<div>${t}</div>`).join('')
       + (isMobile ? `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Easy mode is on: ${p.easyOn.replace(/^Easy mode: /, '')}</div>`
         : `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Everything else: <b>Controls</b> (or H)</div>`);
+    // its ×: closed for the rest of the visit (the keys stay behind Controls / H)
+    const x = document.createElement('div');
+    x.textContent = '×';
+    x.title = 'Close (the keys stay behind Controls / H)';
+    Object.assign(x.style, {
+      position: 'absolute', top: '4px', right: '8px', font: '400 20px/1 "Helvetica Neue", Arial, sans-serif',
+      color: '#9d9a92', cursor: 'pointer', pointerEvents: 'auto', padding: '2px 4px',
+    });
+    x.onpointerenter = () => { x.style.color = '#f4f2ec'; };
+    x.onpointerleave = () => { x.style.color = '#9d9a92'; };
+    x.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); ev.preventDefault(); this._quickClosed = true; this.showQuick(false); });
+    this.quick.appendChild(x);
     this.aircraftButton.innerHTML = `${p.title}<span style="opacity:0.6;margin-left:5px">▾</span>`;
     this.aircraftButton.title = 'Which airplane (T: the next)';
     this.panel.limits = p.spec.limits;
@@ -542,7 +554,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
   }
 
   /** The small take-off card (the start of a flight); hides itself once flying, see the plugin. */
-  showQuick(on) { this.quick.style.display = on ? 'block' : 'none'; }
+  showQuick(on) { this.quick.style.display = on && !this._quickClosed ? 'block' : 'none'; }
 
   showDemoStatus(text) {
     this.demoStatus.textContent = text || '';

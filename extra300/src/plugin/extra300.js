@@ -81,6 +81,8 @@ const AIRCRAFT_BLURBS = {
   b777: 'Long-haul twin-jet airliner',
 };
 const placeFromAddress = (a) => (/lowi|inn/i.test(a) ? 'lowi' : /krnt|rnt|renton/i.test(a) ? 'krnt' : 'meigs');
+/** ?airport= naming an airfield found by its code (not one of the three carried): the code, else null. */
+const fieldFromAddress = (a) => (/^[a-z0-9]{3,4}$/i.test(a) && !/^(lowi|inn|krnt|rnt|meigs|kcgx|cgx)$/i.test(a) ? a.toUpperCase() : null);
 const aircraftFromAddress = (a) => (/f-?15/i.test(a) ? 'f15c' : /x-?wing/i.test(a) ? 'xwing' : /777|b7|boeing/i.test(a) ? 'b777' : 'extra300l');
 
 
@@ -186,10 +188,13 @@ export class Extra300 extends ArrivalScript {
     } catch { this._filmPending = this.introOnLoad; }
     // ?aircraft=f15 (or f15c, extra, xwing, 777) and ?airport=lowi (or innsbruck, krnt, renton) on the
     // address pick the airplane and the place, as the settings do
-    let askedPlace = null, askedAircraft = null;
+    let askedPlace = null, askedAircraft = null, askedField = null;
     try {
       const q = new URLSearchParams(location.search);
-      if (q.get('airport')) askedPlace = placeFromAddress(q.get('airport'));
+      if (q.get('airport')) {
+        askedField = fieldFromAddress(q.get('airport'));
+        if (!askedField) askedPlace = placeFromAddress(q.get('airport'));
+      }
       if (q.get('aircraft')) askedAircraft = aircraftFromAddress(q.get('aircraft'));
     } catch { /* no address to read */ }
     this._sky = null;
@@ -318,8 +323,14 @@ export class Extra300 extends ArrivalScript {
         return;
       }
       // the airport and the airplane, parked with its engine off; the visitor arrives on foot to walk
-      // to it (E boards)
-      this._start(place.id, plane.id);
+      // to it (E boards). An airfield the address names by its code (a reload where one was found):
+      // looked up first, the space's own start if it can't be
+      if (!askedField) { this._start(place.id, plane.id); return; }
+      loadAirfields().then((fields) => {
+        const a = searchAirfields(fields, askedField, 1).find((f) => f.codes.includes(askedField.toLowerCase()));
+        if (!a) throw new Error(`no airfield ${askedField}`);
+        return this._start(this._foundEntry(a).id, plane.id);
+      }).catch((e) => { console.warn('[extra300]', e.message); this._start(place.id, plane.id); });
     });
   }
 
@@ -366,12 +377,25 @@ export class Extra300 extends ArrivalScript {
   }
 
   /** An airfield found by name: listed for this visit, and gone to (the airplane on its longest runway). */
-  _flyToAirfield(a) {
+  _flyToAirfield(a) { this._goTo(this._foundEntry(a).id); }
+
+  /** A found airfield as a place to fly from (listed after the space's airports). */
+  _foundEntry(a) {
     const id = `af:${a.ident}`;
     if (!this._found.has(id)) {
       this._found.set(id, { id, base: id, title: `${a.ident} ${a.name}`, airfield: a, runwayEnd: null, sun: null, clouds: null, startHere: false, order: 1000 + this._found.size });
     }
-    this._goTo(id);
+    return this._found.get(id);
+  }
+
+  /** The place on the address (?airport=), so a reload comes back here: the code of a found airfield, else the airport's. */
+  _addressPlace(base) {
+    try {
+      const u = new URL(location.href), code = base.startsWith('af:') ? base.slice(3) : base;
+      if (u.searchParams.get('airport') === code) return;
+      u.searchParams.set('airport', code);
+      history.replaceState(history.state, '', u);
+    } catch { /* no address to write */ }
   }
 
   /** The airplanes listed: the space's airplane vibes, or (none there) the four as they are. */
@@ -524,6 +548,7 @@ export class Extra300 extends ArrivalScript {
     if (flying) { this._attach?.detach?.(); this._attach = null; }
     this._placeId = id;
     this._dest = base;
+    this._addressPlace(base);
     if (DESTINATIONS[base]) this.destination = DESTINATIONS[base].title;
     if (base === 'meigs') this._ensureLake();
     this.world = base === 'meigs' ? this.meigs : this._airports[base].world;
