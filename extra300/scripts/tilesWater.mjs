@@ -12,7 +12,8 @@
 //     a burst of them in one frame was a 100 ms stall), its coarser parent kept up until it is
 //   - tiles that only left the view kept (out of range they still go), up to a memory budget; loads
 //     still under way called off when their tile leaves the view, and gone from the queue at once
-//   - what the camera sees downloaded first, sixteen at a time; every tile downloaded once (its bytes kept)
+//   - the biggest error on screen downloaded first (size over distance, in view before out), 24 at a time;
+//     every tile downloaded once (its bytes kept)
 //   - a fast camera: the streamer looks 1.5 s ahead along its path
 //   - the sun set: the room's sun light faded out at the horizon, Google's daylit photo dimmed through dusk
 // The library's file is staged into the space on every sync; this patches it there: each edit is
@@ -670,8 +671,9 @@ const PATCHES = [
       '                const d = boxCamDistSq(q[i].node, cam);',
     ].join('\n'),
     with: [
-      '                // what the camera sees first, then the nearest: out of view counts as four times as far',
-      '                const d = boxCamDistSq(q[i].node, cam) * (this._tree?.inView(q[i].node, cam) ? 1 : 16);',
+      '                // the biggest error on screen first: a coarse tile a little way off before a fine one under the',
+      '                // camera (its size over its distance), what the camera sees before what it doesn\'t',
+      '                const d = boxCamDistSq(q[i].node, cam) / gtNodeSize(q[i].node) ** 2 * (this._tree?.inView(q[i].node, cam) ? 1 : 16);',
     ].join('\n'),
   },
   // every tile downloaded once: its bytes kept (a capped cache, oldest out first)
@@ -773,10 +775,10 @@ const PATCHES = [
       '        const q = this._revealQueue;',
       '        if (!q?.length) return;',
       '        this._revealBudget = dt > 1 / 40 ? 2 : Math.min(8, (this._revealBudget || 2) + 1);',
-      '        // a backlog (a slow machine): what the camera sees first, then the nearest (as the downloads)',
+      '        // a backlog (a slow machine): the biggest error on screen first (as the downloads)',
       '        const cam = this._camTile;',
       '        if (q.length > this._revealBudget && cam) {',
-      '            const score = (e) => boxCamDistSq(e.node, cam) * (this._tree?.inView(e.node, cam) ? 1 : 16);',
+      '            const score = (e) => boxCamDistSq(e.node, cam) / gtNodeSize(e.node) ** 2 * (this._tree?.inView(e.node, cam) ? 1 : 16);',
       '            for (const e of q) e.score = score(e);',
       '            q.sort((a, b) => a.score - b.score);',
       '        }',
@@ -897,7 +899,7 @@ const PATCHES = [
       '    static MAX_CONCURRENT_LOADS = 10;',
     ].join('\n'),
     with: [
-      '    static MAX_CONCURRENT_LOADS = 16;   // HTTP/2: the tiles stream in parallel',
+      '    static MAX_CONCURRENT_LOADS = 24;   // HTTP/2: the tiles stream in parallel',
     ].join('\n'),
   },
   // a fast airplane: the streamer looks ahead along its path
@@ -942,7 +944,8 @@ const PATCHES = [
   // the sun set: the room's sun out at the horizon, the tiles (a daylit photo, unlit) dimmed through dusk
   {
     after: 'const len3 = (x, y, z) => Math.sqrt(x * x + y * y + z * z);',
-    insert: '/** 0 below a, 1 above b, smooth between. */\nconst gtSmooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };',
+    insert: '/** 0 below a, 1 above b, smooth between. */\nconst gtSmooth = (a, b, x) => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };\n'
+      + '/** The size of a tile (m): the longest axis of its box. */\nconst gtNodeSize = (node) => { const b = node.boundingVolume?.box; return b ? Math.max(len3(b[3], b[4], b[5]), len3(b[6], b[7], b[8]), len3(b[9], b[10], b[11]), 1) : 1; };',
   },
   {
     replace: [

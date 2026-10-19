@@ -263,15 +263,18 @@ export class Extra300 extends ArrivalScript {
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     // the panel's throttle lever, dragged
     this.hud.onThrottle = (t) => { if (this._flying && !this._intro) { this.mapper.throttle = t; this.sound?.start(); } };
-    // its ENGINE OFF lamp, clicked: the engine stopped, the throttle closed; raising it cranks it again
-    this.hud.onEngineOff = () => {
-      if (!this._flying || this._intro || !this.ac.engine.running) return;
-      this.ac.setEngineRunning(false);
-      this.mapper.throttle = 0;
-      this.ac.controls.starter = false;
-      this._autoStarter = true;
-      this._crankT = 0;
-      this.hud.flash('Engine off · raise the throttle to start it', 2.5);
+    // its lamps that are switches too (setLampButtons, in _buildAircraft), clicked
+    this.hud.onLamp = (key) => {
+      if (!this._flying || this._intro) return;
+      switch (key) {
+        case 'ENGINE OFF': this._engineOff(); break;
+        case 'PARK BRK': this._action('parkingBrake'); break;
+        case 'PAUSED': this._action('pause'); break;
+        case 'GEAR': this._action('gear'); break;
+        case 'HOOK': this._action('hook'); break;
+        case 'SB': case 'FLAP': this._action('speedbrake'); break;   // (the X-wing's lamp there: its S-foils, on the same key)
+        default: break;
+      }
     };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
@@ -786,6 +789,31 @@ export class Extra300 extends ArrivalScript {
   }
 
   /** The airplane itself: flight model, instruments, 3D model, sound, stick feel, cockpit display, camera eye. */
+  /** ENGINE OFF, clicked: the engine stopped, the throttle closed; raising it cranks it again. */
+  _engineOff() {
+    if (!this.ac.engine.running) return;
+    this.ac.setEngineRunning(false);
+    this.mapper.throttle = 0;
+    this.ac.controls.starter = false;
+    this._autoStarter = true;
+    this._crankT = 0;
+    this.hud.flash('Engine off · raise the throttle to start it', 2.5);
+  }
+
+  /** The panel's lamps this airplane can switch by a click: its gear if it retracts, its hook, its speed brake … */
+  _lampButtons() {
+    const sp = this.ac.spec, t = {
+      'ENGINE OFF': 'Switch the engine off (raise the throttle to start it again)',
+      'PARK BRK': 'Parking brake on / off (,)',
+      PAUSED: 'Pause (P)',
+    };
+    if (this.ac.retractable) t.GEAR = 'Gear up / down (G)';
+    if (sp.hook) t.HOOK = 'Hook up / down (/)';
+    if (sp.sfoils) t.FLAP = 'S-foils open / closed (J)';
+    else if (this.ac.jet && sp.aero?.body?.speedbrakeDragArea) t.SB = 'Speed brake out / in (J)';
+    this.hud.setLampButtons(t);
+  }
+
   _buildAircraft(profile) {
     this.profile = profile;
     const spec = profile.spec;
@@ -796,6 +824,7 @@ export class Extra300 extends ArrivalScript {
       weather: this._weather(),
     });
     this.instruments = new Instruments(spec, { kollsman: this.qnhInHg * INHG });
+    this._lampButtons();
     // a hook to catch the carrier's wires with
     if (spec.hook) this.ac.arrestor = new Arrestor(this.carrier);
     this.mapper.setHandling(spec.handling);
@@ -1566,11 +1595,11 @@ export class Extra300 extends ArrivalScript {
           speedbrake: this.ac.spec.aero.body.speedbrakeDragArea ? this.ac.speedbrakePos : null,
           flaps: this.ac.spec.autoFlaps ? c.flaps : null, hook: this.ac.spec.hook ? this.ac.hookPos : null,
           sfoils: this.ac.spec.sfoils ? this.ac.sfoilPos : null,
-          parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running, paused: this._paused,
+          parkingBrake: c.parkingBrake, engineRunning: this.ac.engine.running, paused: this._paused, buttons: this.hud.lampButtons,
         });
       } else {
         this.hud.panel.draw(v, {
-          throttle: c.throttle, parkingBrake: c.parkingBrake,
+          throttle: c.throttle, parkingBrake: c.parkingBrake, buttons: this.hud.lampButtons,
           engineRunning: this.ac.engine.running, paused: this._paused,
         });
       }

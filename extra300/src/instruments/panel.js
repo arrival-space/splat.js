@@ -42,8 +42,8 @@ export class Panel {
   static widthFor(r) { return layout(r).width; }
   /** The throttle lever's slot in css px of a cluster h high: { x, top, travel, plate }. */
   static throttleSlot(h) { return slot(Panel.radiusFor(h), h); }
-  /** The ENGINE OFF lamp, a button too (plugin/hud.js): its box in css px of a cluster h high. */
-  static engineLamp(h) { return lampBox(Panel.radiusFor(h), h, 2); }
+  /** A lamp by its name (the clickable ones are buttons too, plugin/hud.js): its box in css px of a cluster h high. */
+  static lampBoxFor(h, key) { const i = ['STALL', 'PARK BRK', 'ENGINE OFF', 'PAUSED'].indexOf(key); return i < 0 ? null : lampBox(Panel.radiusFor(h), h, i); }
 
   resize(cssWidth, cssHeight, dpr = 1) {
     this.canvas.width = Math.round(cssWidth * dpr);
@@ -55,7 +55,7 @@ export class Panel {
 
   /**
    * @param {object} v  Instruments.values
-   * @param {object} s  extras: { throttle, parkingBrake, engineRunning, paused }
+   * @param {object} s  extras: { throttle, parkingBrake, engineRunning, paused, buttons: the lamps that are clickable }
    */
   draw(v, s = {}) {
     const ctx = this.ctx;
@@ -104,7 +104,7 @@ export class Panel {
     G.vsi(ctx, vsi, cy, r, v);
     G.gmeter(ctx, gm, cy, r, v, lim);
 
-    // the four lamps stacked beside the G-meter; ENGINE OFF is a button as well (outlined)
+    // the four lamps stacked beside the G-meter; the ones that are buttons as well outlined (s.buttons)
     const b0 = lampBox(r, H, 0);
     plate(b0.x - r * 0.08, b0.y0 - r * 0.08, b0.w + r * 0.16, b0.total + r * 0.16);
     const lamp = (i, on, text, col, button = false) => {
@@ -116,10 +116,11 @@ export class Panel {
       ctx.font = `700 ${Math.round(r * 0.13)}px Arial`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.fillText(text, b.x + b.w / 2, b.y + b.h / 2);
     };
+    const btn = (k) => !!s.buttons?.has(k);
     lamp(0, v.stallWarning, 'STALL', '#e0452f');
-    lamp(1, !!s.parkingBrake, 'PARK BRK', '#e3c13b');
-    lamp(2, !s.engineRunning, 'ENGINE OFF', '#e3c13b', true);
-    lamp(3, !!s.paused, 'PAUSED', '#7fb0ff');
+    lamp(1, !!s.parkingBrake, 'PARK BRK', '#e3c13b', btn('PARK BRK'));
+    lamp(2, !s.engineRunning, 'ENGINE OFF', '#e3c13b', btn('ENGINE OFF'));
+    lamp(3, !!s.paused, 'PAUSED', '#7fb0ff', btn('PAUSED'));
 
     // on the glareshield: the whiskey compass over the altimeter–VSI gap, the ball over ASI–ALT
     G.compass(ctx, (alt + vsi) / 2, cy - r * 1.42, r * 2.1, r * 0.44, v.compass);

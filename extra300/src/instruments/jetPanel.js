@@ -40,7 +40,7 @@ export class JetPanel {
   static radiusFor(h) { return h * 0.34; }
   static widthFor(r) { return layout(r).width; }
   static throttleSlot(h) { return slot(JetPanel.radiusFor(h), h); }
-  static engineLamp(h) { return lampBox(JetPanel.radiusFor(h), h, LAMPS.indexOf('ENGINE OFF')); }
+  static lampBoxFor(h, key) { const i = LAMPS.indexOf(key); return i < 0 ? null : lampBox(JetPanel.radiusFor(h), h, i); }
 
   resize(cssWidth, cssHeight, dpr = 1) {
     this.canvas.width = Math.round(cssWidth * dpr);
@@ -51,7 +51,8 @@ export class JetPanel {
 
   /**
    * @param {object} v  Instruments.values (n2, ftit, fuelFlow pph, fuelLb, stallWarning)
-   * @param {object} s  { throttle, abDetent, boostLabel, gearPos, speedbrake, flaps, hook, sfoils, parkingBrake, engineRunning, paused }
+   * @param {object} s  { throttle, abDetent, boostLabel, gearPos, speedbrake, flaps, hook, sfoils, parkingBrake, engineRunning, paused,
+   *                     buttons: the lamps that are clickable }
    */
   draw(v, s = {}) {
     const ctx = this.ctx, W = this.canvas.width, H = this.canvas.height;
@@ -114,7 +115,7 @@ export class JetPanel {
     row('FUEL FLOW PPH', String(Math.round((v.fuelFlow || 0) / 100) * 100), cy - r * 0.8);
     row('FUEL LB', String(Math.round((v.fuelLb || 0) / 10) * 10), cy + r * 0.05);
 
-    // the lamps (ENGINE OFF a button as well, outlined)
+    // the lamps (the ones that are buttons as well outlined: s.buttons)
     const b0 = lampBox(r, H, 0);
     plate(L.lamps.x - r * 0.08, b0.y0 - r * 0.08, L.lamps.w + r * 0.16, b0.total + r * 0.16);
     const g = s.gearPos ?? 1;
@@ -135,7 +136,7 @@ export class JetPanel {
       if (!label) { ctx.fillStyle = 'rgba(30,31,34,0.6)'; ctx.fillRect(b.x, b.y, b.w, b.h); return; }
       ctx.fillStyle = on ? col : 'rgba(42,43,46,0.85)';
       ctx.fillRect(b.x, b.y, b.w, b.h);
-      const button = key === 'ENGINE OFF';
+      const button = !!s.buttons?.has(key);
       if (button) { ctx.strokeStyle = on ? 'rgba(0,0,0,0.5)' : 'rgba(227,193,59,0.7)'; ctx.lineWidth = Math.max(1, r * 0.02); ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w - 1, b.h - 1); }
       text(label, b.x + b.w / 2, b.y + b.h / 2, r * 0.13, on ? '#111' : button ? '#d9d2b4' : '#7a7b80');
     });

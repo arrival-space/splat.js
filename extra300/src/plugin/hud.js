@@ -50,13 +50,11 @@ export class Hud {
     const end = (ev) => { this._dragging = false; this.throttleGrip.releasePointerCapture?.(ev.pointerId); };
     this.throttleGrip.addEventListener('pointerup', end);
     this.throttleGrip.addEventListener('pointercancel', end);
-    // the ENGINE OFF lamp, clicked: onEngineOff() (the engine stopped, the throttle closed)
-    this.onEngineOff = null;
-    this.engineButton = document.createElement('div');
-    css(this.engineButton, { position: 'fixed', zIndex: 21, display: 'none', cursor: 'pointer', pointerEvents: 'auto' });
-    this.engineButton.title = 'Switch the engine off (raise the throttle to start it again)';
-    this.engineButton.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); ev.preventDefault(); this.onEngineOff?.(); });
-    container.appendChild(this.engineButton);
+    // the panel's lamps that are switches as well (ENGINE OFF, PARK BRK, the gear, the hook …), clicked:
+    // onLamp(name); which they are: setLampButtons
+    this.onLamp = null;
+    this._container = container;
+    this._lampButtons = new Map();
     // the jet's head-up display: the whole view, click-through
     this.hudCanvas = document.createElement('canvas');
     css(this.hudCanvas, { position: 'fixed', left: 0, top: 0, pointerEvents: 'none', zIndex: 19, display: 'none' });
@@ -414,12 +412,39 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     Object.assign(this.throttleGrip.style, {
       left: `${px + sl.plate.x}px`, top: `${py + sl.plate.y}px`, width: `${sl.plate.w}px`, height: `${sl.plate.h}px`,
     });
-    const eb = P.engineLamp(h);
-    Object.assign(this.engineButton.style, { left: `${px + eb.x}px`, top: `${py + eb.y}px`, width: `${eb.w}px`, height: `${eb.h}px` });
+    this._panelAt = { px, py, h };
+    for (const [key, el] of this._lampButtons) {
+      const b = P.lampBoxFor(h, key);
+      if (b) Object.assign(el.style, { left: `${px + b.x}px`, top: `${py + b.y}px`, width: `${b.w}px`, height: `${b.h}px` });
+    }
   }
 
   /** The throttle grip and the engine button show with the panel. */
-  _syncGrip() { this.throttleGrip.style.display = this.engineButton.style.display = this.panelCanvas.style.display; }
+  _syncGrip() {
+    const d = this.panelCanvas.style.display, h = this._panelAt?.h;
+    this.throttleGrip.style.display = d;
+    for (const [key, el] of this._lampButtons) el.style.display = h && this._P.lampBoxFor(h, key) ? d : 'none';
+  }
+
+  /** Which lamps are buttons too: { name: tooltip } (the airplane's own: a gear to raise, a hook …). */
+  setLampButtons(tips) {
+    const want = new Set(Object.keys(tips));
+    for (const [key, el] of this._lampButtons) if (!want.has(key)) { el.remove(); this._lampButtons.delete(key); }
+    for (const key of want) {
+      let el = this._lampButtons.get(key);
+      if (!el) {
+        el = document.createElement('div');
+        Object.assign(el.style, { position: 'fixed', zIndex: 21, display: 'none', cursor: 'pointer', pointerEvents: 'auto' });
+        el.addEventListener('pointerdown', (ev) => { ev.stopPropagation(); ev.preventDefault(); this.onLamp?.(key); });
+        this._container.appendChild(el);
+        this._lampButtons.set(key, el);
+      }
+      el.title = tips[key];
+    }
+    this.lampButtons = want;
+    this.layout();
+    this._syncGrip();
+  }
 
   showPrompt(text) {
     this.prompt.textContent = text || '';
@@ -556,7 +581,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     window.removeEventListener('pointerdown', this._onOutside, true);
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
-    for (const el of [this.panelCanvas, this.throttleGrip, this.engineButton, this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton,
+    for (const el of [this.panelCanvas, this.throttleGrip, ...this._lampButtons.values(), this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }
