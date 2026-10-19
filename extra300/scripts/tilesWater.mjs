@@ -8,6 +8,9 @@
 //   - the streaming held while another vibe asks (app.googleTilesHold: its start menu)
 //   - the first-load card and the tile count in the bottom left corner, small and faint (not over the
 //     flight vibe's instrument panel, nor in the middle of its intro film)
+//   - a loaded tile shown when a per-frame budget lets it (its first draw uploads its texture and mesh:
+//     a burst of them in one frame was a 100 ms stall), its coarser parent kept up until it is
+//   - tiles that only left the view kept (out of range they still go), up to a memory budget
 // The library's file is staged into the space on every sync; this patches it there: each edit is
 // anchored on the library's own text, and if one no longer finds its anchor (the library changed)
 // the vibe is staged as it is, with a warning, rather than half-patched.
@@ -619,6 +622,93 @@ const PATCHES = [
       '                        padding: "2px 8px",',
       '                        fontFamily: "monospace",',
       '                        fontSize: "10px",',
+    ].join('\n'),
+  },
+  // a loaded tile waits its turn to be shown (the reveal queue below), so its parent stays up meanwhile
+  {
+    replace: [
+      '                    this._chunkEntity(entity);',
+      '                }',
+      '                if (this.directLight) this._tuneEntity(entity);',
+      '            } finally {',
+      '                this._releaseSlot();',
+    ].join('\n'),
+    with: [
+      '                    this._chunkEntity(entity);',
+      '                }',
+      '                if (this.directLight) this._tuneEntity(entity);',
+      '                // shown when the per-frame budget lets it: its first draw uploads its texture and mesh, and',
+      '                // a burst of tiles landing together stalled one frame for 100 ms (the parent stays up meanwhile)',
+      '                entity.enabled = false;',
+      '                await this._revealTurn();',
+      '                if (!rec.dead && session === this._sessionId) entity.enabled = true;',
+      '            } finally {',
+      '                this._releaseSlot();',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        this._updateInitialLoad();',
+    ].join('\n'),
+    with: [
+      '        this._revealTick(dt);',
+      '        this._updateInitialLoad();',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '    _unloadTile(node) {',
+    ].join('\n'),
+    with: [
+      '    /** A loaded tile\'s turn to be shown: resolved by _revealTick, a few a frame. */',
+      '    _revealTurn() {',
+      '        return new Promise((resolve) => (this._revealQueue ||= []).push(resolve));',
+      '    }',
+      '',
+      '    /** A frame that ran long lets two tiles through; quick frames let more (up to eight) a frame. */',
+      '    _revealTick(dt) {',
+      '        const q = this._revealQueue;',
+      '        if (!q?.length) return;',
+      '        this._revealBudget = dt > 1 / 40 ? 2 : Math.min(8, (this._revealBudget || 2) + 1);',
+      '        for (let k = 0; k < this._revealBudget && q.length; k++) q.shift()();',
+      '    }',
+      '',
+      '    _unloadTile(node) {',
+    ].join('\n'),
+  },
+  // out of view only: kept, while the tiles loaded stay under the memory budget
+  {
+    replace: [
+      '            if (!this.inRange(node, cameraPos, 1.15) ||',
+      '                !this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK)) {',
+    ].join('\n'),
+    with: [
+      '            // out of range: always; out of view only past the memory budget (overBudget): a turn of the',
+      '            // camera away and back no longer throws away what was just looked at and loads it again',
+      '            if (!this.inRange(node, cameraPos, 1.15) ||',
+      '                (this.overBudget?.() !== false && !this.inView(node, cameraPos, COLLAPSE_VIEW_SLACK))) {',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '        tree.lodFactor = this._effectiveDetail();',
+    ].join('\n'),
+    with: [
+      '        tree.lodFactor = this._effectiveDetail();',
+      '        tree.overBudget = () => this._records.size > GoogleTilesAtmosphere.TILE_BUDGET;',
+    ].join('\n'),
+  },
+  {
+    replace: [
+      '    static INITIAL_LOAD_TIMEOUT_S = 90;',
+    ].join('\n'),
+    with: [
+      '    /** Tiles kept loaded at most (out of view ones go past it): by the device\'s memory, a phone fewer. */',
+      '    static get TILE_BUDGET() {',
+      '        const gb = navigator.deviceMemory || 4;',
+      '        return gb >= 8 ? 1500 : gb >= 4 ? 900 : 500;',
+      '    }',
+      '    static INITIAL_LOAD_TIMEOUT_S = 90;',
     ].join('\n'),
   },
 ];
