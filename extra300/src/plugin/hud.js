@@ -161,10 +161,13 @@ export class Hud {
    * @param {{ id: string, title: string }[] | (() => { id: string, title: string }[])} items  (a function: listed as it is when opened)
    * @param {() => string} current  the id that is in use now (marked)
    * @param {(id: string) => void} pick
+   * @param {{ placeholder: string, find: (q: string, more: boolean) => Promise<{ title: string, sub?: string, go?: () => void }[]>,
+   *           focus?: () => void, blur?: () => void }} [search]  a box above the list: what's typed, found (`more`: after a
+   *        pause in the typing, the slower search may be tried too)
    */
-  setMenu(key, items, current, pick) {
+  setMenu(key, items, current, pick, search = null) {
     const button = key === 'aircraft' ? this.aircraftButton : this.placeButton;
-    this._menus[key] = { button, items, current, pick };
+    this._menus[key] = { button, items, current, pick, search };
     button.onclick = (ev) => { ev.stopPropagation(); this._menuOpen === key ? this.closeMenu() : this.openMenu(key); };
   }
 
@@ -174,6 +177,7 @@ export class Hud {
     this._menuOpen = key;
     const now = m.current();
     this._menu.innerHTML = '';
+    if (m.search) this._searchBox(m);
     for (const it of typeof m.items === 'function' ? m.items() : m.items) {
       const row = document.createElement('div');
       const on = it.id === now;
@@ -187,17 +191,82 @@ export class Hud {
       row.onclick = (ev) => { ev.stopPropagation(); this.closeMenu(); if (!on) m.pick(it.id); };
       this._menu.appendChild(row);
     }
-    // under its button, kept on the screen
-    const r = m.button.getBoundingClientRect();
     this._menu.style.display = 'block';
+    this._placeMenu(m);
+  }
+
+  /** Under its button, kept on the screen (again as it grows: a search's results widen it). */
+  _placeMenu(m) {
+    const r = m.button.getBoundingClientRect();
     const w = this._menu.offsetWidth;
     this._menu.style.left = `${Math.max(8, Math.min(window.innerWidth - w - 8, r.left))}px`;
     this._menu.style.top = `${r.bottom + 6}px`;
   }
 
   closeMenu() {
+    if (this._menuOpen && this._menus[this._menuOpen]?.search && this._menu.contains(document.activeElement)) document.activeElement.blur();
     this._menuOpen = null;
     this._menu.style.display = 'none';
+  }
+
+  /** The search box at a dropdown's top, and what it finds under it (each found row goes there). */
+  _searchBox(m) {
+    const box = document.createElement('input');
+    box.type = 'text';
+    box.placeholder = m.search.placeholder;
+    Object.assign(box.style, {
+      display: 'block', boxSizing: 'border-box', width: '100%', margin: '2px 0 6px', padding: '8px 10px', borderRadius: '8px',
+      border: '1px solid rgba(255,255,255,0.22)', background: 'rgba(255,255,255,0.08)', color: '#f4f2ec', font: 'inherit', outline: 'none',
+    });
+    const found = document.createElement('div');
+    this._menu.appendChild(box);
+    this._menu.appendChild(found);
+    let seq = 0, idle = null;
+    const show = (rows, note = '') => {
+      found.innerHTML = '';
+      if (note) {
+        const n = document.createElement('div');
+        n.textContent = note;
+        Object.assign(n.style, { padding: '6px 10px', opacity: '0.65', fontWeight: '500' });
+        found.appendChild(n);
+      }
+      for (const r of rows) {
+        const row = document.createElement('div');
+        row.innerHTML = `<div>${r.title}</div>${r.sub ? `<div style="font-weight:500;font-size:12px;opacity:0.65;margin-top:1px">${r.sub}</div>` : ''}`;
+        Object.assign(row.style, { padding: '7px 10px', borderRadius: '8px', cursor: r.go ? 'pointer' : 'default', whiteSpace: 'nowrap', maxWidth: '360px', overflow: 'hidden', textOverflow: 'ellipsis' });
+        if (r.go) {
+          row.onpointerenter = () => { row.style.background = 'rgba(255,255,255,0.08)'; };
+          row.onpointerleave = () => { row.style.background = 'transparent'; };
+          row.onclick = (ev) => { ev.stopPropagation(); this.closeMenu(); r.go(); };
+        }
+        found.appendChild(row);
+      }
+      if (rows.length || note) found.appendChild(Object.assign(document.createElement('div'), { style: 'height:1px;margin:6px 4px;background:rgba(255,255,255,0.12)' }));
+      this._placeMenu(m);
+    };
+    const run = async (more) => {
+      const q = box.value.trim(), my = ++seq;
+      if (q.length < 2) { show([]); return; }
+      if (!more) show([], 'Searching…');
+      let rows;
+      try { rows = await m.search.find(q, more); } catch { rows = null; }
+      if (my !== seq) return;   // typed on since
+      if (!rows) show([], 'The airfields could not be fetched');
+      else show(rows, rows.length ? '' : more ? 'Nothing found' : 'Searching places…');
+      if (!more && rows && rows.length < 3) { clearTimeout(idle); idle = setTimeout(() => { if (my === seq) run(true); }, 700); }
+    };
+    let typing = null;
+    box.oninput = () => { clearTimeout(typing); clearTimeout(idle); typing = setTimeout(() => run(false), 220); };
+    box.onkeydown = (e) => {
+      e.stopPropagation();   // the airplane's keys and the space's stay out of the box
+      if (e.key === 'Enter') { clearTimeout(typing); clearTimeout(idle); run(true).then(() => found.querySelector('div[style*="pointer"]')?.click()); }
+      if (e.key === 'Escape') this.closeMenu();
+    };
+    box.onkeyup = (e) => e.stopPropagation();
+    box.onfocus = () => m.search.focus?.();
+    box.onblur = () => m.search.blur?.();
+    box.onpointerdown = (e) => e.stopPropagation();
+    setTimeout(() => box.focus(), 0);
   }
 
   /** The map data's credit line, for the place on screen. */

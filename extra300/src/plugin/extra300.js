@@ -31,6 +31,7 @@ import { AircraftVisual } from './aircraftVisual.js';
 import { AIRCRAFT_OPTIONS, PROFILES } from './profiles.js';
 import { aircraftBase, airportBase, flightRegistry, listed } from './flightRegistry.js';
 import { plainAircraft, tunedProfile } from './tuning.js';
+import { AIRFIELD_CREDIT, airfieldWorld, geocode, loadAirfields, nearestAirfields, searchAirfields } from '../world/airfields.js';
 import { PlaneShadowFit } from './planeShadowFit.js';
 import { ReflectionProbe } from './reflectionProbe.js';
 import { StartMenu } from './startMenu.js';
@@ -240,7 +241,14 @@ export class Extra300 extends ArrivalScript {
     this.hud.setMenu('aircraft', () => this._planeEntries().map((e) => ({ id: e.id, title: e.title })),
       () => this._planeId, (id) => this._pickAircraft(id));
     this.hud.setMenu('place', () => this._placeEntries().map((e) => ({ id: e.id, title: e.title })),
-      () => this._placeId, (id) => this._goTo(id));
+      () => this._placeId, (id) => this._goTo(id), {
+        // any airfield on Earth, by its code, its name, its town, or a place near it (world/airfields.js)
+        placeholder: 'Fly to… a town, an airfield, a code',
+        find: (q, more) => this._findAirfields(q, more),
+        focus: () => { if (!this._flying) this.lockKeyboard(); },
+        blur: () => { if (!this._flying) this.unlockKeyboard(); },
+      });
+    this._found = new Map();   // airfields found by name this visit: listed after the space's airports
     // an airport or airplane vibe tuned, added or deleted: taken on as it is
     this._onRegistry = (kind) => this._registryChanged(kind);
     this.app.on('flightsim:changed', this._onRegistry);
@@ -295,9 +303,51 @@ export class Extra300 extends ArrivalScript {
   /** The airports listed: the space's airport vibes, or (none there) the three as they are. */
   _placeEntries() {
     const l = listed(this.app, 'airports');
-    return l.length ? l : Object.keys(DESTINATIONS).map((base, i) => ({
+    const own = l.length ? l : Object.keys(DESTINATIONS).map((base, i) => ({
       id: base, base, title: DESTINATIONS[base].title, runwayEnd: null, sun: null, clouds: null, startHere: false, order: i,
     }));
+    return [...own, ...(this._found?.values() || [])];
+  }
+
+  /** A place's own words (its name, short name, runway ends, credit): the airports carried, or an airfield found. */
+  _info(base) {
+    if (DESTINATIONS[base]) return DESTINATIONS[base];
+    const e = this._found.get(base), a = e.airfield, r = a.runways[0];
+    return { id: base, title: e.title, short: a.ident, runways: [r.le, r.he], credit: AIRFIELD_CREDIT };
+  }
+
+  /**
+   * The ✈ box: airfields by code, name or town as typed; `more` (a pause in the typing, or Enter) with
+   * few of those, the place looked up (Nominatim) and the airfields nearest it.
+   */
+  async _findAirfields(q, more) {
+    const fields = await loadAirfields();
+    const row = (a, sub) => ({
+      title: `${a.ident} · ${a.name}`,
+      sub: sub || `${[a.town, a.country].filter(Boolean).join(', ')} · ${Math.round(a.runways[0].lengthM)} m${a.runways[0].paved ? '' : ', grass'}`,
+      go: () => this._flyToAirfield(a),
+    });
+    const hits = searchAirfields(fields, q, 6);
+    const rows = hits.map((a) => row(a));
+    if (more && hits.length < 3) {
+      const p = await geocode(q).catch(() => null);
+      if (p) {
+        const where = p.name.split(',')[0];
+        for (const a of nearestAirfields(fields, p.lat, p.lon, 5)) {
+          if (!hits.includes(a)) rows.push(row(a, `${(a.distanceM / 1000).toFixed(0)} km from ${where} · ${Math.round(a.runways[0].lengthM)} m${a.runways[0].paved ? '' : ', grass'}`));
+        }
+      }
+    }
+    return rows;
+  }
+
+  /** An airfield found by name: listed for this visit, and gone to (the airplane on its longest runway). */
+  _flyToAirfield(a) {
+    const id = `af:${a.ident}`;
+    if (!this._found.has(id)) {
+      this._found.set(id, { id, base: id, title: `${a.ident} ${a.name}`, airfield: a, runwayEnd: null, sun: null, clouds: null, startHere: false, order: 1000 + this._found.size });
+    }
+    this._goTo(id);
   }
 
   /** The airplanes listed: the space's airplane vibes, or (none there) the four as they are. */
@@ -392,7 +442,7 @@ export class Extra300 extends ArrivalScript {
   _ensureCity() { this._cityLoad ??= this._loadCity(); }
 
   // ── destinations ─────────────────────────────────────────────────────────
-  get _place() { return DESTINATIONS[this._dest]; }
+  get _place() { return this._info(this._dest); }
 
   /** Start on the runway's other end: the airport vibe's choice, or (the plain list) the setting's. */
   get _reverse() {
@@ -405,8 +455,9 @@ export class Extra300 extends ArrivalScript {
 
   /** The ✈ button's word for an airport: its own short name, or the name its vibe gives it. */
   _shortOf(e) {
-    if (!e) return DESTINATIONS[this._dest].short;
-    return e.title === DESTINATIONS[e.base].title ? DESTINATIONS[e.base].short : e.title;
+    if (!e) return this._info(this._dest).short;
+    const own = this._info(e.base);
+    return e.title === own.title ? own.short : e.title;
   }
 
   /**
@@ -421,7 +472,9 @@ export class Extra300 extends ArrivalScript {
     this._going = true;
     this.hud.setPlace(this._shortOf(entry), true);
     try {
-      if (AIRPORTS[base] && !this._airports[base]) this._airports[base] = await AIRPORTS[base]();
+      // the airports carried, or an airfield found by name (its terrain fetched now)
+      const load = AIRPORTS[base] || (entry.airfield ? () => airfieldWorld(entry.airfield) : null);
+      if (load && !this._airports[base]) this._airports[base] = await load();
     } catch (e) {
       console.warn(`[extra300] ${entry.title} unavailable:`, e);
       this.hud.flash(`${entry.title} could not be loaded`, 3);
@@ -437,7 +490,7 @@ export class Extra300 extends ArrivalScript {
     if (flying) { this._attach?.detach?.(); this._attach = null; }
     this._placeId = id;
     this._dest = base;
-    this.destination = DESTINATIONS[base].title;
+    if (DESTINATIONS[base]) this.destination = DESTINATIONS[base].title;
     if (base === 'meigs') this._ensureCity();
     this.world = base === 'meigs' ? this.meigs : this._airports[base].world;
     this._applyClouds();

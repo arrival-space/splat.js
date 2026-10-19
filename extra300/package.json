@@ -20,6 +20,7 @@
     "check:wgsl": "node tests/wgsl/check-wgsl.mjs"
   },
   "devDependencies": {
+    "egm96-universal": "^1.1.1",
     "esbuild": "0.28.0",
     "playcanvas": "2.22.6"
   },
