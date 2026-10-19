@@ -36,6 +36,7 @@
       "cityDetail": "full",
       "easyMode": true,
       "playIntro": true,
+      "introAtStart": true,
       "debugSpheres": false,
       "registryWait": 3,
       "startMenu": false,
