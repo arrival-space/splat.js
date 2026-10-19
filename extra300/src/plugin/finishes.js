@@ -37,9 +37,9 @@ function skyCube(device, S = 32) {
   });
 }
 
-// every surface's reflections 30 % up on what the materials would give (paint's clear coat, metal,
-// glass, the plain parts — plugin/pcMesh.js): in a browser, with no bloom and an 8-bit screen, things
-// came out reflecting less than they do outside
+// metal's, glass's and the plain parts' reflections (plugin/pcMesh.js) 30 % up on what the materials
+// would give: in a browser, with no bloom and an 8-bit screen, things came out reflecting less than
+// they do outside (the paint is a denser clear coat instead, below)
 export const REFLECTANCE = 1.3;
 
 let cube = null;
@@ -60,10 +60,11 @@ export function setReflectionCube(tex) {
   for (const m of reflective) { m.cubeMap = live || cube; m.update(); }
 }
 
-// The engine dims what lies under the clear coat by (1 − the coat's Fresnel × its strength): a coat
-// stronger than 1 (the boost above) drove that below zero toward grazing, where the Fresnel nears 1,
-// and the paint went black along every edge seen side on. Capped, the coat reflects all there is at
-// grazing (the paint under it gone, as on a real topcoat) and stays boosted facing the eye.
+// The paint's clear coat as a real one: its reflectance from its refractive index, Fresnel's 1 at
+// grazing never exceeded. The engine's coat is n = 1.5 (4 % facing the eye); a glossy polyurethane
+// topcoat is a little denser: n = 1.58, 5 %, a quarter more, as bright a sheen as glass at grazing.
+const COAT_IOR = 1.58;
+const COAT_F0 = ((COAT_IOR - 1) / (COAT_IOR + 1)) ** 2;
 const FRESNEL_DEFAULT_GLSL = `
 float pow5(float x) { float x2 = x * x; return x2 * x2 * x; }
 vec3 getFresnel(float cosTheta, float gloss, vec3 specularity
@@ -100,13 +101,13 @@ fn getFresnel(cosTheta: f32, gloss: f32, specularity: vec3f
 #endif
 }
 `;
-function coatCapped(m, strength) {
-  const cap = (1 / strength).toFixed(5);
+function paintCoat(m) {
+  const f0 = COAT_F0.toFixed(5), f1 = (1 - COAT_F0).toFixed(5);
   m.getShaderChunks('glsl').set('fresnelSchlickPS', `${FRESNEL_DEFAULT_GLSL}
-float getFresnelCC(float cosTheta) { return min(${cap}, 0.04 + 0.96 * pow5(1.0 - saturate(cosTheta))); }
+float getFresnelCC(float cosTheta) { return ${f0} + ${f1} * pow5(1.0 - saturate(cosTheta)); }
 `);
   m.getShaderChunks('wgsl').set('fresnelSchlickPS', `${FRESNEL_DEFAULT_WGSL}
-fn getFresnelCC(cosTheta: f32) -> f32 { return min(${cap}, 0.04 + 0.96 * pow5(1.0 - saturate(cosTheta))); }
+fn getFresnelCC(cosTheta: f32) -> f32 { return ${f0} + ${f1} * pow5(1.0 - saturate(cosTheta)); }
 `);
 }
 
@@ -124,11 +125,10 @@ export function paintMaterial(device, colour, satin = false, probe = true) {
   m.useMetalness = true;
   m.metalness = 0;
   m.gloss = satin ? 0.55 : 0.82;
-  m.clearCoat = (satin ? 0.25 : 1) * REFLECTANCE;   // (the coat's reflection goes by this, not by reflectivity)
+  m.clearCoat = satin ? 0.25 : 1;   // a full coat (a fighter's satin: a thin one)
   m.clearCoatGloss = satin ? 0.7 : 0.93;
-  if (m.clearCoat > 1) coatCapped(m, m.clearCoat);
+  paintCoat(m);
   reflecting(m, probe);
-  m.reflectivity = REFLECTANCE;
   m.update();
   cache.set(key, m);
   return m;
