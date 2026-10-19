@@ -10,7 +10,7 @@
     "hideBackPortal": true,
     "hideFeaturedPortal": true,
     "hideHomePortal": true,
-    "useWebGPU": true,
+    "useWebGPU": false,
     "worldScale": 1,
     "hideNavigationPortals": true,
     "farClip": 40000,
@@ -49,12 +49,12 @@
   },
   "state": {
     "files": 9,
-    "memory": 4456834,
-    "updated": 1792411323534,
+    "memory": 4456824,
+    "updated": 1792412517508,
     "entities": 18,
     "entitySizes": {
       "extra300-meigs": 4290119,
-      "google-3d-tiles": 140670,
+      "google-3d-tiles": 140660,
       "flight-airport-krnt": 2987,
       "flight-airport-lowi": 2987,
       "flight-aircraft-b777": 4271,
@@ -63,7 +63,7 @@
       "flight-aircraft-xwing": 4271,
       "flight-aircraft-extra300l": 4271
     },
-    "screenshotTime": 1792364890596,
-    "screenshotDataHash": "404d417964699c74b8f0c3d7a6a5b56fb015fc7c5df41aee44bbf5aa7c2ca805"
+    "screenshotTime": 1792412356418,
+    "screenshotDataHash": "c9cd8f97792b594fa2e398e23c105c56de091382865493cadfde87343e3ee16c"
   }
 }
