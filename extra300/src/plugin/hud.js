@@ -120,20 +120,20 @@ export class Hud {
       font: `600 ${isMobile ? 12 : 13}px "Helvetica Neue", Arial, sans-serif`, boxShadow: '0 2px 10px rgba(0,0,0,0.35)',
       backdropFilter: 'blur(6px)', whiteSpace: 'nowrap', textAlign: 'center', overflow: 'hidden',
     };
-    const [wA, wE, wC, wD, wW] = isMobile ? [118, 118, 80, 108, 92] : [146, 132, 92, 126, 106];
-    const x0 = -(wA + wE + wC + wD + wW + 32) / 2;
-    this.aircraftButton = button({ ...pill, width: `${wA}px`, left: `calc(50% + ${x0}px)` });
-    this.easyButton = button({ ...pill, width: `${wE}px`, left: `calc(50% + ${x0 + wA + 8}px)` });
-    this.controlsButton = button({ ...pill, width: `${wC}px`, left: `calc(50% + ${x0 + wA + wE + 16}px)` });
+    const [wA, wE, wC, wD, wW] = this._barW = isMobile ? [118, 118, 80, 108, 92] : [146, 132, 92, 126, 106];
+    // (where each goes: _layoutBar, one row, or two where the screen is too narrow for it)
+    this.aircraftButton = button({ ...pill, width: `${wA}px` });
+    this.easyButton = button({ ...pill, width: `${wE}px` });
+    this.controlsButton = button({ ...pill, width: `${wC}px` });
     // where to fly: a dropdown of the airports (in the airplane and out of it)
-    this.placeButton = button({ ...pill, width: `${wD}px`, left: `calc(50% + ${x0 + wA + wE + wC + 24}px)`, display: 'block' });
+    this.placeButton = button({ ...pill, width: `${wD}px`, display: 'block' });
     this.setPlace('Chicago');
     // crashed (or the prop struck, the gear folded): back on the runway, under the top bar
     this.restartButton = button({ ...pill, width: '210px', left: 'calc(50% - 105px)', top: '54px', background: 'rgba(196,30,42,0.88)', border: '1px solid rgba(255,255,255,0.35)' });
     this.restartButton.innerHTML = '↺ Restart on the runway';
     this.restartButton.title = 'Back on the runway, engine off (Backspace)';
     // the weather: sliders in a dropdown (setSliders)
-    this.weatherButton = button({ ...pill, width: `${wW}px`, left: `calc(50% + ${x0 + wA + wE + wC + wD + 32}px)`, display: 'block' });
+    this.weatherButton = button({ ...pill, width: `${wW}px`, display: 'block' });
     this.weatherButton.innerHTML = '<span style="opacity:0.8;margin-right:5px">☁</span>Weather<span style="opacity:0.6;margin-left:5px">▾</span>';
     this.weatherButton.title = 'Clouds, time of day, season, temperature';
     // the airplane and place buttons open dropdowns (setMenu): one at a time, closed by a pick, a
@@ -181,11 +181,6 @@ export class Hud {
         return b;
       };
       mk('board', 'Fly', { left: '50%', bottom: '26%', transform: 'translateX(-50%)', display: 'none' });
-      mk('exit', 'Exit', { right: '12px', top: '22%' });
-      mk('view', 'View', { right: '12px', top: 'calc(22% + 48px)' });
-      mk('brake', 'Brake', { right: '12px', top: 'calc(42% + 56px)' });
-      mk('reset', 'Reset', { right: '12px', top: 'calc(42% + 104px)' });
-      mk('fire', 'Fire', { right: '12px', top: 'calc(42% + 8px)', background: 'rgba(196,40,30,0.75)' });
     }
     // the control stick (a phone): like the walk stick, a thumb pad on the left that centres where the
     // thumb lands; stick.x, stick.y -1..1 (x right, y up = push forward). Touches elsewhere turn the camera.
@@ -483,7 +478,34 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     }
   }
 
+  /** The top bar: one row centred, or (a phone upright) the airplane and the place between the platform's
+   *  corner buttons and easy mode, controls and the weather in a second row under them. */
+  _layoutBar() {
+    const [wA, wE, wC, wD, wW] = this._barW, g = 8, W = window.innerWidth;
+    const put = (b, x, y) => { b.style.left = `${Math.round(x)}px`; b.style.top = `${y}px`; };
+    const one = wA + wE + wC + wD + wW + 4 * g;
+    let below = 54;
+    if (one <= W - 2 * 56) {
+      let x = (W - one) / 2;
+      for (const [b, w] of [[this.aircraftButton, wA], [this.easyButton, wE], [this.controlsButton, wC], [this.placeButton, wD], [this.weatherButton, wW]]) { put(b, x, 12); x += w + g; }
+    } else {
+      // on foot the platform's space card covers the top (its own UI hides while flying): under it
+      const y = this._flying ? 12 : 92;
+      let x = (W - (wA + wD + g)) / 2;
+      put(this.aircraftButton, x, y); put(this.placeButton, x + wA + g, y);
+      const row = [[this.easyButton, wE], [this.controlsButton, wC], [this.weatherButton, wW]].filter(([e]) => e.style.display !== 'none');
+      x = (W - row.reduce((t, [, w]) => t + w + g, -g)) / 2;
+      for (const [e, w] of row) { put(e, x, y + 42); x += w + g; }
+      below = y + 84;
+    }
+    // what hangs under the bar: the restart button, the take-off card, the messages
+    this.restartButton.style.top = `${below}px`;
+    this.quick.style.top = `${below + 4}px`;
+    this.message.style.top = `max(9%, ${below + 44}px)`;
+  }
+
   layout() {
+    this._layoutBar();
     this.jetHud.resize(window.innerWidth, window.innerHeight, Math.min(2, window.devicePixelRatio || 1));
     // the cluster is only as wide as its instruments, centred on the bottom edge
     let h = Math.round(Math.min(window.innerHeight * 0.21, 175));
@@ -665,10 +687,9 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.controlsButton.style.display = flying ? 'block' : 'none';
     this.placeButton.style.display = 'block';
     this.weatherButton.style.display = 'block';
-    for (const id of ['exit', 'view', 'brake', 'reset']) if (this.buttons[id]) this.buttons[id].style.display = flying ? 'block' : 'none';
-    if (this.buttons.fire) this.buttons.fire.style.display = flying && this.profile.lasers ? 'block' : 'none';
     if (!flying) { this.help.style.display = 'none'; this.quick.style.display = 'none'; this.showIntro(false); this.showRestart(false); }
     else if (this._introOn) this.showIntro(true);   // the film plays on: none of it shows yet
+    this._layoutBar();
   }
 
   toggleHelp(show) {

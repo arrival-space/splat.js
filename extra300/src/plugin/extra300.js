@@ -292,17 +292,6 @@ export class Extra300 extends ArrivalScript {
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
     if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._enter();
-    if (this.hud.buttons.exit) this.hud.buttons.exit.onclick = () => this._exit();
-    if (this.hud.buttons.view) this.hud.buttons.view.onclick = () => this._action('view');
-    if (this.hud.buttons.reset) this.hud.buttons.reset.onclick = () => this._action('reset');
-    if (this.hud.buttons.fire) {
-      this.hud.buttons.fire.ontouchstart = () => { this._fire = true; };
-      this.hud.buttons.fire.ontouchend = () => { this._fire = false; };
-    }
-    if (this.hud.buttons.brake) {
-      this.hud.buttons.brake.ontouchstart = () => this._keys.add('b');
-      this.hud.buttons.brake.ontouchend = () => this._keys.delete('b');
-    }
 
     // the camera is ours for the frame, after the platform's own camera scripts
     // the clouds: their noise made over the first frames, marched each frame after our camera is placed
