@@ -51,11 +51,11 @@
   },
   "state": {
     "files": 10,
-    "memory": 4530564,
-    "updated": 1792496581976,
+    "memory": 4530850,
+    "updated": 1792497008962,
     "entities": 19,
     "entitySizes": {
-      "extra300-meigs": 4344442,
+      "extra300-meigs": 4344728,
       "google-3d-tiles": 148036,
       "flight-airport-krnt": 2987,
       "flight-airport-lowi": 2987,
