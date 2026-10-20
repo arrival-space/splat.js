@@ -1471,7 +1471,7 @@ export class Extra300 extends ArrivalScript {
     // a throttle key: the start-engine button goes at once (the throttle is found)
     if (this._flying && ['throttleUp', 'throttleDown', 'throttleFull', 'throttleIdle'].some((a) => BINDINGS[a]?.includes(e.key) || BINDINGS[a]?.includes(key))) { this._startOffer = false; this.hud.showStart(false); }
     if (!this._flying) {
-      if (key === 'e' && (this._nearAircraft() || this._parkedNear)) { this._board(); e.preventDefault(); }
+      if (key === 'e' && ArrivalSpace.getCameraMode?.() !== 'free' && (this._nearAircraft() || this._parkedNear)) { this._board(); e.preventDefault(); }
       if (key === 'o') { this._startDemo(); e.preventDefault(); }
       return;
     }
@@ -1599,8 +1599,9 @@ export class Extra300 extends ArrivalScript {
     if (!this._flying) {
       if (this._filmPending) this._filmTick(dt);
       if (!this._flying) {
-        // by the airplane on the runway, or by one parked beside it
-        const own = this._nearAircraft(), player = ArrivalSpace.getPlayer?.();
+        // by the airplane on the runway, or by one parked beside it (not with the free camera out: nobody walks up)
+        const free = ArrivalSpace.getCameraMode?.() === 'free';
+        const own = !free && this._nearAircraft(), player = free ? null : ArrivalSpace.getPlayer?.();
         this._parkedNear = own || !player ? null : this._parked?.near(player.getPosition(), BOARD_DISTANCE) || null;
         const title = own ? this.profile.title : this._parkedNear?.profile.title;
         this.hud.showPrompt(title ? (this.isMobile ? title : `Press E to fly the ${title}`) : '');
