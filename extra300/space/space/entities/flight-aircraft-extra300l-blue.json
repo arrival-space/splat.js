@@ -1,0 +1,25 @@
+{
+  "id": "flight-aircraft-extra300l-blue",
+  "type": "UserModelEntity",
+  "data": {
+    "glbUrl": "plugins/flight-aircraft.mjs",
+    "displayName": "Airplane — Extra 300L blue",
+    "position": {
+      "x": 44,
+      "y": 0,
+      "z": -8
+    },
+    "rotation": {
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "scale": 1,
+    "params": {
+      "airplane": "Extra 300L",
+      "title": "Extra 300L blue",
+      "trim": "#1f4fa8",
+      "order": 4
+    }
+  }
+}
