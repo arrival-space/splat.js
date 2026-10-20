@@ -207,6 +207,7 @@ export class Extra300 extends ArrivalScript {
     this.cameraRig = new CameraRig({ eye: this.profile.spec.eye, towerPos: fromNE(tower.ne[0], tower.ne[1], tower.h + 1.5) });
     this._placeDeckCamera();
     this.hud = new Hud(this.getUIContainer(), this.profile, this.isMobile, (tag, opts) => this.createUI(tag, opts));
+    this.hud.showLoading('Loading…');   // (black, not the empty sky, until the first film or the visitor arrives)
     this.lasers = new Lasers(this.app, this._worldRoot);
     this._fire = false;
     this._buildAircraft(this.profile);
@@ -315,6 +316,7 @@ export class Extra300 extends ArrivalScript {
       // the start menu, when it's on: the address naming both, or film mode, skips it
       if (this.startMenu && !this._filmPending && !(askedPlace && askedAircraft)) {
         this.hud.placeButton.style.display = 'none';
+        this.hud.showLoading(null);
         this._menu = new StartMenu((tag, opts) => this.createUI(tag, opts),
           places.map((e) => ({ id: e.id, title: e.title, blurb: PLACE_BLURBS[e.base] })),
           planes.map((e) => ({ id: e.id, title: e.title, blurb: AIRCRAFT_BLURBS[e.base] || '' })),
@@ -472,6 +474,7 @@ export class Extra300 extends ArrivalScript {
   /** The start (the menu's choice, or the settings'): the airplane, the place loaded, Google's tiles let go, the visitor on foot. */
   async _start(placeId, planeId) {
     this._menu?.setStatus(`Loading ${this._placeEntry(placeId)?.title || ''}…`);
+    if (!this._menu) this.hud.showLoading(`Loading ${this._placeEntry(placeId)?.title || ''}…`);
     this._pickAircraft(planeId);
     await this._goTo(placeId);
     if (this._dest === 'meigs') this._ensureLake();   // also when the airport couldn't be loaded
@@ -486,14 +489,16 @@ export class Extra300 extends ArrivalScript {
     if (!this._flying && !this._filmPending) ArrivalSpace.setCameraMode?.('third');
     // the airplane's film while the tiles stream in, the visitor on foot beside it after
     if (this.introAtStart && !this._flying && !this._filmPending) this._startLoadIntro();
+    this.hud.showLoading(null);
   }
 
   /** The intro film as the first thing seen: the engine left off, the airplane left parked, the visitor on foot at its end. */
   _startLoadIntro() {
     this._loadIntro = true;
     this._introPlayed = false;
+    this.hud.setIntroFade(1);   // (the loading screen's black, held: the film opens out of it)
     this._enter();
-    if (!this._intro) this._loadIntro = false;   // couldn't board (another vehicle has the visitor)
+    if (!this._intro) { this._loadIntro = false; this.hud.setIntroFade(0); }   // couldn't board (another vehicle has the visitor)
   }
 
   /** Lake Michigan's shore (the land/water mask), read the first time Meigs is where we are. */
@@ -1290,7 +1295,7 @@ export class Extra300 extends ArrivalScript {
       this._intro = null;
       this.ac.controls.starter = false;
       this.hud.showIntro(false);
-      this._exit();
+      this._exit(true);   // (where the visitor arrived: the space's spawn point)
       return;
     }
     this._intro = null;
@@ -1310,7 +1315,8 @@ export class Extra300 extends ArrivalScript {
     this._showTakeoffCard();
   }
 
-  _exit() {
+  /** Out of the airplane, beside its left wing (stay: left where the visitor is, as after the film at load). */
+  _exit(stay = false) {
     if (!this._flying) return;
     this._intro = null;
     if (this._demo) this._stopDemo('Demo ended');
@@ -1341,6 +1347,7 @@ export class Extra300 extends ArrivalScript {
     this.hud.setFlying(false, false);
     // step out beside the left wing; an airplane left in the air goes back to the runway
     if (this.ac.agl > 3 || this.ac.damage.crashed) this._resetToRunway();
+    if (stay) return;
     const ws = this._ws;
     const p = this.ac.referencePoint();
     const out0 = this.ac.spec.wing.span / 2 + 1.5;

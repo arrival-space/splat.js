@@ -6,19 +6,19 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stage, stageGoogleTiles, MANAGED_ROOM_KEYS, loadConfig, TILES_ID } from '../scripts/sync.mjs';
 
-function workspace() {
+function workspace(withSpawn = true) {
   const dir = mkdtempSync(join(tmpdir(), 'ws-'));
   const space = join(dir, 'space');
   mkdirSync(join(space, 'entities'), { recursive: true });
   writeFileSync(join(space, 'room.json'), JSON.stringify({ id: 'RoomInfo', type: 'Simple', data: { roomTitle: 'Kept', worldScale: 1 } }));
-  writeFileSync(join(space, 'entities', 'old-spawn.json'), JSON.stringify({ id: 'old-spawn', type: 'SpawnPoint', data: { position: { x: 0, y: 0, z: 0 }, isDefaultThirdPerson: true, isDefaultFreeCam: true } }));
+  if (withSpawn) writeFileSync(join(space, 'entities', 'old-spawn.json'), JSON.stringify({ id: 'old-spawn', type: 'SpawnPoint', data: { position: { x: 0, y: 0, z: 0 }, isDefaultThirdPerson: true, isDefaultFreeCam: true } }));
   writeFileSync(join(space, 'entities', 'someone-elses.json'), JSON.stringify({ id: 'someone-elses', type: 'UserModelEntity', data: { glbUrl: 'https://x/y.glb' } }));
   return space;
 }
 const read = (p) => JSON.parse(readFileSync(p, 'utf8'));
 
-test('stage writes the plugin, its host entity with params, and the runway-36 spawn', () => {
-  const space = workspace();
+test('stage writes the plugin, its host entity with params, and the runway-36 spawn in a space without one', () => {
+  const space = workspace(false);
   const cfg = loadConfig();
   stage(space, cfg, '// plugin', { isEnabled: true, startRunway: '36' });
   assert.equal(readFileSync(join(space, 'plugins', 'extra300-meigs.mjs'), 'utf8'), '// plugin');
@@ -31,13 +31,14 @@ test('stage writes the plugin, its host entity with params, and the runway-36 sp
   assert.equal(spawn.data.isDefaultThirdPerson, true);
 });
 
-test('stage leaves exactly one default spawn and does not touch other entities', () => {
+test('stage leaves the space\'s own spawn point as it is (placed in the browser) and other entities alone', () => {
   const space = workspace();
   const before = readFileSync(join(space, 'entities', 'someone-elses.json'), 'utf8');
-  stage(space, loadConfig(), '', {});
-  const old = read(join(space, 'entities', 'old-spawn.json'));
-  assert.equal(old.data.isDefaultThirdPerson, false);
-  assert.equal(old.data.isDefaultFreeCam, false);
+  const spawnBefore = readFileSync(join(space, 'entities', 'old-spawn.json'), 'utf8');
+  const cfg = loadConfig();
+  stage(space, cfg, '', {});
+  assert.equal(readFileSync(join(space, 'entities', 'old-spawn.json'), 'utf8'), spawnBefore);
+  assert.ok(!existsSync(join(space, 'entities', `${cfg.spawnId}.json`)), 'no second spawn');
   assert.equal(readFileSync(join(space, 'entities', 'someone-elses.json'), 'utf8'), before);
 });
 

@@ -618,6 +618,24 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.introFade = document.createElement('div');
     css(this.introFade, { position: 'fixed', inset: 0, background: '#000', zIndex: 29, pointerEvents: 'none', display: 'none', opacity: 0 });
     container.appendChild(this.introFade);
+    // the loading screen, from the vibe's start until the first film opens out of black (or the visitor arrives)
+    this.loading = document.createElement('div');
+    css(this.loading, {
+      position: 'fixed', inset: 0, background: '#000', zIndex: 29, pointerEvents: 'none', display: 'none',
+      flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px',
+      color: '#f1efe8', font: '15px/1.4 "Helvetica Neue", Arial, sans-serif', transition: 'opacity 0.4s linear',
+    });
+    this.loading.innerHTML = '<div style="color:#e2483a;font:700 12px Arial;letter-spacing:0.28em">FLIGHT SIMULATOR</div>'
+      + '<div data-k="text" style="font-size:22px;font-weight:600;letter-spacing:0.01em"></div>'
+      + '<div style="width:180px;height:3px;background:rgba(255,255,255,0.14);overflow:hidden;border-radius:2px">'
+      + '<div style="width:35%;height:100%;background:#e2483a;animation:extra300-load 1.3s ease-in-out infinite"></div></div>';
+    if (!document.getElementById('extra300-load-style')) {
+      const st = document.createElement('style');
+      st.id = 'extra300-load-style';
+      st.textContent = '@keyframes extra300-load { 0% { transform: translateX(-110%); } 100% { transform: translateX(300%); } }';
+      document.head.appendChild(st);
+    }
+    container.appendChild(this.loading);
     this.skipButton = button({
       right: '24px', bottom: 'max(calc(min(11vh, 6.2vw) + 22px), min(96px, 11.5vh))', padding: '8px 16px', borderRadius: '18px', display: 'none', zIndex: 1001,
       border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(12,13,16,0.55)', color: '#fff',
@@ -641,6 +659,12 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton]) b.style.display = on ? 'none' : b.style.display;
     // nor the flying ones (a phone's Exit, View …), the credit line, the restart button: back with setFlying
     if (on) for (const b of [...Object.values(this.buttons), this.credit, this.restartButton, this.startButton]) b.style.display = 'none';
+  }
+
+  /** The loading screen with its line ('Loading Innsbruck…'), or (null) gone. */
+  showLoading(text) {
+    if (text) this.loading.querySelector('[data-k="text"]').textContent = text;
+    this.loading.style.display = text ? 'flex' : 'none';
   }
 
   /** Black over the scene (0 none … 1 all), under the letterbox and the captions. */
@@ -716,6 +740,6 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this._menu.remove();
     for (const el of [this.stickZone, this.stickBase].filter(Boolean)) el.remove();
     for (const el of [this.panelCanvas, this.throttleGrip, ...this._lampButtons.values(), this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton, this.restartButton, this.startButton,
-      this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
+      this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.loading, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

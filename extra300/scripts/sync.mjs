@@ -12,7 +12,7 @@
 // What this repo owns in the space (everything else is left as the space has it):
 //   space/plugins/extra300-meigs.mjs        the built vibe (dist/)
 //   space/entities/extra300-meigs.json      the vibe's host entity + its params
-//   space/entities/spawn-runway36.json      where visitors appear: behind the airplane, facing north
+//   space/entities/spawn-runway36.json      where visitors appear, made only when the space has no spawn point
 //   room.json keys in MANAGED_ROOM_KEYS     hub hidden, far clip for the skyline
 //   space/plugins/flight-airport.mjs        the airport vibe, and the airplane vibe (flight-aircraft.mjs):
 //                                           small vibes the flight vibe lists (src/plugin/flightRegistry.js)
@@ -110,18 +110,13 @@ export function stage(spaceDir, cfg, pluginSrc, params, vibeSrcs = {}) {
   };
   writeJson(join(ents, `${cfg.entityId}.json`), host);
 
-  // the spawn point is the only default spawn: clear the flags on any others
-  for (const f of readdirSync(ents)) {
-    if (!f.endsWith('.json') || f === `${cfg.spawnId}.json`) continue;
-    const p = join(ents, f);
-    const e = JSON.parse(readFileSync(p, 'utf8'));
-    if (e.type === 'SpawnPoint' && (e.data?.isDefaultThirdPerson || e.data?.isDefaultFreeCam)) {
-      e.data.isDefaultThirdPerson = false;
-      e.data.isDefaultFreeCam = false;
-      writeJson(p, e);
-    }
-  }
-  writeJson(join(ents, `${cfg.spawnId}.json`), {
+  // the spawn point: made only in a space that has none; after that it is the space's (moved, turned,
+  // replaced in the browser, and a pull brings that back before we stage)
+  const spawns = readdirSync(ents).some((f) => {
+    if (!f.endsWith('.json')) return false;
+    try { return JSON.parse(readFileSync(join(ents, f), 'utf8')).type === 'SpawnPoint'; } catch { return false; }
+  });
+  if (!spawns) writeJson(join(ents, `${cfg.spawnId}.json`), {
     id: cfg.spawnId,
     type: 'SpawnPoint',
     data: {
