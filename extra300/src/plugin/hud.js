@@ -595,7 +595,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     this.introBottom = bar('bottom');
     this.introCard = document.createElement('div');
     css(this.introCard, {
-      position: 'fixed', left: '6vw', bottom: 'calc(11vh + 26px)', zIndex: 31, pointerEvents: 'none', display: 'none',
+      position: 'fixed', left: '6vw', bottom: 'max(calc(min(11vh, 6.2vw) + 26px), min(100px, 12vh))'   /* (upright: clear of the tile loading card) */, zIndex: 31, pointerEvents: 'none', display: 'none',
       color: '#fff', textShadow: '0 2px 14px rgba(0,0,0,0.65)', font: '15px/1.5 "Helvetica Neue", Arial, sans-serif',
       maxWidth: 'min(860px, 82vw)', transition: 'opacity 0.25s linear, transform 0.25s ease',
     });
@@ -608,7 +608,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     css(this.introFade, { position: 'fixed', inset: 0, background: '#000', zIndex: 29, pointerEvents: 'none', display: 'none', opacity: 0 });
     container.appendChild(this.introFade);
     this.skipButton = button({
-      right: '24px', bottom: 'calc(11vh + 22px)', padding: '8px 16px', borderRadius: '18px', display: 'none', zIndex: 1001,
+      right: '24px', bottom: 'max(calc(min(11vh, 6.2vw) + 22px), min(96px, 11.5vh))', padding: '8px 16px', borderRadius: '18px', display: 'none', zIndex: 1001,
       border: '1px solid rgba(255,255,255,0.35)', background: 'rgba(12,13,16,0.55)', color: '#fff',
       font: '600 13px "Helvetica Neue", Arial, sans-serif', letterSpacing: '0.04em',
     });
@@ -618,8 +618,8 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
   }
 
   showIntro(on) {
-    this.introTop.style.height = on ? '11vh' : '0';
-    this.introBottom.style.height = on ? '11vh' : '0';
+    this.introTop.style.height = on ? 'min(11vh, 6.2vw)' : '0';   // (cinema bars: as tall as the width makes them)
+    this.introBottom.style.height = on ? 'min(11vh, 6.2vw)' : '0';
     this.introCard.style.display = on ? 'block' : 'none';
     this.introProgress.style.display = on ? 'block' : 'none';
     this.skipButton.style.display = on ? 'block' : 'none';

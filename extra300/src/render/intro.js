@@ -135,6 +135,26 @@ export const INTROS = {
 };
 
 /**
+ * A shot's field of view (vertical, degrees) on a screen of this aspect (width / height): the shots are
+ * framed for a wide screen; on a narrower one (a phone upright) the view opens up and down until it is
+ * as wide as framed, so the airplane stays whole (to `max`).
+ */
+export function framedFov(fov, aspect, design = 16 / 9, max = 105) {
+  if (!(aspect > 0) || aspect >= design) return fov;
+  const half = Math.atan(Math.tan((fov * Math.PI) / 360) * (design / aspect));
+  return Math.min(max, (half * 360) / Math.PI);
+}
+
+/**
+ * How far (radians, down) a shot looks below its target on a screen this narrow: upright, the airplane
+ * sits higher in the frame, clear of the caption along the bottom. None on a wide screen.
+ */
+export function framedTilt(fov, aspect) {
+  const k = Math.max(0, Math.min(1, (1.2 - aspect) / 0.6));
+  return -Math.atan(0.24 * k * Math.tan((fov * Math.PI) / 360));
+}
+
+/**
  * The intro at time t (s): camera eye and target in body axes, field of view, which caption, and its
  * opacity (fading in at a shot's start and out at its end). Past the end, `done` is true.
  */

@@ -46,7 +46,7 @@ import { buildSkyDome } from '../render/sky.js';
 import { carveBox } from '../render/carve.js';
 import { buildWaterMasks, maskTransform } from './waterMask.js';
 import { WaterReflections } from './waterReflections.js';
-import { INTRO_LENGTH, introAt } from '../render/intro.js';
+import { INTRO_LENGTH, framedFov, framedTilt, introAt } from '../render/intro.js';
 
 const BOARD_DISTANCE = 9; // metres from the airplane (more for a bigger one)
 const MOBILE_THROTTLE = 0.75; // a phone pilot starts rolling at once
@@ -1173,7 +1173,7 @@ export class Extra300 extends ArrivalScript {
     this.ac.setEngineRunning(false);
     c.throttle = 0; c.parkingBrake = true; c.starter = false;
     this.mapper.throttle = 0;
-    this._setAvatarVisible(true);
+    this._setAvatarVisible(!this._loadIntro);
     this.visual.setCockpitView(false);
     this.hud.showIntro(true);
     if (this._filmMode) this.hud.skipButton.style.display = 'none';   // not in the recording
@@ -1196,11 +1196,12 @@ export class Extra300 extends ArrivalScript {
     this.hud.setIntroFade(this._loadIntro ? 1 - Math.max(0, Math.min(1, (it.t - 0.3) / 1.6)) : 0);
     // the last second flies into the pilot's seat: the pilot's own head goes, and the canopy
     const inside = !this._loadIntro && it.t > film.length - 1.2;
-    this._setAvatarVisible(!inside);
+    this._setAvatarVisible(!inside && !this._loadIntro);   // (at load the visitor, on foot, stays out of the film)
     this.visual.setCockpitView(inside);
     this.hud.setIntroCard(shot.card >= 0 ? this._introCard(film.cards[shot.card]) : null, shot.cardAlpha, Math.min(1, it.t / end));
     if (shot.done) { this._endIntro(); return null; }
-    return this.cameraRig.bodyPose(this.ac, shot.eye, shot.at, shot.fov, this.ac.cg);
+    const aspect = window.innerWidth / window.innerHeight, fov = framedFov(shot.fov, aspect);
+    return this.cameraRig.bodyPose(this.ac, shot.eye, shot.at, fov, this.ac.cg, framedTilt(fov, aspect));
   }
 
   /** A caption as it reads here: the place and runway the airplane stands on, not the film's own (Meigs, runway 36). */

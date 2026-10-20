@@ -2,7 +2,7 @@
 // and an engine that really starts in the first shot (the sim's own starter, not a fake).
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { INTRO_CARDS, INTRO_LENGTH, INTRO_SHOTS, INTRO_STARTER, INTROS, introAt } from '../src/render/intro.js';
+import { INTRO_CARDS, INTRO_LENGTH, INTRO_SHOTS, INTRO_STARTER, INTROS, introAt, framedFov, framedTilt } from '../src/render/intro.js';
 import { Aircraft } from '../src/sim/aircraft.js';
 import EXTRA from '../src/sim/aircraft/extra300l.js';
 import { buildMeigs } from '../src/world/meigs.js';
@@ -83,4 +83,22 @@ test('the first shot starts the engine with the starter: still, cranking, then r
   assert.ok(rpmBefore < 1, 'the prop stands still at first');
   assert.ok(ranAt != null && ranAt < INTRO_STARTER[1], `caught at ${ranAt}`);
   assert.ok(ac.rpm > 550 && ac.rpm < 1000, `idling at ${ac.rpm.toFixed(0)} rpm`);
+});
+
+test('framing: on a narrower screen the view opens up until it is as wide as framed (a phone upright)', () => {
+  const hfov = (v, a) => (2 * Math.atan(Math.tan((v * Math.PI) / 360) * a) * 180) / Math.PI;
+  assert.equal(framedFov(40, 16 / 9), 40);
+  assert.equal(framedFov(40, 2.4), 40);                                  // wider: as framed
+  assert.ok(Math.abs(hfov(framedFov(40, 4 / 3), 4 / 3) - hfov(40, 16 / 9)) < 1e-9);
+  const phone = framedFov(36, 390 / 844);
+  assert.ok(phone > 36 && phone <= 105);
+  assert.ok(hfov(phone, 390 / 844) > 0.8 * hfov(36, 16 / 9));          // nearly as wide as framed
+  assert.equal(framedFov(60, 0.3), 105);                                 // to the limit
+});
+
+test('framing: upright, the shot looks a little below its target (the airplane above the caption); wide, not at all', () => {
+  assert.equal(framedTilt(40, 16 / 9), -0);
+  assert.equal(framedTilt(40, 1.2), -0);
+  const t = framedTilt(100, 390 / 844);
+  assert.ok(t < -0.2 && t > -0.35, `${t}`);
 });
