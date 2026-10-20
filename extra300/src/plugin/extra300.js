@@ -29,6 +29,7 @@ import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftColliders } from './aircraftColliders.js';
 import { AircraftVisual } from './aircraftVisual.js';
 import { ParkedAircraft, sizeOf, standSpots } from './parkedAircraft.js';
+import { SeatPose } from './seatPose.js';
 import { AIRCRAFT_OPTIONS, PROFILES } from './profiles.js';
 import { aircraftBase, airportBase, flightRegistry, listed } from './flightRegistry.js';
 import { plainAircraft, tunedProfile } from './tuning.js';
@@ -1750,6 +1751,12 @@ export class Extra300 extends ArrivalScript {
 
   postUpdate() {
     if (this._flying) this._applyCamera();
+    // the seated pilot, after the animation: hands on the stick and the throttle, knees up (plugin/seatPose.js)
+    if (this._flying && !this._loadIntro) {
+      this._seatPose ??= new SeatPose();
+      const c = this.ac.controls;
+      this._seatPose.apply(ArrivalSpace.getPlayerMesh?.(), { x: c.aileron || 0, y: c.elevator || 0 });
+    }
   }
 
   _applyCamera() {
