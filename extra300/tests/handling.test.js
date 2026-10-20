@@ -78,12 +78,12 @@ for (const entry of [140, 160]) {
   });
 }
 
-test('keyboard with Shift still pulls through the buffet into a stall', () => {
+test('keyboard with Alt still pulls through the buffet into a stall', () => {
   const ac = level(110);
   const m = new ControlMapper(); m.throttle = ac.controls.throttle;
   let stall = 0;
   for (let i = 0; i < 180; i++) {
-    m.update({ keys: new Set(['ArrowDown', 'Shift']) }, 1 / 60, ac.controls, flight(ac));
+    m.update({ keys: new Set(['ArrowDown', 'Alt']) }, 1 / 60, ac.controls, flight(ac));
     ac.update(1 / 60);
     stall = Math.max(stall, ac.aero.wingStallFraction());
   }
@@ -120,7 +120,7 @@ const easyFlight = (ac) => ({
   ...flight(ac), rollRate: ac.state.omega[0], heading: ac.euler.psi, bank: ac.euler.phi, pitch: ac.euler.theta, loadFactor: ac.out.loadFactor,
 });
 const PULLS = [
-  ['Shift pull', { keys: new Set(['ArrowDown', 'Shift']) }],
+  ['Alt pull', { keys: new Set(['ArrowDown', 'Alt']) }],
   ['gamepad full back', { keys: new Set(), pad: { axes: [0, 1, 0, 0], buttons: [] } }],
   ['gamepad full back and rolling', { keys: new Set(), pad: { axes: [0.3, 1, 0, 0], buttons: [] } }],
   ['gamepad full forward', { keys: new Set(), pad: { axes: [0, -1, 0, 0], buttons: [] } }],

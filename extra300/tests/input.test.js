@@ -12,8 +12,8 @@ test('keyboard elevator ramps in while held and springs back when released', () 
   assert.ok(c.elevator > 0.25 && c.elevator < 0.6, `responds at once: ${c.elevator} after 0.1 s`);
   step(m, { keys: new Set(['ArrowDown']) }, 0.5, c);
   assert.ok(Math.abs(c.elevator - 0.75) < 1e-9, `held: ${c.elevator} (capped short of full travel)`);
-  step(m, { keys: new Set(['ArrowDown', 'Shift']) }, 0.5, c);
-  assert.equal(c.elevator, 1, 'Shift: full travel');
+  step(m, { keys: new Set(['ArrowDown', 'Alt']) }, 0.5, c);
+  assert.equal(c.elevator, 1, 'Alt: full travel');
   step(m, { keys: new Set() }, 0.5, c);
   assert.equal(c.elevator, 0);
 });

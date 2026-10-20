@@ -16,8 +16,8 @@ export const BINDINGS = {
   rollRight: ['ArrowRight', 'd'],
   yawLeft: ['q', 'z'],
   yawRight: ['e', 'x'],
-  throttleUp: ['r', 'PageUp', '=', '+'],
-  throttleDown: ['f', 'PageDown', '-'],
+  throttleUp: ['r', 'PageUp', '=', '+', 'Shift'],
+  throttleDown: ['f', 'PageDown', '-', 'Control'],
   throttleFull: ['End'],
   throttleIdle: ['Home'],
   propUp: [']'],
@@ -27,6 +27,7 @@ export const BINDINGS = {
   brakes: ['.', 'b'],
   starter: ['k'],
   fire: [' '],      // the X-wing's lasers (held)
+  boost: ['Alt'],   // held with a stick key: pull (push, roll) twice as hard, through the buffet
 };
 // one-shot actions handled by the plugin
 export const ACTIONS = {
@@ -41,7 +42,7 @@ export const ACTIONS = {
  * control surface grows with dynamic pressure, so the same pull moves the
  * stick less the faster you go: full key ≈ 5 g at 170 kt, most of the
  * travel at 70 kt, all of it on the ground. deflection = force / (c·q + k0),
- * c and k0 fitted to those two points per axis. Shift pulls twice as hard.
+ * c and k0 fitted to those two points per axis. Alt (boost) pulls twice as hard.
  */
 export const KEY_AUTHORITY = {
   elevator: { c: 0.000686, k0: 0.63 },
@@ -54,7 +55,7 @@ const EASE_PER_RAD = 16;   // stick eased off per radian past the buffet [tune] 
 
 /**
  * Easy mode: the elevator is never allowed to take the wing past the stall
- * (or past 7 g), from any input (Shift, pad, yoke), either way up; and the
+ * (or past 7 g), from any input (Alt, pad, yoke), either way up; and the
  * torque is handled for you: rudder against the yaw in the air, the runway
  * heading held on the ground, and the bank held where you leave it.
  */
@@ -74,7 +75,7 @@ export const EASY = {
   holdSpeedKt: [50, 95],            // the pitch hold: 8° nose-down at the first speed, up to 25° nose-up by the second
 };
 
-/** How much of its travel a held key may use without Shift. */
+/** How much of its travel a held key may use without Alt. */
 export const KEY_CAP = { elevator: 0.75, aileron: 0.5, rudder: 0.65 };
 const BANK_HOLD_Q = 700;
 const TRIM_Q = 700;        // Pa: the auto trim at full gain up to here (the same scaling as the bank hold)
@@ -179,13 +180,13 @@ export class ControlMapper {
     this.kb.rudder = ramp(this.kb.rudder, (P('yawRight') ? 1 : 0) - (P('yawLeft') ? 1 : 0));
 
     const q = flight.qbar ?? 0;
-    const boost = k.has('Shift') ? 2 : 1;
+    const boost = P('boost') ? 2 : 1;
     // responsive but not slammed: the stick moves at once (steepest at the start of the press) and a
-    // held key stops short of full travel; Shift takes the cap off
+    // held key stops short of full travel; Alt takes the cap off
     const soft = (h, cap) => Math.sign(h) * Math.pow(Math.abs(h), 0.6) * (boost > 1 ? 1 : cap);
     let ail = soft(this.kb.aileron, this.keyCap.aileron) * keyAuthority('aileron', q, boost, this.keyTable);
     let ele = soft(this.kb.elevator, this.keyCap.elevator) * keyAuthority('elevator', q, boost, this.keyTable);
-    // the keyboard pilot holds the pull at the buffet instead of pulling through it (Shift: through)
+    // the keyboard pilot holds the pull at the buffet instead of pulling through it (Alt: through)
     const alpha = flight.alpha ?? 0;
     if (boost === 1 && q > 150 && !this.easy) {   // easy mode has its own, closer limit
       const ba = this.buffetAlpha;
@@ -300,7 +301,7 @@ export class ControlMapper {
 
   /**
    * Easy mode's α-limiter. Within 3° of the limit an integrator starts from the stick and learns the
-   * elevator that holds α there; whatever asks for more (key, Shift, pad) gets that instead.
+   * elevator that holds α there; whatever asks for more (key, Alt, pad) gets that instead.
    * Mirrored for pushing.
    */
   _limitAlpha(ele, flight, dt) {

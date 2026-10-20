@@ -219,7 +219,10 @@ export class Extra300 extends ArrivalScript {
 
     // input
     this._onKeyDown = (e) => this._keyDown(e);
-    this._onKeyUp = (e) => this._keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+    this._onKeyUp = (e) => {
+      this._keys.delete(e.key.length === 1 ? e.key.toLowerCase() : e.key);
+      if (this._flying && e.key === 'Alt') e.preventDefault();   // (no browser menu on Alt's release)
+    };
     this._onBlur = () => this._keys.clear();
     this._onResize = () => this.hud.layout();
     window.addEventListener('keydown', this._onKeyDown, true);
@@ -1496,6 +1499,9 @@ export class Extra300 extends ArrivalScript {
     }
     this._keys.add(key);
     if (key.startsWith('Arrow') || key.startsWith('Page') || key === ' ' || key === 'Home' || key === 'End' || key === 'Backspace') e.preventDefault();
+    // Ctrl (throttle) and Alt (pull harder) held: the browser's shortcuts and menu kept out where it lets us
+    // (Ctrl+W, Ctrl+T, Ctrl+N it doesn't)
+    if (e.ctrlKey || e.altKey || key === 'Alt' || key === 'Control') e.preventDefault();
     e.stopPropagation();
   }
 
