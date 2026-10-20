@@ -9,10 +9,12 @@ import { pointInPolygon } from '../world/geo.js';
 
 const EDGE = 12;   // m between the runway's edge and a wingtip
 const FAR_SPANS = 150;   // drawn out to this many wingspans away
+const SHADOW = 0.62;     // the shadow's darkness right under the airplane (0 none … 1 black)
 
 /**
  * A parked airplane, posed once, made into one mesh per material (its ~70 parts were as many draw
  * calls): every part drawn now, in place under `root`, merged by the material it has; the parts go.
+ * They cast no shadow of their own (shadowDecal lays one under each). The merged meshes' data, root-local.
  */
 export function bakeStatic(app, root, parts) {
   // switched on itself, up to the root (the world may still be hidden as a whole, at load)
@@ -35,7 +37,7 @@ export function bakeStatic(app, root, parts) {
   }
   for (const c of [...root.children]) c.destroy();
   for (const mesh of old) mesh.destroy?.();
-  const v = new pc.Vec3(), w = new pc.Vec3();
+  const v = new pc.Vec3(), w = new pc.Vec3(), out = [];
   for (const g of groups.values()) {
     let nv = 0, ni = 0;
     for (const { mb } of g.pieces) { nv += mb.vertexCount; ni += mb.indices.length; }
@@ -58,9 +60,94 @@ export function bakeStatic(app, root, parts) {
     mesh.setPositions(pos); mesh.setNormals(nor); mesh.setUvs(0, uv); mesh.setColors32(col); mesh.setIndices(idx);
     mesh.update(pc.PRIMITIVE_TRIANGLES);
     const e = new pc.Entity('parkedMerged');
-    e.addComponent('render', { meshInstances: [new pc.MeshInstance(mesh, g.material)], castShadows: g.cast, receiveShadows: g.receive });
+    e.addComponent('render', { meshInstances: [new pc.MeshInstance(mesh, g.material)], castShadows: false, receiveShadows: g.receive });
     root.addChild(e);
+    if (g.cast) out.push({ pos, idx });   // (what would have cast: not the glows)
   }
+  return out;
+}
+
+/**
+ * A shadow made once for a parked airplane: its outline seen from straight above, darkest where it is
+ * nearest the ground (the gear, the belly, a low wing), softened, on a quad just over the ground under it.
+ * One draw call, and nothing in the sun's shadow map. `meshes`: bakeStatic's, root-local.
+ */
+export function shadowDecal(app, parent, root, meshes, span) {
+  const L = root.getLocalTransform(), v = new pc.Vec3(), w = new pc.Vec3();
+  // into the parent's frame (metres, y up): x, z and the height of each vertex
+  const pts = meshes.map(({ pos }) => {
+    const q = new Float32Array(pos.length);
+    for (let k = 0; k < pos.length; k += 3) { v.set(pos[k], pos[k + 1], pos[k + 2]); L.transformPoint(v, w); q[k] = w.x; q[k + 1] = w.y; q[k + 2] = w.z; }
+    return q;
+  });
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity, y0 = Infinity;
+  for (const q of pts) for (let k = 0; k < q.length; k += 3) {
+    x0 = Math.min(x0, q[k]); x1 = Math.max(x1, q[k]); z0 = Math.min(z0, q[k + 2]); z1 = Math.max(z1, q[k + 2]); y0 = Math.min(y0, q[k + 1]);
+  }
+  const pad = 0.12 * span, size = Math.max(x1 - x0, z1 - z0) + 2 * pad, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
+  const N = span > 30 ? 256 : 128, px = N / size;
+  // drawn in greys, the nearer the ground the lighter; 'lighten' keeps the nearest of overlapping parts
+  const cv = document.createElement('canvas');
+  cv.width = cv.height = N;
+  const ctx = cv.getContext('2d');
+  ctx.globalCompositeOperation = 'lighten';
+  const H = Math.max(1.5, 0.35 * span);   // over this height above the ground a part shades only faintly
+  meshes.forEach(({ idx }, m) => {
+    const q = pts[m];
+    for (let t = 0; t + 2 < idx.length; t += 3) {
+      const a = idx[t] * 3, b = idx[t + 1] * 3, c = idx[t + 2] * 3;
+      const h = (q[a + 1] + q[b + 1] + q[c + 1]) / 3 - y0;
+      const g = Math.round(255 * Math.max(0.35, 1 - h / H));
+      ctx.fillStyle = `rgb(${g},${g},${g})`;
+      ctx.beginPath();
+      ctx.moveTo((q[a] - cx) * px + N / 2, (q[a + 2] - cz) * px + N / 2);
+      ctx.lineTo((q[b] - cx) * px + N / 2, (q[b + 2] - cz) * px + N / 2);
+      ctx.lineTo((q[c] - cx) * px + N / 2, (q[c + 2] - cz) * px + N / 2);
+      ctx.closePath(); ctx.fill();
+    }
+  });
+  // softened: three box blurs (near a gaussian), ~4 % of the span
+  let A = new Float32Array(N * N);
+  const img = ctx.getImageData(0, 0, N, N).data;
+  for (let i = 0; i < N * N; i++) A[i] = img[i * 4] / 255;
+  const r = Math.max(1, Math.round(0.04 * span * px));
+  const blur = (src, dx, dy) => {
+    const dst = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+      let sum = 0, n = 0;
+      for (let k = -r; k <= r; k++) { const xx = x + k * dx, yy = y + k * dy; if (xx >= 0 && xx < N && yy >= 0 && yy < N) { sum += src[yy * N + xx]; n++; } }
+      dst[y * N + x] = sum / n;
+    }
+    return dst;
+  };
+  for (let k = 0; k < 3; k++) A = blur(blur(A, 1, 0), 0, 1);
+  const data = new Uint8Array(N * N * 4);
+  for (let i = 0; i < N * N; i++) data[i * 4 + 3] = Math.round(255 * SHADOW * A[i]);
+  const tex = new pc.Texture(app.graphicsDevice, { width: N, height: N, format: pc.PIXELFORMAT_RGBA8, mipmaps: true, addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE, name: 'parkedShadow' });
+  tex.lock().set(data);
+  tex.unlock();
+  const mat = new pc.StandardMaterial();
+  mat.diffuse = new pc.Color(0, 0, 0);
+  mat.useLighting = false;
+  mat.useSkybox = false;
+  mat.opacityMap = tex;
+  mat.opacityMapChannel = 'a';
+  mat.blendType = pc.BLEND_NORMAL;
+  mat.depthWrite = false;
+  mat.cull = pc.CULLFACE_NONE;
+  mat.update();
+  // the quad: just over the ground the wheels stand on (the canvas's y is the parent's z)
+  const y = y0 + 0.06, h = size / 2;
+  const mesh = new pc.Mesh(app.graphicsDevice);
+  mesh.setPositions(new Float32Array([cx - h, y, cz - h, cx + h, y, cz - h, cx + h, y, cz + h, cx - h, y, cz + h]));
+  mesh.setNormals(new Float32Array([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0]));
+  mesh.setUvs(0, new Float32Array([0, 0, 1, 0, 1, 1, 0, 1]));   // (v down the canvas's rows: +z)
+  mesh.setIndices(new Uint16Array([0, 2, 1, 0, 3, 2]));
+  mesh.update(pc.PRIMITIVE_TRIANGLES);
+  const e = new pc.Entity('parkedShadow');
+  e.addComponent('render', { meshInstances: [new pc.MeshInstance(mesh, mat)], castShadows: false, receiveShadows: false });
+  parent.addChild(e);
+  return { entity: e, dispose: () => { e.destroy(); mesh.destroy(); mat.destroy(); tex.destroy(); } };
 }
 
 /**
@@ -178,11 +265,12 @@ export class ParkedAircraft {
       const parts = it.profile.buildModel();
       const visual = new AircraftVisual(this.app, this.parent, parts, `Parked ${it.profile.title}`);
       visual.update(ac, 0);
-      bakeStatic(this.app, visual.root, parts);   // a draw call per material, not per part
+      const meshes = bakeStatic(this.app, visual.root, parts);   // a draw call per material, not per part
+      const shadow = shadowDecal(this.app, this.parent, visual.root, meshes, spec.wing.span);
       const colliders = new AircraftColliders(this.app, visual.root, parts, this.ws);
       colliders.enabled = true;
       const unsub = onClick ? ArrivalSpace.onEntityClick?.(visual.root, () => onClick(it.entryId)) : null;
-      this.items.push({ ...it, visual, colliders, unsub, span: spec.wing.span, length: sizeOf(it.profile).length, root: visual.root });
+      this.items.push({ ...it, visual, colliders, unsub, shadow, span: spec.wing.span, length: sizeOf(it.profile).length, root: visual.root });
     });
   }
 
@@ -205,17 +293,18 @@ export class ParkedAircraft {
       it.colliders.tick();
       if (!camPos) continue;
       const show = camPos.distance(it.root.getPosition()) < FAR_SPANS * it.span * this.ws;
-      if (it.drawn !== show) { it.drawn = show; for (const r of it.root.findComponents('render')) r.enabled = show; }
+      if (it.drawn !== show) { it.drawn = show; for (const r of it.root.findComponents('render')) r.enabled = show; it.shadow.entity.enabled = show; }
     }
   }
 
-  /** Their roots (they keep their shadows: plugin/extra300.js _publishShadows). */
+  /** Their roots. */
   get roots() { return this.items.map((it) => it.root); }
 
   clear() {
     for (const it of this.items) {
       if (typeof it.unsub === 'function') it.unsub();
       it.colliders.destroy();
+      it.shadow.dispose();
       for (const r of it.root.findComponents('render')) for (const mi of r.meshInstances) mi.mesh.destroy?.();
       it.visual.destroy();
     }
