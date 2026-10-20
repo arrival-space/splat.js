@@ -3,7 +3,7 @@
 
 const css = (el, s) => Object.assign(el.style, s);
 const FONT = "'Helvetica Neue', Arial, sans-serif";   // single quotes: it goes inside style="…" too
-const ACCENT = '#c41e2a';
+const ACCENT = '#3fc5cc';
 
 export class StartMenu {
   /**
@@ -26,7 +26,7 @@ export class StartMenu {
       boxShadow: '0 12px 40px rgba(0,0,0,0.45)', backdropFilter: 'blur(8px)', pointerEvents: 'auto',
     });
     const head = document.createElement('div');
-    head.innerHTML = `<div style="font:700 12px ${FONT};letter-spacing:0.22em;text-transform:uppercase;color:#ff5a64">Flight</div>`
+    head.innerHTML = `<div style="font:700 12px ${FONT};letter-spacing:0.22em;text-transform:uppercase;color:#6fdcdc">Flight</div>`
       + `<div style="font:700 ${narrow ? 20 : 24}px ${FONT};margin:4px 0 2px">Where, and in what?</div>`
       + '<div style="opacity:0.65;font-size:13px">Pick an airport and an airplane: the flight starts with the second.</div>';
     this.root.appendChild(head);
@@ -34,7 +34,7 @@ export class StartMenu {
     this._group('Airport', 'place', places, narrow);
     this._group('Airplane', 'aircraft', aircraft, narrow);
     this.status = document.createElement('div');
-    css(this.status, { marginTop: '12px', minHeight: '16px', font: `600 13px ${FONT}`, color: '#ff8a90' });
+    css(this.status, { marginTop: '12px', minHeight: '16px', font: `600 13px ${FONT}`, color: '#7fe3e0' });
     this.root.appendChild(this.status);
     this._refresh();
   }
@@ -74,7 +74,7 @@ export class StartMenu {
     for (const key of ['place', 'aircraft']) {
       for (const [id, b] of this.cards[key]) {
         const on = this.choice[key] === id;
-        b.style.background = on ? 'rgba(196,30,42,0.32)' : 'rgba(255,255,255,0.06)';
+        b.style.background = on ? 'rgba(63,197,204,0.28)' : 'rgba(255,255,255,0.06)';
         b.style.borderColor = on ? ACCENT : 'rgba(255,255,255,0.16)';
       }
     }

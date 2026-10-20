@@ -133,7 +133,7 @@ export class Hud {
     this.restartButton.innerHTML = '↺ Restart on the runway';
     this.restartButton.title = 'Back on the runway, engine off (Backspace)';
     // just aboard, the throttle still closed: the engine started and the throttle opened in one press
-    this.startButton = button({ ...pill, width: '170px', left: 'calc(50% - 85px)', top: '54px', background: 'rgba(32,140,72,0.9)', border: '1px solid rgba(255,255,255,0.35)' });
+    this.startButton = button({ ...pill, width: '170px', left: 'calc(50% - 85px)', top: '54px', background: 'rgba(32,150,160,0.92)', border: '1px solid rgba(255,255,255,0.35)' });
     this.startButton.innerHTML = '▶ Start engine';
     this.startButton.title = 'Engine on, throttle up (or drag the throttle lever, R / +)';
     // the weather: sliders in a dropdown (setSliders)
@@ -298,14 +298,14 @@ export class Hud {
       const st = document.createElement('style');
       st.id = 'extra300-range';
       const track = 'height:4px;border-radius:2px;background:rgba(255,255,255,0.22);border:none';
-      const thumb = 'width:16px;height:16px;border-radius:50%;background:#c41e2a;border:2px solid #f4f2ec;box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:pointer';
+      const thumb = 'width:16px;height:16px;border-radius:50%;background:#3fc5cc;border:2px solid #f4f2ec;box-shadow:0 1px 4px rgba(0,0,0,0.5);cursor:pointer';
       st.textContent = `
 input.extra300-range{-webkit-appearance:none;appearance:none;width:100%;height:18px;margin:0;background:transparent;cursor:pointer}
 input.extra300-range:focus{outline:none}
 input.extra300-range::-webkit-slider-runnable-track{${track}}
 input.extra300-range::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;margin-top:-6px;${thumb}}
 input.extra300-range::-moz-range-track{${track}}
-input.extra300-range::-moz-range-progress{height:4px;border-radius:2px;background:#c41e2a}
+input.extra300-range::-moz-range-progress{height:4px;border-radius:2px;background:#3fc5cc}
 input.extra300-range::-moz-range-thumb{${thumb}}`;
       document.head.appendChild(st);
     }
@@ -316,7 +316,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
       Object.assign(head.style, { display: 'flex', justifyContent: 'space-between', marginBottom: '4px' });
       const name = document.createElement('span'), val = document.createElement('span');
       name.textContent = f.label;
-      Object.assign(val.style, { color: '#ff8a90', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', marginLeft: '12px' });
+      Object.assign(val.style, { color: '#7fe3e0', fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap', marginLeft: '12px' });
       head.append(name, val);
       const input = document.createElement('input');
       Object.assign(input, { type: 'range', min: f.min, max: f.max, step: f.step });
@@ -325,7 +325,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
       // the filled part, left of the thumb (Chrome and Safari have no part for it: a gradient behind)
       const fill = () => {
         const pct = ((Number(input.value) - f.min) / (f.max - f.min)) * 100;
-        input.style.background = `linear-gradient(to right, #c41e2a ${pct}%, transparent ${pct}%) center / 100% 4px no-repeat`;
+        input.style.background = `linear-gradient(to right, #3fc5cc ${pct}%, transparent ${pct}%) center / 100% 4px no-repeat`;
       };
       fill();
       val.textContent = f.format(Number(input.value));
@@ -354,10 +354,10 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     for (const it of typeof m.items === 'function' ? m.items() : m.items) {
       const row = document.createElement('div');
       const on = it.id === now;
-      row.innerHTML = `<span style="display:inline-block;width:18px;color:#ff5a64">${on ? '✓' : ''}</span>${it.title}`;
+      row.innerHTML = `<span style="display:inline-block;width:18px;color:#6fdcdc">${on ? '✓' : ''}</span>${it.title}`;
       Object.assign(row.style, {
         padding: '8px 12px 8px 8px', borderRadius: '8px', cursor: 'pointer', whiteSpace: 'nowrap',
-        background: on ? 'rgba(196,30,42,0.28)' : 'transparent',
+        background: on ? 'rgba(63,197,204,0.24)' : 'transparent',
       });
       row.onpointerenter = () => { if (!on) row.style.background = 'rgba(255,255,255,0.08)'; };
       row.onpointerleave = () => { if (!on) row.style.background = 'transparent'; };
@@ -454,7 +454,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
       + p.help.map(([a, b]) => `<div><span style="display:inline-block;width:92px;color:#9d9a92">${a}</span>${b.replace(/ {2,}/g, ' <span style="color:#6f6c66">·</span> ')}</div>`).join('')
       + `<div style="margin-top:8px;color:#9d9a92">H or Controls hides this card.</div>`
       + `<div style="margin-top:4px;color:#9d9a92;font-size:11px">${CREDIT}</div>`;
-    this.quick.innerHTML = `<div style="font:700 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.12em;text-transform:uppercase;color:#e0505a;margin-bottom:4px">Take off · ${p.title}</div>`
+    this.quick.innerHTML = `<div style="font:700 11px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.12em;text-transform:uppercase;color:#6fdcdc;margin-bottom:4px">Take off · ${p.title}</div>`
       + (isMobile ? p.quickMobile : p.quick).map((t) => `<div>${t}</div>`).join('')
       + (isMobile ? `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Easy mode is on: ${p.easyOn.replace(/^Easy mode: /, '')}</div>`
         : `<div style="margin-top:6px;color:#9d9a92;font-size:12px">Everything else: <b>Controls</b> (or H)</div>`);
@@ -585,7 +585,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
   setEasy(on) {
     this._easy = on;
     const knob = `<span style="display:inline-block;vertical-align:-3px;width:28px;height:16px;border-radius:8px;margin-right:8px;`
-      + `background:${on ? '#2fa35a' : 'rgba(255,255,255,0.25)'};position:relative">`
+      + `background:${on ? '#3fc5cc' : 'rgba(255,255,255,0.25)'};position:relative">`
       + `<span style="position:absolute;top:2px;left:${on ? 14 : 2}px;width:12px;height:12px;border-radius:6px;background:#fff"></span></span>`;
     this.easyButton.innerHTML = `${knob}Easy mode`;
     this.easyButton.title = on
@@ -612,7 +612,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     });
     container.appendChild(this.introCard);
     this.introProgress = document.createElement('div');
-    css(this.introProgress, { position: 'fixed', left: 0, bottom: 0, height: '3px', width: '0', background: '#c41e2a', zIndex: 32, pointerEvents: 'none', display: 'none' });
+    css(this.introProgress, { position: 'fixed', left: 0, bottom: 0, height: '3px', width: '0', background: '#3fc5cc', zIndex: 32, pointerEvents: 'none', display: 'none' });
     container.appendChild(this.introProgress);
     // the film at load opens out of black
     this.introFade = document.createElement('div');
@@ -625,10 +625,10 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
       flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px',
       color: '#f1efe8', font: '15px/1.4 "Helvetica Neue", Arial, sans-serif', transition: 'opacity 0.4s linear',
     });
-    this.loading.innerHTML = '<div style="color:#e2483a;font:700 12px Arial;letter-spacing:0.28em">FLIGHT SIMULATOR</div>'
+    this.loading.innerHTML = '<div style="color:#6fdcdc;font:700 12px Arial;letter-spacing:0.28em">FLIGHT SIMULATOR</div>'
       + '<div data-k="text" style="font-size:22px;font-weight:600;letter-spacing:0.01em"></div>'
       + '<div style="width:180px;height:3px;background:rgba(255,255,255,0.14);overflow:hidden;border-radius:2px">'
-      + '<div style="width:35%;height:100%;background:#e2483a;animation:extra300-load 1.3s ease-in-out infinite"></div></div>';
+      + '<div style="width:35%;height:100%;background:#6fdcdc;animation:extra300-load 1.3s ease-in-out infinite"></div></div>';
     if (!document.getElementById('extra300-load-style')) {
       const st = document.createElement('style');
       st.id = 'extra300-load-style';
@@ -679,7 +679,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     if (!card) { this.introCard.style.opacity = '0'; return; }
     if (this._introCardShown !== card) {
       this._introCardShown = card;
-      this.introCard.innerHTML = `<div style="font:700 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.22em;text-transform:uppercase;color:#ff5a64;margin-bottom:6px">${card.kicker}</div>`
+      this.introCard.innerHTML = `<div style="font:700 12px 'Helvetica Neue',Arial,sans-serif;letter-spacing:0.22em;text-transform:uppercase;color:#6fdcdc;margin-bottom:6px">${card.kicker}</div>`
         + `<div style="font:800 clamp(26px,4.2vw,54px)/1.05 'Helvetica Neue',Arial,sans-serif;letter-spacing:-0.01em;margin-bottom:10px;white-space:nowrap">${card.title}</div>`
         + card.lines.map((l) => `<div style="opacity:0.92">${l}</div>`).join('');
     }
@@ -731,7 +731,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     const on = show ?? this.help.style.display === 'none';
     this.help.style.display = on ? 'block' : 'none';
     if (on) this.quick.style.display = 'none';
-    this.controlsButton.style.background = on ? 'rgba(196,30,42,0.85)' : 'rgba(12,13,16,0.66)';
+    this.controlsButton.style.background = on ? 'rgba(32,150,160,0.88)' : 'rgba(12,13,16,0.66)';
   }
 
   destroy() {
