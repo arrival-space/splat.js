@@ -123,3 +123,14 @@ test('parked row on the apron: fuselage and gear on it, the small ones nose to t
   const s2 = apronSpots(start, planes, [sq]);
   assert.ok(s2[0] && s2[1] && s2[2] === null);
 });
+
+test('stands: the smallest first, each on the first free stand wide enough, nose to the runway; none left: null', async () => {
+  const { standSpots } = await import('../src/plugin/parkedAircraft.js');
+  const start = { n: 0, e: 0, heading: 1.5 * Math.PI };   // west: left is south
+  const stands = [{ along: -18, left: 42, span: 12 }, { along: -45, left: 44, span: 20 }];
+  const s = standSpots(start, [{ span: 8 }, { span: 13 }, { span: 65 }], stands);
+  assert.ok(Math.abs(s[0].n + 42) < 1e-9 && Math.abs(s[0].e - 18) < 1e-9);   // 42 m south, 18 m back (east)
+  assert.ok(Math.abs(s[1].n + 44) < 1e-9 && Math.abs(s[1].e - 45) < 1e-9);
+  assert.equal(s[2], null);
+  assert.ok(Math.abs(Math.cos(s[0].heading)) > 0.999 && Math.cos(s[0].heading) > 0);   // facing north, to the runway
+});

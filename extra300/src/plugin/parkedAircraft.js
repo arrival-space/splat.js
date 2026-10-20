@@ -128,6 +128,22 @@ export function apronSpots(start, planes, aprons, margin = 4) {
   });
 }
 
+/**
+ * Where the row stands at an airport that names its stands (`{ along, left, span }`, metres from the start:
+ * along the runway and to its left): each airplane, smallest first, on the first free stand wide enough,
+ * nose toward the runway. Null for one with no stand left.
+ */
+export function standSpots(start, planes, stands) {
+  const f = [Math.cos(start.heading), Math.sin(start.heading)], left = [Math.sin(start.heading), -Math.cos(start.heading)];
+  const free = stands.map((s, i) => ({ ...s, i })).sort((a, b) => a.span - b.span);
+  return planes.map((p) => {
+    const k = free.findIndex((s) => s.span >= p.span);
+    if (k < 0) return null;
+    const [s] = free.splice(k, 1);
+    return { n: start.n + f[0] * s.along + left[0] * s.left, e: start.e + f[1] * s.along + left[1] * s.left, heading: start.heading + Math.sign(s.left || 1) * Math.PI / 2 };
+  });
+}
+
 /** An airplane's size for the row: its span, its length (from its chase camera's size: the Extra's ~7 m is 1). */
 export const sizeOf = (profile) => ({ span: profile.spec.wing.span, length: Math.max(7, 9.5 * (profile.chaseSize || 1)) });
 

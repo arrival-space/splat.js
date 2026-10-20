@@ -48,6 +48,14 @@ export const INNSBRUCK = {
   tower: { at: [47.2583, 11.3476], h: 32 },
   start: 'high',
   style: 'lowi',
+  // where the other airplanes park (plugin/parkedAircraft.js): metres from the start on 26, along the runway
+  // and to its left (south), for wingspans up to `span`. The small ones on the concrete pad beside the
+  // threshold (from Google's imagery: ~27–62 m left, ~95 m back to ~50 m ahead), the big one on the apron.
+  stands: [
+    { along: -18, left: 42, span: 12 },
+    { along: -45, left: 44, span: 20 },
+    { along: -75, left: 44, span: 20 },
+  ],
   get layout() { return LOWI_LAYOUT; },
 };
 
