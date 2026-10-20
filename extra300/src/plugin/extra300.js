@@ -790,15 +790,19 @@ export class Extra300 extends ArrivalScript {
   _publishFlatten() {
     const id = `extra300-flatten-${this.entity.getGuid()}`;
     if (this._dest === 'meigs' || !this._worldRoot) { this.app.fire('googletiles:flatten-region-clear', id); return; }
-    if (!this._flatMasks[this._dest]) {
-      const m = this.world.flattenMask();
+    // the runway and taxiways levelled, and a disc under each parked airplane (the aprons as photographed)
+    const discs = (this._parked?.items || []).map((it) => [it.n, it.e, Math.max(it.span, it.length) / 2 + 2]);
+    const key = `${this._dest}|${discs.map((d) => d.map((v) => v.toFixed(1)).join(',')).join(';')}`;
+    if (this._flatMasks[this._dest]?.key !== key) {
+      this._flatMasks[this._dest]?.texture.destroy();
+      const m = this.world.flattenMask(discs);
       const tex = new pc.Texture(this.app.graphicsDevice, {
         width: m.width, height: m.height, format: pc.PIXELFORMAT_R8, mipmaps: false,
         minFilter: pc.FILTER_LINEAR, magFilter: pc.FILTER_LINEAR, addressU: pc.ADDRESS_CLAMP_TO_EDGE, addressV: pc.ADDRESS_CLAMP_TO_EDGE,
       });
       tex.lock().set(m.data);
       tex.unlock();
-      this._flatMasks[this._dest] = { texture: tex, box: m.box };
+      this._flatMasks[this._dest] = { texture: tex, box: m.box, key };
     }
     const flat = this._flatMasks[this._dest];
     const root = this._worldRoot.getWorldTransform();
@@ -904,7 +908,7 @@ export class Extra300 extends ArrivalScript {
   _parkedSync() {
     this._parked ??= new ParkedAircraft(this.app, this._worldRoot, this._ws);
     const dest = this._dest;
-    if (!this.world || !dest || dest.startsWith('af:')) { this._parked.clear(); return; }
+    if (!this.world || !dest || dest.startsWith('af:')) { this._parked.clear(); this._publishFlatten(); return; }
     const o = this._worldRoot.getPosition(), ws = this._ws;
     const placed = [], stood = [];
     for (const e of this._planeEntries()) {
@@ -921,6 +925,7 @@ export class Extra300 extends ArrivalScript {
     const spots = standSpots(start, stood.map((it) => sizeOf(it.profile)), this.world.data?.stands || []);
     const list = [...placed, ...stood.map((it, i) => ({ ...it, spot: spots[i] })).filter((it) => it.spot)];
     this._parked.set(list.map(({ entryId, profile }) => ({ entryId, profile })), list.map((it) => it.spot), this.world, (id) => this._flyParked(id));
+    this._publishFlatten();   // (the ground levelled under them)
   }
 
   /** A parked airplane chosen: out onto the runway in its place, the visitor aboard. */

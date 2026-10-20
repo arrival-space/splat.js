@@ -40,6 +40,16 @@ test('flatten mask: full on the runway, nothing far from the pavement', () => {
   assert.equal(at(-w.runway.dir[1] * 120, w.runway.dir[0] * 120 + 300), 0);
 });
 
+test('flatten mask: the aprons as photographed (their hangars), but levelled under a parked airplane', () => {
+  // the main apron's open front, where the 777 stands by default (INNSBRUCK.stands)
+  const s = w.startPosition(), f = [Math.cos(s.heading), Math.sin(s.heading)], l = [Math.sin(s.heading), -Math.cos(s.heading)];
+  const n = s.n + f[0] * 560 + l[0] * 283, e = s.e + f[1] * 560 + l[1] * 283;
+  assert.ok(w.isPaved(n, e), 'on the apron');
+  const read = (m) => m.data[Math.floor((n - m.box.n[0]) / 2.5) * m.width + Math.floor((e - m.box.e[0]) / 2.5)];
+  assert.equal(read(w.flattenMask()), 0);
+  assert.equal(read(w.flattenMask([[n, e, 38]])), 255);
+});
+
 test('start: on runway 26 heading west, and 08 the other way; an airplane settles onto it', () => {
   const s = w.startPosition(), s8 = w.startPosition(true);
   assert.ok(Math.abs((((s.heading * 180) / Math.PI) % 360) - 261) < 2);

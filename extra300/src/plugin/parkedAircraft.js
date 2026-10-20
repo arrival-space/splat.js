@@ -270,7 +270,7 @@ export class ParkedAircraft {
       const colliders = new AircraftColliders(this.app, visual.root, parts, this.ws);
       colliders.enabled = true;
       const unsub = onClick ? ArrivalSpace.onEntityClick?.(visual.root, () => onClick(it.entryId)) : null;
-      this.items.push({ ...it, visual, colliders, unsub, shadow, span: spec.wing.span, length: sizeOf(it.profile).length, root: visual.root });
+      this.items.push({ ...it, visual, colliders, unsub, shadow, n, e, span: spec.wing.span, length: sizeOf(it.profile).length, root: visual.root });
     });
   }
 

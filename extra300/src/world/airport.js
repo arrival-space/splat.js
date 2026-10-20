@@ -138,6 +138,7 @@ export function buildAirport(data, osm, dem = null) {
   n0 -= M; n1 += M; e0 -= M; e1 += M;
   const W = Math.ceil((e1 - e0) / CELL), H = Math.ceil((n1 - n0) / CELL);
   const paved = new Uint8Array(W * H), inside = new Uint8Array(W * H);
+  const lanes = new Uint8Array(W * H);   // the runway and taxiways only (not the aprons): what Google's tiles are levelled on
   const cellNE = (x, y) => [n0 + (y + 0.5) * CELL, e0 + (x + 0.5) * CELL];
   for (const [a, b, hw] of strips) {
     const dn = b[0] - a[0], de = b[1] - a[1], L2 = dn * dn + de * de || 1;
@@ -146,7 +147,7 @@ export function buildAirport(data, osm, dem = null) {
     for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
       const [n, e] = cellNE(x, y);
       const t = Math.max(0, Math.min(1, ((n - a[0]) * dn + (e - a[1]) * de) / L2));
-      if (Math.hypot(n - a[0] - t * dn, e - a[1] - t * de) <= hw) paved[y * W + x] = 1;
+      if (Math.hypot(n - a[0] - t * dn, e - a[1] - t * de) <= hw) { paved[y * W + x] = 1; lanes[y * W + x] = 1; }
     }
   }
   // areas and the boundary: scanline fills (even-odd)
@@ -167,7 +168,7 @@ export function buildAirport(data, osm, dem = null) {
   for (const ar of areas) fill(ar, paved);
   if (boundary) fill(boundary, inside);
   for (let i = 0; i < paved.length; i++) if (paved[i]) inside[i] = 1;
-  const dPaved = distanceField(paved, W, H), dInside = distanceField(inside, W, H);
+  const dLanes = distanceField(lanes, W, H), dInside = distanceField(inside, W, H);
 
   const rasterAt = (n, e) => {
     const x = Math.floor((e - e0) / CELL), y = Math.floor((n - n0) / CELL);
@@ -242,12 +243,23 @@ export function buildAirport(data, osm, dem = null) {
     landmarks: [],
     runway: { centre: c, dir, length: len, width: wid, bearing: brg, thresholds: [A, B], ident: data.runway.ident, layout: data.layout, style: data.style },
     tower: { ne: tw, h: data.tower.h },
-    /** The flatten mask for Google's tiles: 1 on the pavement, easing to 0 over FEATHER metres. */
-    flattenMask() {
+    /**
+     * The flatten mask for Google's tiles: 1 on the runway and taxiways, easing to 0 over FEATHER metres;
+     * the aprons left as photographed (their hangars, the airliners parked there), but for `discs`
+     * ([n, e, radius], m: under an airplane parked there, so it stands level).
+     */
+    flattenMask(discs = []) {
       const img = new Uint8Array(W * H);
-      for (let i = 0; i < img.length; i++) {
-        const d = dPaved[i] * CELL;
-        img[i] = d <= 1 ? 255 : Math.max(0, Math.round(255 * (1 - (d - 1) / FEATHER)));
+      const ease = (d) => (d <= 1 ? 255 : Math.max(0, Math.round(255 * (1 - (d - 1) / FEATHER))));
+      for (let i = 0; i < img.length; i++) img[i] = ease(dLanes[i] * CELL);
+      for (const [n, e, r] of discs) {
+        const R = r + FEATHER + 1;
+        const x0 = Math.max(0, Math.floor((e - R - e0) / CELL)), x1 = Math.min(W - 1, Math.ceil((e + R - e0) / CELL));
+        const y0 = Math.max(0, Math.floor((n - R - n0) / CELL)), y1 = Math.min(H - 1, Math.ceil((n + R - n0) / CELL));
+        for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+          const [cn, ce] = cellNE(x, y), k = y * W + x;
+          img[k] = Math.max(img[k], ease(Math.max(0, Math.hypot(cn - n, ce - e) - r)));
+        }
       }
       return { width: W, height: H, data: img, box: { e: [e0, e0 + W * CELL], n: [n0, n0 + H * CELL] } };
     },
