@@ -3,13 +3,13 @@
   "type": "SpawnPoint",
   "data": {
     "position": {
-      "x": -4,
-      "y": 0,
-      "z": -2
+      "x": 2.984828233718872,
+      "y": -0.000002239431751149823,
+      "z": -12.787806510925293
     },
     "rotation": {
       "x": 0,
-      "y": 0,
+      "y": 153.61786792944795,
       "z": 0
     },
     "isDefaultThirdPerson": true,
@@ -18,5 +18,6 @@
     "hidden": false,
     "capturedIn": "avatar",
     "displayName": "Meigs Field, runway 36"
-  }
+  },
+  "state": {}
 }

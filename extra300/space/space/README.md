@@ -11,7 +11,7 @@
 - `space/room.json` — id `RoomInfo`, type `Simple`
 - `space/entities/1aef8fd4-6447-4e04-969a-4669c11dd52e.json` — id `1aef8fd4-6447-4e04-969a-4669c11dd52e`, type `Gate` — content lives in videoURL/link, cannot host a plugin
 - `space/entities/extra300-meigs.json` — id `extra300-meigs`, type `UserModelEntity`, pos (0, 0, -8), scale 1, hosts `plugins/extra300-meigs.mjs`
-- `space/entities/spawn-runway36.json` — id `spawn-runway36`, type `SpawnPoint`, pos (-4, 0, -2)
+- `space/entities/spawn-runway36.json` — id `spawn-runway36`, type `SpawnPoint`, pos (2.98, 0, -12.79)
 - `space/entities/google-3d-tiles.json` — id `google-3d-tiles`, type `UserModelEntity`, pos (0, 0, -8), scale 1, hosts `plugins/google-3d-tiles.mjs`
 - `space/entities/flight-aircraft-b777.json` — id `flight-aircraft-b777`, type `UserModelEntity`, pos (42, 0, -8), scale 1, hosts `plugins/flight-aircraft.mjs`
 - `space/entities/flight-aircraft-extra300l.json` — id `flight-aircraft-extra300l`, type `UserModelEntity`, pos (36, 0, -8), scale 1, hosts `plugins/flight-aircraft.mjs`
