@@ -28,6 +28,7 @@ import { CameraRig } from '../render/cameraRig.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftColliders } from './aircraftColliders.js';
 import { AircraftVisual } from './aircraftVisual.js';
+import { ParkedAircraft, parkingSpots, sizeOf } from './parkedAircraft.js';
 import { AIRCRAFT_OPTIONS, PROFILES } from './profiles.js';
 import { aircraftBase, airportBase, flightRegistry, listed } from './flightRegistry.js';
 import { plainAircraft, tunedProfile } from './tuning.js';
@@ -291,7 +292,7 @@ export class Extra300 extends ArrivalScript {
     };
     this.hud.controlsButton.onclick = (ev) => { ev.stopPropagation(); this.hud.toggleHelp(); };
     this.hud.skipButton.onclick = (ev) => { ev.stopPropagation(); this._endIntro(); };
-    if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._enter();
+    if (this.hud.buttons.board) this.hud.buttons.board.onclick = () => this._board();
 
     // the camera is ours for the frame, after the platform's own camera scripts
     // the clouds: their noise made over the first frames, marched each frame after our camera is placed
@@ -599,7 +600,8 @@ export class Extra300 extends ArrivalScript {
   _publishShadows() {
     const plane = this.visual?.root;
     for (const r of this._worldRoot?.findComponents('render') || []) {
-      if (r.castShadows && !(plane && (r.entity === plane || r.entity.isDescendantOf(plane)))) r.castShadows = false;
+      const own = [plane, ...(this._parked?.roots || [])].some((p) => p && (r.entity === p || r.entity.isDescendantOf(p)));
+      if (r.castShadows && !own) r.castShadows = false;
     }
     this.app.fire('googletiles:receive-shadows', 0.55);
   }
@@ -874,6 +876,32 @@ export class Extra300 extends ArrivalScript {
     this._unsubClick = ArrivalSpace.onEntityClick?.(this.visual.root, () => { if (!this._flying) this._enter(); });
     this._resetToRunway();
     this.visual.update(this.ac, 0);
+    this._parkedSync();
+  }
+
+  /** Innsbruck: the space's other airplanes (not the X-wing) in a row left of the runway, the smallest
+   *  nearest; the one flown stands lined up on the runway. Each is offered to fly as a visitor walks up. */
+  _parkedSync() {
+    this._parked ??= new ParkedAircraft(this.app, this._worldRoot, this._ws);
+    if (this._dest !== 'lowi' || !this.world) { this._parked.clear(); return; }
+    const list = this._planeEntries().filter((e) => e.base !== 'xwing' && e.id !== this._planeId)
+      .map((e) => ({ entryId: e.id, profile: tunedProfile(e) }))
+      .sort((a, b) => a.profile.spec.wing.span - b.profile.spec.wing.span);
+    const spots = parkingSpots(this.world.startPosition(this._reverse), list.map((it) => sizeOf(it.profile)), this.world.runway?.width || 45);
+    this._parked.set(list, spots, this.world, (id) => this._flyParked(id));
+  }
+
+  /** A parked airplane chosen: out onto the runway in its place, the visitor aboard. */
+  _flyParked(id) {
+    if (this._flying || this._intro || !this._planeEntry(id)) return;
+    this._pickAircraft(id);
+    this._enter();
+  }
+
+  /** E, the Fly button: the airplane on the runway when by it, else the parked one stood by. */
+  _board() {
+    if (this._nearAircraft()) this._enter();
+    else if (this._parkedNear) this._flyParked(this._parkedNear.entryId);
   }
 
   /** Another airplane, back on runway 36; a pilot already aboard moves across with it. */
@@ -1403,7 +1431,7 @@ export class Extra300 extends ArrivalScript {
     if (this._flying) this.sound?.start();
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
     if (!this._flying) {
-      if (key === 'e' && this._nearAircraft()) { this._enter(); e.preventDefault(); }
+      if (key === 'e' && (this._nearAircraft() || this._parkedNear)) { this._board(); e.preventDefault(); }
       if (key === 'o') { this._startDemo(); e.preventDefault(); }
       return;
     }
@@ -1525,11 +1553,18 @@ export class Extra300 extends ArrivalScript {
     if (this._menu) return;   // nothing is there yet
     this._probeTick();
     this._colliders?.tick();
+    this._parked?.tick();
     this._lightsTick(dt);
     this._googleTick(dt);
     if (!this._flying) {
       if (this._filmPending) this._filmTick(dt);
-      if (!this._flying) this.hud.showPrompt(this._nearAircraft() ? (this.isMobile ? this.profile.title : `Press E to fly the ${this.profile.title}`) : '');
+      if (!this._flying) {
+        // by the airplane on the runway, or by one parked beside it
+        const own = this._nearAircraft(), player = ArrivalSpace.getPlayer?.();
+        this._parkedNear = own || !player ? null : this._parked?.near(player.getPosition(), BOARD_DISTANCE) || null;
+        const title = own ? this.profile.title : this._parkedNear?.profile.title;
+        this.hud.showPrompt(title ? (this.isMobile ? title : `Press E to fly the ${title}`) : '');
+      }
       return;
     }
     const raw = {
@@ -1847,6 +1882,7 @@ export class Extra300 extends ArrivalScript {
     this.hud.destroy();
     this.sound.stop();
     this.visual.destroy();
+    this._parked?.clear();
     this.scenery.destroy();
     this.carrierVisual.destroy();
     this.lights.destroy();

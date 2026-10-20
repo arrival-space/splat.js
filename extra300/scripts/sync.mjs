@@ -63,6 +63,8 @@ export const CONFIG_VIBES = [
   { id: 'flight-aircraft-f15c', plugin: 'flight-aircraft', name: 'Airplane — F-15C Eagle', params: { airplane: 'F-15C Eagle', order: 1 } },
   { id: 'flight-aircraft-xwing', plugin: 'flight-aircraft', name: 'Airplane — X-wing', params: { airplane: 'X-wing', order: 2 } },
   { id: 'flight-aircraft-b777', plugin: 'flight-aircraft', name: 'Airplane — Boeing 777', params: { airplane: 'Boeing 777-300ER', order: 3 } },
+  // added later (ensure: made in a space that hasn't got it yet, the others there or not): parked at Innsbruck
+  { id: 'flight-aircraft-extra300l-blue', plugin: 'flight-aircraft', name: 'Airplane — Extra 300L blue', ensure: true, params: { airplane: 'Extra 300L', title: 'Extra 300L blue', trim: '#1f4fa8', order: 4 } },
 ];
 
 export function loadConfig() {
@@ -155,7 +157,7 @@ export function stageConfigVibes(spaceDir, cfg, vibeSrcs) {
   });
   const fresh = Object.fromEntries(Object.keys(vibeSrcs).map((name) => [name, !using(name)]));
   CONFIG_VIBES.forEach((v, i) => {
-    if (!fresh[v.plugin]) return;
+    if (!fresh[v.plugin] && !(v.ensure && !existsSync(join(ents, `${v.id}.json`)))) return;
     writeJson(join(ents, `${v.id}.json`), {
       id: v.id,
       type: 'UserModelEntity',

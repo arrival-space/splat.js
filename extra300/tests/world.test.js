@@ -82,3 +82,17 @@ test('the cut-out leaves Google\'s water: it starts just under the runway, metre
   assert.ok(Math.abs(bottom + 0.3) < 1e-9);
   assert.ok(bottom - w.water > 4, `${(bottom - w.water).toFixed(1)} m above the lake`);
 });
+
+test('parked row: left of the airplane lined up, parallel, clear of the runway and of each other', async () => {
+  const { parkingSpots } = await import('../src/plugin/parkedAircraft.js');
+  // lined up heading west (270°): left is south
+  const start = { n: 0, e: 0, heading: 1.5 * Math.PI };
+  const planes = [{ span: 8, length: 7 }, { span: 13, length: 20 }, { span: 65, length: 71 }];
+  const s = parkingSpots(start, planes, 45);
+  for (const [i, p] of s.entries()) {
+    assert.ok(Math.abs(p.heading - start.heading) < 1e-12);
+    assert.ok(p.n < -(22.5 + planes[i].span / 2), `${i} south of the runway, wingtip clear: ${p.n}`);
+  }
+  assert.ok(Math.abs(s[0].e) < 1e-9);                                   // the first abreast of the start
+  assert.ok(s[1].e < s[0].e - (7 + 20) / 2 && s[2].e < s[1].e - (20 + 71) / 2);   // on westward, nose to tail apart
+});
