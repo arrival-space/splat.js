@@ -132,6 +132,10 @@ export class Hud {
     this.restartButton = button({ ...pill, width: '210px', left: 'calc(50% - 105px)', top: '54px', background: 'rgba(196,30,42,0.88)', border: '1px solid rgba(255,255,255,0.35)' });
     this.restartButton.innerHTML = '↺ Restart on the runway';
     this.restartButton.title = 'Back on the runway, engine off (Backspace)';
+    // just aboard, the throttle still closed: the engine started and the throttle opened in one press
+    this.startButton = button({ ...pill, width: '170px', left: 'calc(50% - 85px)', top: '54px', background: 'rgba(32,140,72,0.9)', border: '1px solid rgba(255,255,255,0.35)' });
+    this.startButton.innerHTML = '▶ Start engine';
+    this.startButton.title = 'Engine on, throttle up (or drag the throttle lever, R / +)';
     // the weather: sliders in a dropdown (setSliders)
     this.weatherButton = button({ ...pill, width: `${wW}px`, display: 'block' });
     this.weatherButton.innerHTML = '<span style="opacity:0.8;margin-right:5px">☁</span>Weather<span style="opacity:0.6;margin-left:5px">▾</span>';
@@ -500,6 +504,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     }
     // what hangs under the bar: the restart button, the take-off card, the messages
     this.restartButton.style.top = `${below}px`;
+    this.startButton.style.top = `${below}px`;
     this.quick.style.top = `${below + 4}px`;
     this.message.style.top = `max(9%, ${below + 44}px)`;
   }
@@ -535,6 +540,12 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
   showRestart(on) {
     const d = on ? 'block' : 'none';
     if (this.restartButton.style.display !== d) this.restartButton.style.display = d;
+  }
+
+  /** The start-engine button: just aboard, until the throttle is opened (by it or otherwise). */
+  showStart(on) {
+    const d = on ? 'block' : 'none';
+    if (this.startButton.style.display !== d) this.startButton.style.display = d;
   }
 
   /** The throttle grip and the engine button show with the panel. */
@@ -629,7 +640,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     if (on) { this.panelCanvas.style.display = 'none'; this._syncGrip(); this.hudCanvas.style.display = 'none'; this.quick.style.display = 'none'; this.help.style.display = 'none'; }
     for (const b of [this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton]) b.style.display = on ? 'none' : b.style.display;
     // nor the flying ones (a phone's Exit, View …), the credit line, the restart button: back with setFlying
-    if (on) for (const b of [...Object.values(this.buttons), this.credit, this.restartButton]) b.style.display = 'none';
+    if (on) for (const b of [...Object.values(this.buttons), this.credit, this.restartButton, this.startButton]) b.style.display = 'none';
   }
 
   /** Black over the scene (0 none … 1 all), under the letterbox and the captions. */
@@ -704,7 +715,7 @@ input.extra300-range::-moz-range-thumb{${thumb}}`;
     window.removeEventListener('keydown', this._onMenuKey, true);
     this._menu.remove();
     for (const el of [this.stickZone, this.stickBase].filter(Boolean)) el.remove();
-    for (const el of [this.panelCanvas, this.throttleGrip, ...this._lampButtons.values(), this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton, this.restartButton,
+    for (const el of [this.panelCanvas, this.throttleGrip, ...this._lampButtons.values(), this.hudCanvas, this.prompt, this.message, this.help, this.quick, this.credit, this.aircraftButton, this.easyButton, this.controlsButton, this.placeButton, this.weatherButton, this.restartButton, this.startButton,
       this.demoStatus, this.introTop, this.introBottom, this.introCard, this.introProgress, this.introFade, this.skipButton, ...Object.values(this.buttons)]) el.remove();
   }
 }

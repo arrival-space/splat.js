@@ -274,9 +274,11 @@ export class Extra300 extends ArrivalScript {
     this.app.on('flightsim:changed', this._onRegistry);
     this.hud.easyButton.onclick = (ev) => { ev.stopPropagation(); this._action('easy'); };
     this.hud.restartButton.onclick = (ev) => { ev.stopPropagation(); this._action('reset'); };
+    this.hud.startButton.onclick = (ev) => { ev.stopPropagation(); this._startEngine(); };
     // the panel's throttle lever, dragged
     this.hud.onStick = () => { if (this._flying) this.sound?.start(); };
-    this.hud.onThrottle = (t) => { if (this._flying && !this._intro) { this.mapper.throttle = t; this.sound?.start(); } };
+    this.hud.onThrottle = (t) => { if (this._flying && !this._intro) {
+      this._startOffer = false; this.hud.showStart(false); this.mapper.throttle = t; this.sound?.start(); } };
     // its lamps that are switches too (setLampButtons, in _buildAircraft), clicked
     this.hud.onLamp = (key) => {
       if (!this._flying || this._intro) return;
@@ -814,6 +816,19 @@ export class Extra300 extends ArrivalScript {
   }
 
   /** The airplane itself: flight model, instruments, 3D model, sound, stick feel, cockpit display, camera eye. */
+  /** The start-engine button: as a phone starts (the engine running, the brake off, the throttle at 75 %). */
+  _startEngine() {
+    if (!this._flying || this._intro) return;
+    this._startOffer = false;
+    this.hud.showStart(false);
+    if (!this.ac.engine.running) this.ac.setEngineRunning(true);
+    this._autoStarter = false;
+    this.ac.controls.parkingBrake = false;
+    if (this.ac.spec.sfoils) this.mapper.sfoils = 1;
+    this.mapper.throttle = MOBILE_THROTTLE;
+    this.sound?.start();
+  }
+
   /** ENGINE OFF, clicked: the engine stopped, the throttle closed; raising it cranks it again. */
   _engineOff() {
     if (!this.ac.engine.running) return;
@@ -1121,6 +1136,7 @@ export class Extra300 extends ArrivalScript {
     const attached = ArrivalSpace.getLocalAttachedEntity?.();
     if (attached && attached !== this.visual.root) return;
     this._flying = true;
+    this._startOffer = !this._loadIntro;   // (the start-engine button, until the throttle is opened)
     this._colliders.enabled = false;
     // boarding starts outside, in the chase view (V goes round the others, the cockpit among them)
     this.cameraRig.view = 'chase';
@@ -1447,6 +1463,8 @@ export class Extra300 extends ArrivalScript {
     // airplane's sound waits for the first one
     if (this._flying) this.sound?.start();
     const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+    // a throttle key: the start-engine button goes at once (the throttle is found)
+    if (this._flying && ['throttleUp', 'throttleDown', 'throttleFull', 'throttleIdle'].some((a) => BINDINGS[a]?.includes(e.key) || BINDINGS[a]?.includes(key))) { this._startOffer = false; this.hud.showStart(false); }
     if (!this._flying) {
       if (key === 'e' && (this._nearAircraft() || this._parkedNear)) { this._board(); e.preventDefault(); }
       if (key === 'o') { this._startDemo(); e.preventDefault(); }
@@ -1663,7 +1681,11 @@ export class Extra300 extends ArrivalScript {
 
     // broken (crashed, the prop struck, the gear folded): the restart button under the top bar
     const dmg = this.ac.damage;
-    this.hud.showRestart(this._flying && !this._intro && (this._broken || dmg.crashed || dmg.propStrike || dmg.gearCollapsed));
+    const broken = this._broken || dmg.crashed || dmg.propStrike || dmg.gearCollapsed;
+    this.hud.showRestart(this._flying && !this._intro && broken);
+    // the start-engine button: offered on boarding until the throttle is opened, however that's done
+    if (this.mapper.throttle > 0) this._startOffer = false;
+    this.hud.showStart(this._flying && !this._intro && !this._demo && !broken && !!this._startOffer);
     this._panelAcc += dt;
     if (this._panelVisible && !this._intro && this._panelAcc > 1 / 30) {
       this._panelAcc = 0;
