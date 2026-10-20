@@ -96,3 +96,30 @@ test('parked row: left of the airplane lined up, parallel, clear of the runway a
   assert.ok(Math.abs(s[0].e) < 1e-9);                                   // the first abreast of the start
   assert.ok(s[1].e < s[0].e - (7 + 20) / 2 && s[2].e < s[1].e - (20 + 71) / 2);   // on westward, nose to tail apart
 });
+
+test('parked row on the apron: fuselage and gear on it, the small ones nose to the runway, apart, the left side first', async () => {
+  const { apronSpots } = await import('../src/plugin/parkedAircraft.js');
+  const { buildInnsbruck } = await import('../src/world/innsbruck.js');
+  const w = buildInnsbruck();
+  const start = w.startPosition();
+  const planes = [{ span: 8, length: 9.5 }, { span: 13, length: 20 }, { span: 65, length: 71 }];
+  const spots = apronSpots(start, planes, w.pavement.areas);
+  const left = [Math.sin(start.heading), -Math.cos(start.heading)];
+  for (const [i, p] of spots.entries()) {
+    assert.ok(p, `plane ${i} has a spot`);
+    const l = (p.n - start.n) * left[0] + (p.e - start.e) * left[1];
+    assert.ok(l > 150, `${i} left of the runway, off it: ${l}`);
+    // nose to tail and across the gear's track: paved
+    const f = [Math.cos(p.heading), Math.sin(p.heading)], r = [-f[1], f[0]], half = Math.max(6, 0.3 * planes[i].span) / 2;
+    for (const x of [-0.5, -0.25, 0, 0.25, 0.5]) for (const y of [-half, 0, half]) {
+      const n = p.n + f[0] * x * planes[i].length + r[0] * y, e = p.e + f[1] * x * planes[i].length + r[1] * y;
+      assert.ok(w.isPaved(n, e), `${i} paved at ${x},${y}`);
+    }
+  }
+  for (const i of [0, 1]) assert.ok(Math.abs(Math.cos(spots[i].heading - start.heading)) < 1e-9, `${i} nose to the runway`);
+  for (let i = 0; i < 3; i++) for (let j = i + 1; j < 3; j++) assert.ok(Math.hypot(spots[i].n - spots[j].n, spots[i].e - spots[j].e) > (planes[i].span + planes[j].span) / 2);
+  // a square apron too small for the 777
+  const sq = [[0, 0], [0, 40], [40, 40], [40, 0]].map(([a, l]) => [start.n + Math.cos(start.heading) * a + left[0] * (l + 100), start.e + Math.sin(start.heading) * a + left[1] * (l + 100)]);
+  const s2 = apronSpots(start, planes, [sq]);
+  assert.ok(s2[0] && s2[1] && s2[2] === null);
+});

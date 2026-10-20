@@ -28,7 +28,7 @@ import { CameraRig } from '../render/cameraRig.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftColliders } from './aircraftColliders.js';
 import { AircraftVisual } from './aircraftVisual.js';
-import { ParkedAircraft, parkingSpots, sizeOf } from './parkedAircraft.js';
+import { apronSpots, ParkedAircraft, parkingSpots, sizeOf } from './parkedAircraft.js';
 import { AIRCRAFT_OPTIONS, PROFILES } from './profiles.js';
 import { aircraftBase, airportBase, flightRegistry, listed } from './flightRegistry.js';
 import { plainAircraft, tunedProfile } from './tuning.js';
@@ -879,16 +879,20 @@ export class Extra300 extends ArrivalScript {
     this._parkedSync();
   }
 
-  /** Innsbruck: the space's other airplanes (not the X-wing) in a row left of the runway, the smallest
-   *  nearest; the one flown stands lined up on the runway. Each is offered to fly as a visitor walks up. */
+  /** Innsbruck: the space's other airplanes (not the X-wing) in a row on the apron left of the runway, the
+   *  smallest nearest; the one flown stands lined up on the runway. Each is offered to fly as a visitor walks up. */
   _parkedSync() {
     this._parked ??= new ParkedAircraft(this.app, this._worldRoot, this._ws);
     if (this._dest !== 'lowi' || !this.world) { this._parked.clear(); return; }
     const list = this._planeEntries().filter((e) => e.base !== 'xwing' && e.id !== this._planeId)
       .map((e) => ({ entryId: e.id, profile: tunedProfile(e) }))
       .sort((a, b) => a.profile.spec.wing.span - b.profile.spec.wing.span);
-    const spots = parkingSpots(this.world.startPosition(this._reverse), list.map((it) => sizeOf(it.profile)), this.world.runway?.width || 45);
-    this._parked.set(list, spots, this.world, (id) => this._flyParked(id));
+    // on the apron (never on the grass): those that fit there
+    const start = this.world.startPosition(this._reverse), sizes = list.map((it) => sizeOf(it.profile));
+    const aprons = this.world.pavement?.areas || [];
+    const spots = aprons.length ? apronSpots(start, sizes, aprons) : parkingSpots(start, sizes, this.world.runway?.width || 45);
+    const keep = list.map((it, i) => (spots[i] ? i : -1)).filter((i) => i >= 0);
+    this._parked.set(keep.map((i) => list[i]), keep.map((i) => spots[i]), this.world, (id) => this._flyParked(id));
   }
 
   /** A parked airplane chosen: out onto the runway in its place, the visitor aboard. */
@@ -1553,7 +1557,7 @@ export class Extra300 extends ArrivalScript {
     if (this._menu) return;   // nothing is there yet
     this._probeTick();
     this._colliders?.tick();
-    this._parked?.tick();
+    this._parked?.tick(ArrivalSpace.getCamera?.()?.getPosition());
     this._lightsTick(dt);
     this._googleTick(dt);
     if (!this._flying) {
