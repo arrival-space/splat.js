@@ -59,7 +59,7 @@ const cache = new Map();
  * entry's. Made once per entry as it is (a changed entry makes a new one).
  */
 export function tunedProfile(entry) {
-  const key = JSON.stringify(entry);
+  const key = JSON.stringify({ ...entry, park: undefined });   // (where it is parked doesn't change the airplane)
   if (cache.has(key)) return cache.get(key);
   const base = PROFILES[entry.base] || PROFILES.extra300l;
   const paints = PAINT[base.id] || [];

@@ -131,7 +131,7 @@ export function apronSpots(start, planes, aprons, margin = 4) {
 /**
  * Where the row stands at an airport that names its stands (`{ along, left, span }`, metres from the start:
  * along the runway and to its left): each airplane, smallest first, on the first free stand wide enough,
- * nose toward the runway. Null for one with no stand left.
+ * nose toward the runway (or, `face: 'along'`, the runway's way). Null for one with no stand left.
  */
 export function standSpots(start, planes, stands) {
   const f = [Math.cos(start.heading), Math.sin(start.heading)], left = [Math.sin(start.heading), -Math.cos(start.heading)];
@@ -140,7 +140,8 @@ export function standSpots(start, planes, stands) {
     const k = free.findIndex((s) => s.span >= p.span);
     if (k < 0) return null;
     const [s] = free.splice(k, 1);
-    return { n: start.n + f[0] * s.along + left[0] * s.left, e: start.e + f[1] * s.along + left[1] * s.left, heading: start.heading + Math.sign(s.left || 1) * Math.PI / 2 };
+    const heading = s.face === 'along' ? start.heading : start.heading + Math.sign(s.left || 1) * Math.PI / 2;
+    return { n: start.n + f[0] * s.along + left[0] * s.left, e: start.e + f[1] * s.along + left[1] * s.left, heading };
   });
 }
 

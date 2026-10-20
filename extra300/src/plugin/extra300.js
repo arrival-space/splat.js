@@ -28,7 +28,7 @@ import { CameraRig } from '../render/cameraRig.js';
 import { fromNE, MeshBuilder } from '../render/geometry.js';
 import { AircraftColliders } from './aircraftColliders.js';
 import { AircraftVisual } from './aircraftVisual.js';
-import { apronSpots, ParkedAircraft, parkingSpots, sizeOf, standSpots } from './parkedAircraft.js';
+import { ParkedAircraft, sizeOf, standSpots } from './parkedAircraft.js';
 import { AIRCRAFT_OPTIONS, PROFILES } from './profiles.js';
 import { aircraftBase, airportBase, flightRegistry, listed } from './flightRegistry.js';
 import { plainAircraft, tunedProfile } from './tuning.js';
@@ -441,6 +441,7 @@ export class Extra300 extends ArrivalScript {
   _registryChanged(kind) {
     if (!this._started) return;   // the start picks from what is there by then
     if (kind === 'aircraft') {
+      this._parkedSync();   // (one moved in the editor, re-parked, added or gone)
       const e = this._planeEntry(this._planeId);
       if (!e) {
         // ours was deleted (or the plain list gave way to the space's vibes): the first one
@@ -879,26 +880,32 @@ export class Extra300 extends ArrivalScript {
     this._parkedSync();
   }
 
-  /** Innsbruck: the space's other airplanes (not the X-wing) parked left of the runway, the small ones by the
-   *  start, the big one on the apron; the one flown stands lined up on the runway. Each is offered to fly as a
-   *  visitor walks up. */
+  /**
+   * The space's other airplanes, parked at the space's own airports (never at an airfield found by name):
+   * one an airplane vibe parks here where that vibe stands in the space; the rest, at Innsbruck, on its
+   * stands (the small ones by the start, the big one on the apron; not the X-wing). The one flown stands
+   * lined up on the runway. Each is offered to fly as a visitor walks up.
+   */
   _parkedSync() {
     this._parked ??= new ParkedAircraft(this.app, this._worldRoot, this._ws);
-    if (this._dest !== 'lowi' || !this.world) { this._parked.clear(); return; }
-    const list = this._planeEntries().filter((e) => e.base !== 'xwing' && e.id !== this._planeId)
-      .map((e) => ({ entryId: e.id, profile: tunedProfile(e) }))
-      .sort((a, b) => a.profile.spec.wing.span - b.profile.spec.wing.span);
-    // the airport's own stands (Innsbruck: the pad by the threshold, the apron), else on an apron, never the grass
-    const start = this.world.startPosition(this._reverse), sizes = list.map((it) => sizeOf(it.profile));
-    const aprons = this.world.pavement?.areas || [];
-    const stands = this.world.data?.stands;
-    const spots = stands ? standSpots(start, sizes, stands) : sizes.map(() => null);
-    // (those without a stand: on an apron, or beside the runway where there is none)
-    const rest = sizes.map((s, i) => (spots[i] ? null : i)).filter((i) => i != null);
-    const more = aprons.length ? apronSpots(start, rest.map((i) => sizes[i]), aprons) : parkingSpots(start, rest.map((i) => sizes[i]), this.world.runway?.width || 45);
-    rest.forEach((i, k) => { spots[i] = more[k]; });
-    const keep = list.map((it, i) => (spots[i] ? i : -1)).filter((i) => i >= 0);
-    this._parked.set(keep.map((i) => list[i]), keep.map((i) => spots[i]), this.world, (id) => this._flyParked(id));
+    const dest = this._dest;
+    if (!this.world || !dest || dest.startsWith('af:')) { this._parked.clear(); return; }
+    const o = this._worldRoot.getPosition(), ws = this._ws;
+    const placed = [], stood = [];
+    for (const e of this._planeEntries()) {
+      if (e.id === this._planeId) continue;
+      const at = e.park?.at || 'default';
+      if (at === dest && e.park.pos) {
+        // where its vibe stands, turned as it is (its forward the nose)
+        const n = -(e.park.pos[2] - o.z) / ws, east = (e.park.pos[0] - o.x) / ws;
+        placed.push({ entryId: e.id, profile: tunedProfile(e), spot: { n, e: east, heading: Math.atan2(e.park.fwd[0], -e.park.fwd[1]) } });
+      } else if (at === 'default' && e.base !== 'xwing' && this.world.data?.stands) stood.push({ entryId: e.id, profile: tunedProfile(e) });
+    }
+    stood.sort((a, b) => a.profile.spec.wing.span - b.profile.spec.wing.span);
+    const start = this.world.startPosition(this._reverse);
+    const spots = standSpots(start, stood.map((it) => sizeOf(it.profile)), this.world.data?.stands || []);
+    const list = [...placed, ...stood.map((it, i) => ({ ...it, spot: spots[i] })).filter((it) => it.spot)];
+    this._parked.set(list.map(({ entryId, profile }) => ({ entryId, profile })), list.map((it) => it.spot), this.world, (id) => this._flyParked(id));
   }
 
   /** A parked airplane chosen: out onto the runway in its place, the visitor aboard. */

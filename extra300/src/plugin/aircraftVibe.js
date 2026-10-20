@@ -1,9 +1,14 @@
 // aircraftVibe.js — one airplane, as its own vibe: a tuned copy of one of the airplanes the flight vibe
 // carries (the Extra 300L, F-15C, X-wing, 777), listed in its airplane dropdown. Duplicate it for a
 // variant (another paint, more power, a heavier load); delete it and it leaves the list. It draws
-// nothing itself (plugin/flightRegistry.js; the tuning: plugin/tuning.js).
+// nothing itself (plugin/flightRegistry.js; the tuning: plugin/tuning.js). Parked at one of the space's
+// airports, it stands where this vibe is placed (and turned) in the space while that airport is flown from.
 
-import { BASE_AIRCRAFT, register, unregister } from './flightRegistry.js';
+import { BASE_AIRCRAFT, BASE_AIRPORTS, register, unregister } from './flightRegistry.js';
+
+// where it is parked while not flown: Innsbruck's own stands, where this vibe stands at an airport, or nowhere
+export const PARK_DEFAULT = 'Default (Innsbruck\'s stands)', PARK_NONE = 'Not parked';
+const PARK_OPTIONS = [PARK_DEFAULT, ...Object.values(BASE_AIRPORTS).map((t) => `Here, at ${t}`), PARK_NONE];
 
 // the base airplanes' own two main colours (plugin/tuning.js PAINT)
 export const OWN = { extra300l: ['#f3f1ec', '#c41e2a'], f15c: ['#8e969d', '#6b737b'], xwing: ['#dedcd5', '#c4452e'], b777: ['#f2f3f4', '#1d4f9c'] };
@@ -24,6 +29,7 @@ export class FlightAircraft extends ArrivalScript {
   seatHeight = 0;
   seatForward = 0;
   startHere = false;
+  parkAt = PARK_DEFAULT;
   order = 0;
 
   static properties = {
@@ -40,6 +46,7 @@ export class FlightAircraft extends ArrivalScript {
     seatHeight: { title: 'Pilot seat: up (m)', min: -1, max: 1 },
     seatForward: { title: 'Pilot seat: forward (m)', min: -1, max: 1 },
     startHere: { title: 'Visitors start in this one' },
+    parkAt: { title: 'Parked at (Here: where this vibe stands and faces in the space, its nose its forward)', options: PARK_OPTIONS },
     order: { title: 'Place in the airplane list (lower first)', min: -100, max: 100 },
   };
 
@@ -80,7 +87,28 @@ export class FlightAircraft extends ArrivalScript {
       chaseDistance: num(this.chaseDistance, 1), seatHeight: num(this.seatHeight, 0), seatForward: num(this.seatForward, 0),
       startHere: !!this.startHere,
       order: num(this.order, 0),
+      park: this._park(),
     });
+  }
+
+  /** Where it is parked: { at: 'default' | 'none' | an airport's base, pos, fwd } (world, this vibe's own). */
+  _park() {
+    const at = this.parkAt === PARK_NONE ? 'none'
+      : Object.keys(BASE_AIRPORTS).find((k) => this.parkAt === `Here, at ${BASE_AIRPORTS[k]}`) || 'default';
+    if (at === 'default' || at === 'none') return { at };
+    const p = this.entity.getPosition(), f = this.entity.forward;
+    return { at, pos: [p.x, p.y, p.z], fwd: [f.x, f.z] };
+  }
+
+  /** Moved or turned in the editor while parked somewhere: told again (twice a second at most). */
+  update(dt) {
+    if (this.parkAt === PARK_DEFAULT || this.parkAt === PARK_NONE) return;
+    this._moveT = (this._moveT || 0) + dt;
+    if (this._moveT < 0.5) return;
+    this._moveT = 0;
+    const p = this.entity.getPosition(), f = this.entity.forward;
+    const key = [p.x, p.y, p.z, f.x, f.z].map((v) => v.toFixed(2)).join(',');
+    if (key !== this._at) { const first = this._at == null; this._at = key; if (!first) this._publish(); }
   }
 
   /** Out of the list when the vibe is deleted or switched off, back in when it is on again. */
