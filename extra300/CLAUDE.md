@@ -12,3 +12,8 @@ blobs where buildings and paving will be.
 - Every camera move starts new loads: wait again before the next screenshot.
 - Never conclude anything about ground height, sunk or floating objects, or the look of the scenery
   from a frame taken while tiles are still loading.
+
+## Before anything else
+
+Read `HANDOFF.md`: where things are, the workflow after every change (test, sync, commit, push), what the
+owner expects, and what is open.
