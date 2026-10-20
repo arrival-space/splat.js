@@ -34,8 +34,18 @@ function flame(y) {
 }
 
 /** All parts, as buildExtraModel: static ones { name, color, mesh }, moving ones with hinge, axis, kind. */
+// the ACES II as modelled stands 13 cm through the canopy's glass: sunk under it (the pilot's own seating,
+// the profile's, stays as it is)
+const SEAT_PARTS = new Set(['seat', 'seatCushion', 'ejectionHandles', 'harness']);
+const SEAT_DROP = 0.23;   // m
+
 export function buildF15Model() {
   const { parts } = decodeModel(F15C_MODEL);
+  for (const p of parts) {
+    if (!SEAT_PARTS.has(p.name)) continue;
+    const q = p.mesh.positions;
+    for (let i = 1; i < q.length; i += 3) q[i] -= SEAT_DROP;   // (y: up, in the renderer's axes)
+  }
   const exit = F15.jet.pos[0] - 0.12;
   for (const side of [-1, 1]) {
     const { mb } = flame(side * 0.64);
