@@ -20,10 +20,11 @@
 - `space/entities/flight-airport-krnt.json` — id `flight-airport-krnt`, type `UserModelEntity`, pos (34, 0, -8), scale 1, hosts `plugins/flight-airport.mjs`
 - `space/entities/flight-airport-lowi.json` — id `flight-airport-lowi`, type `UserModelEntity`, pos (32, 0, -8), scale 1, hosts `plugins/flight-airport.mjs`
 - `space/entities/flight-airport-meigs.json` — id `flight-airport-meigs`, type `UserModelEntity`, pos (30, 0, -8), scale 1, hosts `plugins/flight-airport.mjs`
+- `space/entities/flight-aircraft-extra300l-blue.json` — id `flight-aircraft-extra300l-blue`, type `UserModelEntity`, pos (44, 0, -8), scale 1, hosts `plugins/flight-aircraft.mjs`
 
 ## Plugins
 
 - `plugins/extra300-meigs.mjs` — used by 1 entity(s)
 - `plugins/google-3d-tiles.mjs` — used by 1 entity(s)
-- `plugins/flight-aircraft.mjs` — SHARED by 4 entities (`flight-aircraft-b777`, `flight-aircraft-extra300l`, `flight-aircraft-f15c`, `flight-aircraft-xwing`); editing it changes ALL of them
+- `plugins/flight-aircraft.mjs` — SHARED by 5 entities (`flight-aircraft-b777`, `flight-aircraft-extra300l`, `flight-aircraft-f15c`, `flight-aircraft-xwing`, `flight-aircraft-extra300l-blue`); editing it changes ALL of them
 - `plugins/flight-airport.mjs` — SHARED by 3 entities (`flight-airport-krnt`, `flight-airport-lowi`, `flight-airport-meigs`); editing it changes ALL of them
