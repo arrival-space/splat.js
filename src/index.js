@@ -10,6 +10,10 @@
 //   s.view.attach(canvas); s.start();
 //   const ply = await s.exportPlyBlob();
 //
+//   // known cameras instead of a solve (renders, rigs): transforms.json or a GT list
+//   const s = createSession({ frames: { alphaMask: true } });
+//   await s.load(files); s.useKnownCameras(parseCameras(json)); await s.seed(); s.start();
+//
 // Layer 1 — the pieces, for building your own flow:
 //
 //   const gpu     = await createGpu();          // or { device } you own
@@ -26,6 +30,7 @@ export { createGpu } from './gpu/context.js';
 export { decodeFrames, processSource, adaptiveTrainCap, FEAT_MAX_DIM, TRAIN_MAX_DIM } from './io/frames.js';
 export { extractSharpFrames, isVideoFile, planSelection, suggestSpan } from './io/video.js';
 export { readExifFocal, focalPxFrom35 } from './io/exif.js';
+export { parseCameras, reconFromKnownCameras, randomSeedPoints } from './io/cameras.js';
 export { gaussiansToPly, bakeOpacityCompensation } from './io/ply.js';
 export { runSfM, SOLVE_TIERS, solveTierOpts } from './sfm/sfm.js';
 export { initGaussians } from './gs/init.js';

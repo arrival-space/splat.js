@@ -21,6 +21,7 @@
 // conversion, and the hidden-tab watchdog.
 
 import { decodeFrames } from './io/frames.js';
+import { reconFromKnownCameras } from './io/cameras.js';
 import { focalPxFrom35 } from './io/exif.js';
 import { isEquirect, sliceEquirect, faceSizeFor, probeImageSize, FACE_ROTS } from './io/pano.js';
 import { runSfM } from './sfm/sfm.js';
@@ -305,6 +306,22 @@ export class Session {
     return this.recon;
   }
 
+  /** Train on cameras known from elsewhere instead of solving: a renderer's ground truth, a
+   *  rig, an AR session. `cameras` from parseCameras() (transforms.json or a ground-truth list),
+   *  in image pixels and matched to the loaded frames by file name; opts.points seeds the model
+   *  ([{ X, rgb }], else the viewed volume is filled at random).
+   *  Pre-matted renders: load them with opts.frames.alphaMask. They are often small enough to
+   *  train at native size; the frames' memory budget may still pick a lower resolution than the
+   *  renders (opts.frames.trainMaxDim decides). The photo blur gate is off for these sets (a
+   *  thin object seen edge-on scores "blurry"); opts.excludeBlurry turns it back on. */
+  useKnownCameras(cameras, opts = {}) {
+    if (!this.frames) throw new Error('load() first');
+    const recon = this.useReconstruction(reconFromKnownCameras(this.frames, cameras, opts));
+    this._log(`known cameras: ${recon.cams.length} of ${this.frames.length} frames, ` +
+      `${recon.points.length} ${opts.points && opts.points.length ? 'given' : 'random'} seed points, no solve`);
+    return recon;
+  }
+
   /** Load a reconstruction obtained elsewhere ({ cams, points, ... }). */
   useReconstruction(recon) {
     this.recon = { k1: 0, k2: 0, fScale: 1, medErr: 0, rmsBA: null, ...recon };
@@ -554,9 +571,12 @@ export class Session {
     const med = [medOf(0), medOf(1)];
     this.trainer.excluded = new Set();
     const blurry = [0, 0];
+    // known cameras (useKnownCameras) are mostly renders: their low "sharpness" is a thin
+    // object seen edge-on, not motion blur — 16 of 180 sharp renders went out (2026-10-21)
+    const blurGate = this.opts.excludeBlurry ?? !(this.recon && this.recon.known);
     this.trainer.camMeta.forEach((m, i) => {
       if (inLoss && !inLoss[i]) { this.trainer.excluded.add(i); return; }
-      if (sh[i] < med[group[i]] * 0.45) { this.trainer.excluded.add(i); blurry[group[i]]++; }
+      if (blurGate && sh[i] < med[group[i]] * 0.45) { this.trainer.excluded.add(i); blurry[group[i]]++; }
     });
     if (inLoss) this._log(`training loss on ${inLoss.filter(Boolean).length} of ${inLoss.length} cameras (opts.lossCams; the rest keep their poses)`);
     if (blurry[0] + blurry[1]) {
