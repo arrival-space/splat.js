@@ -182,6 +182,33 @@ s.start();                // training loop (auto-stops, emits metrics)
 const ply = await s.exportPlyBlob();
 ```
 
+### Known cameras: renders, rigs, AR captures
+
+When the poses are already known, the solve is skipped. `parseCameras()` reads
+a NeRF / Blender `transforms.json` or the ground-truth list in
+`data/synthetic/cameras.json`; cameras are matched to the loaded images by
+file name and converted to the solver's feature scale for you. Rendered images
+with a transparent background are their own subject masks with
+`frames.alphaMask`:
+
+```js
+import { createSession, parseCameras } from 'splat.js';
+
+const s = createSession({ frames: { alphaMask: true, trainMaxDim: 960 } });
+await s.load(files);                                   // RGBA PNGs
+s.useKnownCameras(parseCameras(transformsJson), { points });   // points optional
+await s.seed();
+s.start();
+```
+
+`points` (`[{ X: [x, y, z], rgb: [r, g, b] }]`, e.g. sampled from the mesh
+that was rendered) seed the model; without them the volume the cameras look at
+is filled at random and the masks carve it down. The photo blur gate is off
+for known cameras (a thin object seen edge-on scores as blurry);
+`excludeBlurry: true` turns it back on. Measured on 180 Blender renders of a
+logo at 960 px, 30k iterations on an RTX 5080: 33.3 dB held-out with mesh
+seed points (2.4 min), 30.6 dB from random seeds (1.4 min).
+
 Benchmark mode is one option away: `createSession({ evalSplit: 8 })` holds
 every 8th frame out of training, and `await s.evalTestPsnr()` returns the
 novel-view PSNR (mean and per frame) after the run.

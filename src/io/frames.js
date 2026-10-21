@@ -41,6 +41,11 @@
  * @property {number} [maskGuard=3]  px of empty pixels just outside the matte
  *   that get NO loss (a ring that votes neither way); see the note in
  *   processSource.
+ * @property {boolean} [alphaMask=false]  a PNG/WebP with transparency is its own
+ *   subject mask (pre-matted input: renders, cut-outs). Off by default: the SfM
+ *   grayscale would see the cut-out on black and lose the room (see the note in
+ *   processSource) — meant for sets with known cameras (Session.useKnownCameras).
+ *   A file's explicit `mask` wins.
  */
 
 import { probeImageSize } from './pano.js';
@@ -279,6 +284,29 @@ export function processSource(src, srcW, srcH, name, trainCap, opts = {}, preRes
   };
 }
 
+/** opts.alphaMask: the image's own alpha as a grayscale mask bitmap (white =
+ *  subject), or null when the image is fully opaque. Decoded unpremultiplied
+ *  at native size; processSource scales it to the training grid like a
+ *  separate mask file. */
+async function alphaAsMask(source) {
+  const bmp = await createImageBitmap(source, { premultiplyAlpha: 'none' });
+  const cv = mkCanvas(bmp.width, bmp.height);
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0);
+  const img = ctx.getImageData(0, 0, bmp.width, bmp.height);
+  bmp.close();
+  releaseCanvas(cv);
+  const d = img.data;
+  let transparent = false;
+  for (let i = 0; i < d.length; i += 4) {
+    const a = d[i + 3];
+    if (a < 255) transparent = true;
+    d[i] = d[i + 1] = d[i + 2] = a;
+    d[i + 3] = 255;
+  }
+  return transparent ? createImageBitmap(img) : null;
+}
+
 /** Decode image Files/Blobs (or {source, name, mask} entries of anything
  *  createImageBitmap accepts) into Frames. `mask` is an optional grayscale
  *  subject mask for that frame (white = subject); it masks the TRAINING
@@ -330,8 +358,12 @@ export async function decodeFrames(files, opts = {}) {
       // native size — processSource scales it to the training grid.
       let mbmp = null;
       if (file.mask) mbmp = await createImageBitmap(file.mask);
+      else if (opts.alphaMask) mbmp = await alphaAsMask(source);
       const frame = processSource(bmp, bmp.width, bmp.height, name, trainCap,
         mbmp ? { ...opts, mask: mbmp } : opts, resized);
+      // the file's own pixel size: what known cameras' intrinsics are given in
+      frame.srcW = resized ? dims.w : bmp.width;
+      frame.srcH = resized ? dims.h : bmp.height;
       bmp.close();
       if (mbmp) mbmp.close();
       // the photo's focal length, when the file carries it (JPEG / HEIC EXIF):
