@@ -4,6 +4,35 @@ What we tried, what it did, what it cost. Newest first. PSNR numbers are
 held-out (eval8) unless noted; "noise band" on repeated truck 40k runs is
 about ±0.1 dB.
 
+## 2026-10-21 (known cameras: a rendered logo, no solve)
+
+The codex.arrival.space hero logo is a splat trained here: the welcome-space
+dome's logo mesh rendered in Blender from 180 known viewpoints (RGBA, 960 px),
+trained on the ground-truth cameras through the layer-1 API. The first run
+needed a hand-written harness and four workarounds; they are library features
+now (`src/io/cameras.js`, `Session.useKnownCameras`, `frames.alphaMask`):
+
+- **Feature scale.** `useReconstruction` wants focals at feature scale
+  (`frame.fw`), a renderer gives image pixels. Handing those over unscaled
+  trains against wrongly projected targets with no error. `useKnownCameras`
+  matches cameras to frames by file name and converts; frames now carry
+  `srcW/srcH` for it.
+- **RGBA as the mask.** A transparent PNG was premultiplied on decode and the
+  renders had to be split into photo + mask files. `alphaMask` decodes the
+  alpha unpremultiplied and routes it into the same per-frame alpha a mask file
+  fills. Opt-in: a solve would still see the cut-out on black.
+- **Blur gate.** It excluded 16 of 180 sharp renders (a thin object seen
+  edge-on scores low). Off for known cameras, `excludeBlurry` overrides.
+- **Resolution.** The memory budget trained the 960 px renders at 569 px;
+  `trainMaxDim` decides, now documented next to the known-camera path.
+
+Measured (logo, 30k iterations, cap 2, 960 px, RTX 5080): harness with split
+masks 33.07 dB / 1.4 min; library path with RGBA input and mesh seed points
+33.26 dB / 2.4 min (seed 238k, the default initTarget); no seed points (50k
+random in the viewed volume, masks keep 3.4k, hull 1.0k) 30.62 dB / 1.4 min.
+`parseCameras` reads NeRF/Blender `transforms.json` and the GT list format;
+`tests/unit/test_cameras.mjs` projects the synthetic set's points through both.
+
 ## 2026-09-18d (the avatar walks, and nothing stands in front of it)
 
 Two asks. "The use as my avatar need to show the avatar in full the user needs
